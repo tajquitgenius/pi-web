@@ -7,31 +7,34 @@ import type {
   SessionSummary,
   ThinkingLevel,
 } from '../live-shared';
-import {
-  DEFAULT_SESSION_SETTINGS,
-  modelsForProvider,
-  modelLabel,
-  THINKING_LEVELS,
-  uniqueProviders,
-} from './desktop-model';
+import { modelsForProvider, modelLabel, THINKING_LEVELS, uniqueProviders } from './desktop-model';
 
 interface NewTaskPageProps {
   client: PiWebClient;
   models: PiModel[];
+  modelsLoading: boolean;
   navigate: (destination: string) => void;
   sessions: SessionSummary[];
 }
 
-export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageProps) {
+export function NewTaskPage({
+  client,
+  models,
+  modelsLoading,
+  navigate,
+  sessions,
+}: NewTaskPageProps) {
   const [path, setPath] = useState('');
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState<File[]>([]);
-  const [settings, setSettings] = useState<SessionDefaults>(DEFAULT_SESSION_SETTINGS);
+  const [settings, setSettings] = useState<SessionDefaults | null>(null);
   const [settingsResolved, setSettingsResolved] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const pathInitialized = useRef(false);
   const settingsTouched = useRef(false);
+  const host = useMemo(() => client.getHostContext(), [client]);
 
   useEffect(() => {
     let active = true;
@@ -40,14 +43,21 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
       .then((defaults) => {
         if (active && !settingsTouched.current) setSettings(defaults);
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (active) {
+          setSettings(null);
+          setSettingsError(
+            `Open Pi on ${host.instanceName} and log in to a model provider before starting a task.`,
+          );
+        }
+      })
       .finally(() => {
         if (active) setSettingsResolved(true);
       });
     return () => {
       active = false;
     };
-  }, [client]);
+  }, [client, host.instanceName]);
 
   useEffect(() => {
     if (!pathInitialized.current && sessions[0]?.project) {
@@ -56,25 +66,44 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
     }
   }, [sessions]);
 
+  const selectedProvider = settings?.modelProvider ?? '';
+  const selectedModel = settings?.modelId ?? '';
   const providers = useMemo(
-    () => uniqueProviders(models, settings.modelProvider),
-    [models, settings.modelProvider],
+    () => uniqueProviders(models, selectedProvider),
+    [models, selectedProvider],
   );
   const providerModels = useMemo(
-    () => modelsForProvider(models, settings.modelProvider),
-    [models, settings.modelProvider],
+    () => modelsForProvider(models, selectedProvider),
+    [models, selectedProvider],
   );
+  const runtimeReady =
+    settingsResolved &&
+    !modelsLoading &&
+    !settingsError &&
+    !!settings &&
+    models.some(
+      (model) => model.provider === settings.modelProvider && model.id === settings.modelId,
+    );
+  const runtimeLoading = !settingsResolved || modelsLoading;
+  const runtimeError =
+    settingsError ||
+    (!runtimeLoading && !runtimeReady
+      ? `Open Pi on ${host.instanceName} and log in to a model provider before starting a task.`
+      : '');
 
   const changeProvider = (provider: string) => {
+    if (!settings) return;
     settingsTouched.current = true;
     const modelId = modelsForProvider(models, provider)[0]?.id || settings.modelId;
-    setSettings((current) => ({ ...current, modelProvider: provider, modelId }));
+    setSettings((current) =>
+      current ? { ...current, modelProvider: provider, modelId } : current,
+    );
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const resolvedPath = path.trim();
-    if (!resolvedPath || creating) return;
+    if (!resolvedPath || creating || !runtimeReady || !settings) return;
     setCreating(true);
     setError('');
     try {
@@ -108,8 +137,12 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
           <span>Workspace</span>
           <strong>New task</strong>
         </div>
-        <span className="desktop-resolved-badge" data-resolved={settingsResolved || undefined}>
-          {settingsResolved ? 'Defaults resolved' : 'Resolving defaults…'}
+        <span className="desktop-resolved-badge" data-resolved={runtimeReady || undefined}>
+          {runtimeLoading
+            ? 'Resolving runtime…'
+            : runtimeReady
+              ? 'Runtime ready'
+              : 'Runtime unavailable'}
         </span>
       </header>
       <div className="desktop-new-task-stage">
@@ -170,26 +203,32 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
                 <span>Provider account</span>
                 <select
                   aria-label="Provider account"
+                  disabled={!runtimeReady}
                   onChange={(event) => changeProvider(event.currentTarget.value)}
-                  value={settings.modelProvider}
+                  value={selectedProvider}
                 >
-                  {providers.map((provider) => (
-                    <option key={provider} value={provider}>
-                      {provider}
-                    </option>
-                  ))}
+                  {providers.length ? (
+                    providers.map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">{runtimeLoading ? 'Loading…' : 'Unavailable'}</option>
+                  )}
                 </select>
               </label>
               <label>
                 <span>Model</span>
                 <select
                   aria-label="Model"
+                  disabled={!runtimeReady}
                   onChange={(event) => {
                     settingsTouched.current = true;
                     const modelId = event.currentTarget.value;
-                    setSettings((current) => ({ ...current, modelId }));
+                    setSettings((current) => (current ? { ...current, modelId } : current));
                   }}
-                  value={settings.modelId}
+                  value={selectedModel}
                 >
                   {providerModels.length ? (
                     providerModels.map((model) => (
@@ -198,7 +237,9 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
                       </option>
                     ))
                   ) : (
-                    <option value={settings.modelId}>{settings.modelId}</option>
+                    <option value={selectedModel}>
+                      {runtimeLoading ? 'Loading…' : 'Unavailable'}
+                    </option>
                   )}
                 </select>
               </label>
@@ -207,12 +248,13 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
                 <span>Thinking</span>
                 <select
                   aria-label="Thinking"
+                  disabled={!runtimeReady}
                   onChange={(event) => {
                     settingsTouched.current = true;
                     const thinkingLevel = event.currentTarget.value as ThinkingLevel;
-                    setSettings((current) => ({ ...current, thinkingLevel }));
+                    setSettings((current) => (current ? { ...current, thinkingLevel } : current));
                   }}
-                  value={settings.thinkingLevel}
+                  value={settings?.thinkingLevel ?? 'off'}
                 >
                   {THINKING_LEVELS.map((level) => (
                     <option key={level} value={level}>
@@ -237,7 +279,7 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
               </label>
               <button
                 className="desktop-create-button"
-                disabled={creating || !path.trim()}
+                disabled={creating || !path.trim() || !runtimeReady}
                 type="submit"
               >
                 {creating ? (
@@ -252,9 +294,22 @@ export function NewTaskPage({ client, models, navigate, sessions }: NewTaskPageP
           <div className="desktop-new-task-hint">
             <span>Ctrl Enter to start</span>
             <span>
-              {settings.modelProvider} / {settings.modelId} · {settings.thinkingLevel}
+              {runtimeReady && settings
+                ? `${settings.modelProvider} / ${settings.modelId} · ${settings.thinkingLevel}`
+                : runtimeLoading
+                  ? 'Loading model runtime…'
+                  : 'Model runtime unavailable'}
             </span>
           </div>
+          {runtimeError ? (
+            <div
+              aria-label="Model provider unavailable"
+              className="desktop-composer-error"
+              role="alert"
+            >
+              {runtimeError}
+            </div>
+          ) : null}
           {error ? <div className="desktop-composer-error">{error}</div> : null}
         </form>
       </div>

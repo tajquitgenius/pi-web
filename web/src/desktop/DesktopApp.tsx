@@ -61,6 +61,7 @@ function WorkspaceProduct({
   const [sessionsError, setSessionsError] = useState('');
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(new Set());
   const [models, setModels] = useState<PiModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     readStoredBoolean(localStorage, SIDEBAR_COLLAPSED_KEY, false),
   );
@@ -89,7 +90,8 @@ function WorkspaceProduct({
     void client
       .listModels()
       .then((result) => setModels(result.models))
-      .catch(() => undefined);
+      .catch(() => setModels([]))
+      .finally(() => setModelsLoading(false));
     const subscription = client.subscribe('__all__', {
       onEvent: (name, payload) => {
         if (name === 'status-snapshot') {
@@ -167,7 +169,13 @@ function WorkspaceProduct({
   let content: React.ReactNode;
   if (route.path === '/') {
     content = (
-      <NewTaskPage client={client} models={models} navigate={navigate} sessions={sessions} />
+      <NewTaskPage
+        client={client}
+        models={models}
+        modelsLoading={modelsLoading}
+        navigate={navigate}
+        sessions={sessions}
+      />
     );
   } else if (route.path === '/session') {
     content = (
@@ -216,6 +224,7 @@ function WorkspaceProduct({
       <ProjectSidebar
         activeSessionId={activeSessionId}
         collapsed={sidebarCollapsed}
+        host={host}
         loading={sessionsLoading}
         navigate={navigate}
         onToggle={toggleSidebar}

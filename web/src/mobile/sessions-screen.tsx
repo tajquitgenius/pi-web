@@ -73,7 +73,7 @@ function HostSwitcher({ host }: { host: HostContext }) {
       </summary>
       <div className="mobile-host-menu">
         <div className="mobile-host-current" aria-current="page">
-          <span>{t('host.currentComputer')}</span>
+          <span>{t('host.currentComputer')} · Online</span>
           <strong>{host.instanceName}</strong>
         </div>
         {host.peers.length > 0 && <p>{t('host.otherComputers')}</p>}
@@ -110,13 +110,24 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
     Promise.all([client.getSessionDefaults(), client.listModels()])
       .then(([defaults, result]) => {
         if (!active) return;
+        const available = result.models.some(
+          (model) => model.provider === defaults.modelProvider && model.id === defaults.modelId,
+        );
+        if (!available) throw new Error('no authenticated model');
         setModels(result.models);
         setModelProvider(defaults.modelProvider);
         setModelId(defaults.modelId);
         setThinkingLevel(defaults.thinkingLevel);
       })
-      .catch((loadError) => {
-        if (active) setError(errorMessage(loadError, 'Could not load session settings.'));
+      .catch(() => {
+        if (active) {
+          setModels([]);
+          setModelProvider('');
+          setModelId('');
+          setError(
+            `Open Pi on ${host.instanceName} and log in to a model provider before starting a task.`,
+          );
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -126,12 +137,17 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
     };
   }, [client]);
 
-  const selectedModelKey = `${modelProvider}/${modelId}`;
+  const selectedModelKey = modelProvider && modelId ? `${modelProvider}/${modelId}` : '';
   const modelOptions = useMemo(() => {
     if (models.some((model) => `${model.provider}/${model.id}` === selectedModelKey)) return models;
     if (!modelProvider || !modelId) return models;
     return [{ provider: modelProvider, id: modelId, name: modelId }, ...models];
   }, [modelId, modelProvider, models, selectedModelKey]);
+
+  const runtimeReady =
+    !loading &&
+    !error &&
+    models.some((model) => model.provider === modelProvider && model.id === modelId);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -223,14 +239,18 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
                 setModelId(selected.id);
               }}
             >
-              {modelOptions.map((model) => (
-                <option
-                  key={`${model.provider}/${model.id}`}
-                  value={`${model.provider}/${model.id}`}
-                >
-                  {model.provider} · {model.name || model.id}
-                </option>
-              ))}
+              {modelOptions.length ? (
+                modelOptions.map((model) => (
+                  <option
+                    key={`${model.provider}/${model.id}`}
+                    value={`${model.provider}/${model.id}`}
+                  >
+                    {model.provider} · {model.name || model.id}
+                  </option>
+                ))
+              ) : (
+                <option value="">{loading ? 'Loading…' : 'No authenticated models'}</option>
+              )}
             </select>
 
             <label htmlFor="mobile-task-thinking">Thinking</label>
@@ -258,11 +278,11 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
               </div>
               <div>
                 <dt>Provider</dt>
-                <dd>{modelProvider || 'Loading…'}</dd>
+                <dd>{modelProvider || (loading ? 'Loading…' : 'Unavailable')}</dd>
               </div>
               <div>
                 <dt>Model</dt>
-                <dd>{modelId || 'Loading…'}</dd>
+                <dd>{modelId || (loading ? 'Loading…' : 'Unavailable')}</dd>
               </div>
               <div>
                 <dt>Thinking</dt>
@@ -282,7 +302,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
           <button
             className="mobile-primary-button mobile-wide-button"
             type="submit"
-            disabled={loading || creating || !modelProvider || !modelId}
+            disabled={!runtimeReady || creating}
           >
             <Plus aria-hidden="true" size={19} />
             {creating ? 'Creating task…' : 'Create task'}

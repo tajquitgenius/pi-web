@@ -104,7 +104,7 @@ export function HostRail({
             className="desktop-environment-button"
             href={peer.url}
             key={`${peer.url}:${peer.label}`}
-            title={peer.label}
+            title={`${peer.label} (configured host; open to check)`}
           >
             <Server aria-hidden="true" size={16} />
           </a>
@@ -131,6 +131,7 @@ export function HostRail({
 interface ProjectSidebarProps {
   activeSessionId: string;
   collapsed: boolean;
+  host: HostContext;
   loading: boolean;
   navigate: (destination: string) => void;
   onToggle: () => void;
@@ -143,6 +144,7 @@ interface ProjectSidebarProps {
 export function ProjectSidebar({
   activeSessionId,
   collapsed,
+  host,
   loading,
   navigate,
   onToggle,
@@ -187,9 +189,11 @@ export function ProjectSidebar({
   return (
     <aside aria-label="Projects and threads" className="desktop-project-sidebar">
       <header className="desktop-sidebar-header">
-        <div className="desktop-sidebar-host">
-          <span className="desktop-sidebar-eyebrow">Environment</span>
-          <strong>Threads</strong>
+        <div className="desktop-sidebar-host" aria-label={`${host.instanceName} online`}>
+          <span className="desktop-sidebar-eyebrow">
+            <span aria-hidden="true" className="desktop-host-online-dot" /> Online
+          </span>
+          <strong>{host.instanceName}</strong>
         </div>
         <button
           aria-label="Hide projects and threads"
