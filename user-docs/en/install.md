@@ -210,13 +210,13 @@ PI_WEB_TOKEN=replace-with-a-random-token
 EOF
 ```
 
-Use straight single quotes around values containing spaces or JSON. The startup loaders remove one matching outer quote pair.
+Use straight single quotes around values containing spaces or JSON. The startup loaders remove one matching outer quote pair. Create a different environment file and generate a different `PI_WEB_TOKEN` on every computer; do not copy Pi credentials, runtime state, or tokens between instances. The staged personal, work, and cloud examples live in [`deploy/cloudflare`](https://github.com/tajquitgenius/pi-web/tree/main/deploy/cloudflare).
 
 Restart pi-web, then use `/remote` to show the public URL and QR code. The command never places the token in the URL.
 
 `PI_WEB_PUBLIC_URL` must be an origin-only HTTPS URL: no path, query, fragment, credentials, or wildcard. When set, pi-web refuses a non-loopback bind and accepts browser traffic only for that hostname. It marks the token cookie Secure on the public host.
 
-See [Remote access with Cloudflare Access](cloudflare-access.md) for the recommended tunnel and identity configuration.
+See [Remote access with Cloudflare Access](cloudflare-access.md) for the recommended exact-host Access applications, independent named tunnels, identity allowlist, and verification checklist.
 
 > Remote pi-web access is equivalent to remote code execution as your operating-system user. Require an exact-user identity policy at the tunnel edge, keep the application token for defense in depth, and never publish port `31415` directly.
 
