@@ -207,6 +207,7 @@ func New(deps Deps) (*Server, error) {
 	if pm, err := NewPushManager(agentDir); err != nil {
 		fmt.Fprintf(os.Stderr, "push notifications unavailable: %v\n", err)
 	} else {
+		pm.ConfigureDeviceBinding(pairingStore, s.publicAuthority != "")
 		s.push = pm
 	}
 	s.watchFiles()
@@ -400,7 +401,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 		s.push.Register(mux, s.auth.Wrap)
 	}
 	mux.HandleFunc("/api/sounds", s.auth.Wrap(s.handleApiSounds))
-	mux.HandleFunc("/sounds/", s.handleSounds)
+	mux.HandleFunc("/sounds/", s.auth.Wrap(s.handleSounds))
 	if s.updater != nil {
 		mux.HandleFunc("/api/version", s.auth.Wrap(s.handleVersion))
 		mux.HandleFunc("/api/check-update", s.auth.Wrap(s.handleCheckUpdate))
@@ -432,17 +433,25 @@ func (s *Server) loadSummaries() ([]sessions.SessionSummary, error) {
 // ── SSE clients ────────────────────────────────────────────────────────────
 
 type sseClient struct {
-	ch     chan string
-	sessID string
-	mu     sync.Mutex
-	queued map[string]bool
+	ch              chan string
+	sessID          string
+	deviceID        string
+	deviceExpiresAt time.Time
+	mu              sync.Mutex
+	queued          map[string]bool
 }
 
 func (s *Server) addClient(sessID string) *sseClient {
+	return s.addClientForDevice(sessID, pairedDeviceIdentity{})
+}
+
+func (s *Server) addClientForDevice(sessID string, device pairedDeviceIdentity) *sseClient {
 	c := &sseClient{
-		ch:     make(chan string, 16),
-		sessID: sessID,
-		queued: make(map[string]bool),
+		ch:              make(chan string, 16),
+		sessID:          sessID,
+		deviceID:        device.ID,
+		deviceExpiresAt: device.ExpiresAt,
+		queued:          make(map[string]bool),
 	}
 	s.clientsMu.Lock()
 	s.clients = append(s.clients, c)
@@ -467,14 +476,36 @@ func eventKey(msg string) string {
 func (s *Server) removeClient(target *sseClient) {
 	s.clientsMu.Lock()
 	filtered := s.clients[:0]
+	found := false
 	for _, c := range s.clients {
-		if c != target {
-			filtered = append(filtered, c)
+		if c == target {
+			found = true
+			continue
 		}
+		filtered = append(filtered, c)
+	}
+	s.clients = filtered
+	if found {
+		close(target.ch)
+	}
+	s.clientsMu.Unlock()
+}
+
+func (s *Server) closeDeviceClients(deviceID string) {
+	if deviceID == "" {
+		return
+	}
+	s.clientsMu.Lock()
+	filtered := s.clients[:0]
+	for _, client := range s.clients {
+		if client.deviceID == deviceID {
+			close(client.ch)
+			continue
+		}
+		filtered = append(filtered, client)
 	}
 	s.clients = filtered
 	s.clientsMu.Unlock()
-	close(target.ch)
 }
 
 func (s *Server) BroadcastChatPreview(sessionID string, preview rpc.StreamPreview) {

@@ -4,9 +4,11 @@ import type {
   ChatWorkerStatus,
   HostContext,
   ModelsResult,
+  MutationResult,
   NewSessionInput,
   NewSessionResult,
   PairedDevicesResult,
+  PairingCode,
   PairingResult,
   PairingStatus,
   PairingSubmission,
@@ -22,18 +24,18 @@ import type {
   SessionList,
   SessionListQuery,
   SessionSummary,
+  SetThinkingLevelResult,
   ThinkingLevel,
 } from './contracts';
 
-const SSE_EVENT_NAMES: PiWebSSEEventName[] = [
-  'reload',
-  'new-session',
+const NAMED_SSE_EVENT_NAMES = [
   'chat-preview',
   'status-snapshot',
   'status-delta',
   'annotations',
-  'btw',
-];
+  'queue',
+  'btw-changed',
+] as const satisfies readonly PiWebSSEEventName[];
 
 const DEFAULT_HOST_CONTEXT: HostContext = {
   instanceName: 'This computer',
@@ -55,11 +57,13 @@ export interface PiWebClientOptions {
 
 export class PiWebClientError extends Error {
   readonly status: number;
+  readonly retryAfter: string | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfter: string | null = null) {
     super(message);
     this.name = 'PiWebClientError';
     this.status = status;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -146,7 +150,7 @@ export function createPiWebClient({
       } catch {
         // Keep the status-based message for non-JSON errors.
       }
-      throw new PiWebClientError(response.status, message);
+      throw new PiWebClientError(response.status, message, response.headers.get('Retry-After'));
     }
     if (response.status === 204) return undefined as Response;
     return (await response.json()) as Response;
@@ -225,12 +229,18 @@ export function createPiWebClient({
       return request<ChatWorkerStatus>(`/api/worker-status?id=${encodeURIComponent(sessionId)}`);
     },
 
-    setModel(sessionId: string, provider: string, modelId: string): Promise<unknown> {
-      return postJSON(`/api/set-model?id=${encodeURIComponent(sessionId)}`, { provider, modelId });
+    setModel(sessionId: string, provider: string, modelId: string): Promise<MutationResult> {
+      return postJSON<MutationResult>(`/api/set-model?id=${encodeURIComponent(sessionId)}`, {
+        provider,
+        modelId,
+      });
     },
 
-    setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<unknown> {
-      return postJSON(`/api/set-thinking-level?id=${encodeURIComponent(sessionId)}`, { level });
+    setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<SetThinkingLevelResult> {
+      return postJSON<SetThinkingLevelResult>(
+        `/api/set-thinking-level?id=${encodeURIComponent(sessionId)}`,
+        { level },
+      );
     },
 
     getHostContext(): HostContext {
@@ -239,8 +249,12 @@ export function createPiWebClient({
 
     subscribe(topic: PiWebSSETopic, handlers: SSESubscriptionHandlers): SSESubscription {
       const source = new EventSourceImpl(`/events?id=${encodeURIComponent(topic)}`);
-      source.onmessage = (event) => handlers.onEvent('message', parseSSEPayload(event.data));
-      for (const name of SSE_EVENT_NAMES) {
+      source.onmessage = (event) => {
+        if (event.data === 'reload' || event.data === 'new-session') {
+          handlers.onEvent(event.data, undefined);
+        }
+      };
+      for (const name of NAMED_SSE_EVENT_NAMES) {
         source.addEventListener(name, (event) => {
           const message = event as MessageEvent<string>;
           handlers.onEvent(name, parseSSEPayload(message.data) as PiWebSSEEventMap[typeof name]);
@@ -252,6 +266,10 @@ export function createPiWebClient({
 
     getPairingStatus(): Promise<PairingStatus> {
       return request<PairingStatus>('/api/pairing-status');
+    },
+
+    createPairingCode(): Promise<PairingCode> {
+      return postJSON<PairingCode>('/api/pairing-codes', {});
     },
 
     submitPairing(input: PairingSubmission): Promise<PairingResult> {

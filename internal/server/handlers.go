@@ -290,6 +290,7 @@ func paginatedEntries(entries []map[string]any) (out []map[string]any, total, fr
 // sessionResponseMap is the JSON shape the SPA consumes for a session, shared by
 // the /api/session endpoint and the bootstrap embedded in the page shell.
 func sessionResponseMap(session sessions.Session, entries []map[string]any, total, from int) map[string]any {
+	settings := sessions.CurrentSettings(session)
 	return map[string]any{
 		"header":             session.Header,
 		"entries":            entries,
@@ -300,6 +301,7 @@ func sessionResponseMap(session sessions.Session, entries []map[string]any, tota
 		"chatDisabledReason": session.ChatDisabledReason,
 		"model":              session.Model,
 		"modelProvider":      session.ModelProvider,
+		"thinkingLevel":      settings.ThinkingLevel,
 	}
 }
 

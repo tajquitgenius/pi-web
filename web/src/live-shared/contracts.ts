@@ -48,6 +48,7 @@ export interface SessionDetails {
   chatDisabledReason: string;
   model: string;
   modelProvider: string;
+  thinkingLevel?: ThinkingLevel;
 }
 
 export interface SessionDefaults {
@@ -140,15 +141,42 @@ export interface StatusSnapshot {
   statuses: Record<string, SessionStatus>;
 }
 
+export interface ChatPreview {
+  content: string;
+  done: boolean;
+}
+
+export interface Annotation {
+  id: string;
+  sessionId: string;
+  anchorId: string;
+  startOffset: number;
+  endOffset: number;
+  kind: string;
+  text: string;
+  original: string;
+  source: string;
+  createdAt: number;
+}
+
+export interface AnnotationSnapshot {
+  type: 'snapshot';
+  annotations: Annotation[];
+}
+
+export interface SessionChangedEvent {
+  sessionId: string;
+}
+
 export interface PiWebSSEEventMap {
-  message: unknown;
-  reload: unknown;
-  'new-session': unknown;
-  'chat-preview': unknown;
+  reload: undefined;
+  'new-session': undefined;
+  'chat-preview': ChatPreview;
   'status-snapshot': StatusSnapshot;
   'status-delta': SessionStatus;
-  annotations: unknown;
-  btw: unknown;
+  annotations: AnnotationSnapshot;
+  queue: SessionChangedEvent;
+  'btw-changed': SessionChangedEvent;
 }
 
 export type PiWebSSEEventName = keyof PiWebSSEEventMap;
@@ -173,6 +201,11 @@ export interface PairingSubmission {
   label: string;
 }
 
+export interface PairingCode {
+  code: string;
+  expiresAt: string;
+}
+
 export interface PairedDevice {
   id: string;
   label: string;
@@ -185,6 +218,14 @@ export interface PairedDevice {
 export interface PairingResult {
   paired: boolean;
   device: PairedDevice;
+}
+
+export interface MutationResult {
+  ok: boolean;
+}
+
+export interface SetThinkingLevelResult extends MutationResult {
+  thinkingLevel: ThinkingLevel;
 }
 
 export interface PairedDevicesResult {
@@ -200,11 +241,12 @@ export interface PiWebClient {
   sendChat(sessionId: string, input: ChatInput): Promise<ChatResult>;
   cancelChat(sessionId: string): Promise<ChatResult>;
   getWorkerStatus(sessionId: string): Promise<ChatWorkerStatus>;
-  setModel(sessionId: string, provider: string, modelId: string): Promise<unknown>;
-  setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<unknown>;
+  setModel(sessionId: string, provider: string, modelId: string): Promise<MutationResult>;
+  setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<SetThinkingLevelResult>;
   getHostContext(): HostContext;
   subscribe(topic: PiWebSSETopic, handlers: SSESubscriptionHandlers): SSESubscription;
   getPairingStatus(): Promise<PairingStatus>;
+  createPairingCode(): Promise<PairingCode>;
   submitPairing(input: PairingSubmission): Promise<PairingResult>;
   listPairedDevices(): Promise<PairedDevicesResult>;
   revokePairedDevice(deviceId: string): Promise<void>;

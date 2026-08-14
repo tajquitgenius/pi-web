@@ -607,6 +607,27 @@ func TestParseSummaryAccumulatesUsage(t *testing.T) {
 	}
 }
 
+func TestReadSessionSettingsTracksPersistedProviderAliasModelAndThinking(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "s.jsonl")
+	content := `{"type":"model_change","provider":"openai-codex","modelId":"gpt-old"}` + "\n" +
+		`{"type":"thinking_level_change","thinkingLevel":"medium"}` + "\n" +
+		`{"type":"message","message":{"role":"assistant","provider":"openai-codex-secondary","model":"gpt-5.6-sol","content":"done"}}` + "\n" +
+		`{"type":"thinking_level_change","thinkingLevel":"high"}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := ReadSessionSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := (InitialSettings{ModelProvider: "openai-codex-secondary", ModelID: "gpt-5.6-sol", ThinkingLevel: "high"})
+	if settings != want {
+		t.Fatalf("settings = %#v, want %#v", settings, want)
+	}
+}
+
 func TestParseSummaryTracksLatestModelInfo(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "s.jsonl")

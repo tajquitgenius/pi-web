@@ -32,7 +32,9 @@ Phone / personal laptop / work laptop
                  │
           ordinary HTTPS
                  │
-       Cloudflare Access
+ Cloudflare Access (Google)
+                 │
+      90-day device pairing
                  │
        Cloudflare Tunnel
                  │
@@ -42,7 +44,7 @@ Phone / personal laptop / work laptop
   local session files + Pi RPC workers
 ```
 
-Run one independent installation per computer. The host switcher contains ordinary links to the other installations; it never sends cross-origin API requests or shares credentials.
+Run one independent installation per computer. `pi.tajwar.org` remains the canonical Main hub and links to every configured server, including the Work laptop at `work.pi.tajwar.org`. Each link performs a top-level navigation. Pi-web never aggregates sessions, sends cross-origin API requests, or shares credentials between hosts.
 
 ## Install
 
@@ -68,10 +70,11 @@ http://127.0.0.1:31415
 Create or edit `~/.config/pi-web/env` on each computer:
 
 ```bash
-PI_WEB_INSTANCE_NAME='Personal laptop'
-PI_WEB_PUBLIC_URL=https://personal-pi.example.com
-PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work-pi.example.com"},{"label":"Cloud runner","url":"https://cloud-pi.example.com"}]'
-PI_WEB_TOKEN=replace-with-a-random-token
+PI_WEB_INSTANCE_NAME='Main'
+PI_WEB_PUBLIC_URL=https://pi.tajwar.org
+PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work.pi.tajwar.org"},{"label":"Personal","url":"https://personal.pi.tajwar.org"},{"label":"Cloud","url":"https://cloud.pi.tajwar.org"}]'
+# Optional extra defense after Access and device pairing:
+# PI_WEB_TOKEN=replace-with-a-random-token
 ```
 
 Use straight single quotes around values containing spaces or JSON. The macOS, Linux, and Windows startup loaders remove one matching outer quote pair.
@@ -105,7 +108,7 @@ See [Cloudflare Access setup](user-docs/en/cloudflare-access.md) for the recomme
 
 ## Security boundary
 
-A remote user can execute commands and modify files available to the operating-system user running Pi. Keep pi-web on `127.0.0.1`, require an exact-user Cloudflare Access policy, and keep `PI_WEB_TOKEN` enabled for defense in depth. Never publish port `31415` directly or use `--insecure` for remote access.
+A remote user can execute commands and modify files available to the operating-system user running Pi. Keep pi-web on `127.0.0.1`, require the exact-user Google policy in Cloudflare Access, and require pi-web's per-device pairing. `PI_WEB_TOKEN` is an optional extra layer after those two gates, not a prerequisite for public pairing. Never publish port `31415` directly or use `--insecure` for remote access.
 
 Cloudflare credentials do not belong in pi-web. Install and supervise `cloudflared` separately with Cloudflare's official service.
 
@@ -119,3 +122,5 @@ make check
 ```
 
 Always use `make build`; the Go binary embeds the Vite frontend and static export bundle.
+
+See [Third-party notices](THIRD_PARTY_NOTICES.md) for upstream attribution.

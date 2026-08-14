@@ -3,6 +3,7 @@ import {
   Check,
   ChevronRight,
   ExternalLink,
+  KeyRound,
   Monitor,
   Palette,
   Server,
@@ -11,7 +12,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
-import type { PairedDevice, PiWebClient } from '../live-shared';
+import {
+  writeSurfaceOverride,
+  type PairedDevice,
+  type PairingCode,
+  type PiWebClient,
+} from '../live-shared';
 import { t } from '../shared/i18n.js';
 
 interface SettingsScreenProps {
@@ -33,8 +39,13 @@ function formatDate(value: string): string {
   }).format(parsed);
 }
 
-function setSurfaceOverride(surface: 'auto' | 'desktop' | 'mobile') {
-  document.cookie = `pi-web-surface=${surface};path=/;SameSite=Lax;max-age=31536000`;
+function formatCodeExpiry(value: string): string {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return 'Unknown';
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsed);
 }
 
 function storedTheme(): string {
@@ -65,6 +76,8 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
   const [devicesLoading, setDevicesLoading] = useState(true);
   const [deviceError, setDeviceError] = useState('');
   const [revokingId, setRevokingId] = useState('');
+  const [pairingCode, setPairingCode] = useState<PairingCode | null>(null);
+  const [creatingCode, setCreatingCode] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -87,6 +100,18 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
       active = false;
     };
   }, [client]);
+
+  const createPairingCode = async () => {
+    setCreatingCode(true);
+    setDeviceError('');
+    try {
+      setPairingCode(await client.createPairingCode());
+    } catch (error) {
+      setDeviceError(errorMessage(error, t('settings.pairingCodeError')));
+    } finally {
+      setCreatingCode(false);
+    }
+  };
 
   const revoke = async (device: PairedDevice) => {
     setRevokingId(device.id);
@@ -139,7 +164,7 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
           <a
             className="mobile-settings-link is-current"
             href={currentPath}
-            onClick={() => setSurfaceOverride('mobile')}
+            onClick={() => writeSurfaceOverride('mobile')}
           >
             <span>
               <strong>Mobile product</strong>
@@ -150,7 +175,7 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
           <a
             className="mobile-settings-link"
             href={currentPath}
-            onClick={() => setSurfaceOverride('desktop')}
+            onClick={() => writeSurfaceOverride('desktop')}
           >
             <span>
               <strong>Desktop product</strong>
@@ -161,7 +186,7 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
           <a
             className="mobile-settings-link"
             href={currentPath}
-            onClick={() => setSurfaceOverride('auto')}
+            onClick={() => writeSurfaceOverride('auto')}
           >
             <span>
               <strong>Automatic selection</strong>
@@ -242,6 +267,27 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
             <p className="mobile-settings-note">
               Paired devices can only be administered on the host computer.
             </p>
+          )}
+          {local && !devicesLoading && (
+            <div className="mobile-pairing-code-actions">
+              <button
+                className="mobile-secondary-button mobile-wide-button"
+                disabled={creatingCode}
+                onClick={() => void createPairingCode()}
+                type="button"
+              >
+                <KeyRound aria-hidden="true" size={18} />
+                {creatingCode ? t('settings.creatingPairingCode') : t('settings.createPairingCode')}
+              </button>
+              {pairingCode ? (
+                <div className="mobile-pairing-code-result">
+                  <output aria-label={t('settings.pairingCodeLabel')}>{pairingCode.code}</output>
+                  <small>
+                    {t('settings.pairingCodeExpires')} {formatCodeExpiry(pairingCode.expiresAt)}
+                  </small>
+                </div>
+              ) : null}
+            </div>
           )}
           {local && devices.length === 0 && !devicesLoading && (
             <p className="mobile-settings-note">No remote devices are paired.</p>

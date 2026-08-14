@@ -62,11 +62,11 @@ Layout follows a **900px breakpoint**, not device type. Seven projects:
 
 | Project | Engine | Viewport | Layout |
 |---|---|---|---|
-| Desktop Chrome | Chromium | 1280 | desktop |
+| Desktop Chrome | Chromium | 1440×900 | desktop |
 | Desktop Firefox | Firefox | 1280 | desktop |
 | Desktop Safari | WebKit | 1280 | desktop |
 | Mobile Chrome (Pixel 5) | Chromium | 393 | mobile |
-| Mobile Safari (iPhone 13) | WebKit | 390 | mobile |
+| Mobile Safari (iPhone 15 Pro) | WebKit | 393 | mobile |
 | iPad (gen 7) | WebKit | 810 portrait | mobile |
 | iPad landscape | WebKit | ~1080 | desktop |
 
@@ -163,5 +163,7 @@ The `e2e` job in `.github/workflows/ci.yml`: `npm ci` →
    `collapseScratchpad(page)` before `goto` (see chat/mobile specs).
 4. For anything that writes to a session, create a per-test file via
    `e2e/lib/sessions.ts`; never mutate the committed fixtures.
+
+`react-products.spec.ts` is the decisive merged-product acceptance flow. It creates an explicit provider-account session against the stub Pi, verifies the persisted runtime settings and reply/cancel flow, checks the desktop and mobile layout constraints, and writes screenshots under `PI_WEB_E2E_OUTPUT_DIR` (or the operating system's temporary directory).
 
 Keep this doc in sync when specs, fixtures, or the project matrix change.

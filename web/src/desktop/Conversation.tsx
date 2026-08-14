@@ -27,6 +27,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
+import { readEmbeddedSession } from '../live-shared';
 import type {
   PiModel,
   PiWebClient,
@@ -39,7 +40,6 @@ import {
   modelsForProvider,
   modelLabel,
   projectLabel,
-  readEmbeddedSession,
   THINKING_LEVELS,
   uniqueProviders,
 } from './desktop-model';
@@ -657,7 +657,7 @@ export function SessionPage({
           setStreamingText(textValue(preview?.content));
           setRunning(preview?.done !== true);
           if (preview?.done === true) window.setTimeout(() => void load(), 80);
-        } else if (name === 'message' || name === 'reload') {
+        } else if (name === 'reload') {
           void load();
         } else if (name === 'status-delta') {
           const status = recordValue(payload);
@@ -667,6 +667,10 @@ export function SessionPage({
     });
     return () => subscription.close();
   }, [client, load, sessionId]);
+
+  useEffect(() => {
+    if (details?.thinkingLevel) setWorkerThinking(details.thinkingLevel);
+  }, [details?.thinkingLevel]);
 
   useEffect(() => {
     const pane = transcriptRef.current;

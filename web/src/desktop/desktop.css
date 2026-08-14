@@ -1658,6 +1658,34 @@ body.desktop-no-scroll {
   color: var(--danger);
 }
 
+.desktop-pairing-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dim-2);
+}
+
+.desktop-pairing-code > div {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+}
+
+.desktop-pairing-code output {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.desktop-pairing-code small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
 .desktop-device-toolbar {
   display: flex;
   height: 38px;

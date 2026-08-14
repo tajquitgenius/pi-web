@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,23 +14,28 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 
 	"pi-web/internal/agentdir"
+	"pi-web/internal/pairing"
 )
 
 // PushManager owns the VAPID key pair and the set of browser push
 // subscriptions. Subscriptions are persisted as JSON on disk so they
 // survive restarts; one file under ~/.pi/agent/web/.
 type PushManager struct {
-	mu         sync.Mutex
-	publicKey  string
-	privateKey string
-	subject    string
-	storeDir   string
-	subs       map[string]pushSub
-	client     *http.Client
+	mu               sync.Mutex
+	publicKey        string
+	privateKey       string
+	subject          string
+	storeDir         string
+	subs             map[string]pushSub
+	client           *http.Client
+	pairing          *pairing.Store
+	sendNotification func([]byte, *webpush.Subscription, *webpush.Options) (*http.Response, error)
 }
 
 type pushSub struct {
 	Endpoint string `json:"endpoint"`
+	DeviceID string `json:"deviceId,omitempty"`
+	Local    bool   `json:"local,omitempty"`
 	Keys     struct {
 		P256dh string `json:"p256dh"`
 		Auth   string `json:"auth"`
@@ -65,10 +71,11 @@ func NewPushManager(agentDir string) (*PushManager, error) {
 	}
 
 	m := &PushManager{
-		storeDir: dir,
-		subs:     make(map[string]pushSub),
-		subject:  "mailto:pi-web@local",
-		client:   &http.Client{Timeout: 10 * time.Second},
+		storeDir:         dir,
+		subs:             make(map[string]pushSub),
+		subject:          "mailto:pi-web@local",
+		client:           &http.Client{Timeout: 10 * time.Second},
+		sendNotification: webpush.SendNotification,
 	}
 	if err := m.loadOrCreateKeys(); err != nil {
 		return nil, err
@@ -113,9 +120,15 @@ func (m *PushManager) loadSubs() {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.subs = subs
-	if m.subs == nil {
-		m.subs = make(map[string]pushSub)
+	m.subs = make(map[string]pushSub, len(subs))
+	for key, sub := range subs {
+		if sub.Endpoint == "" {
+			continue
+		}
+		if key == "" || key != sub.Endpoint {
+			key = sub.Endpoint
+		}
+		m.subs[key] = sub
 	}
 }
 
@@ -128,6 +141,33 @@ func (m *PushManager) PublicKey() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.publicKey
+}
+
+// ConfigureDeviceBinding installs the paired-device authorization source. Old
+// subscription files had no device identity. On a public deployment those
+// ambiguous entries are removed rather than risking a push after revocation;
+// browsers safely re-post an existing PushSubscription on their next opt-in.
+// A local-only deployment migrates them to explicit local subscriptions.
+func (m *PushManager) ConfigureDeviceBinding(store *pairing.Store, public bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pairing = store
+	changed := false
+	for endpoint, sub := range m.subs {
+		if sub.DeviceID != "" || sub.Local {
+			continue
+		}
+		changed = true
+		if public {
+			delete(m.subs, endpoint)
+			continue
+		}
+		sub.Local = true
+		m.subs[endpoint] = sub
+	}
+	if changed {
+		m.saveSubsLocked()
+	}
 }
 
 // Register installs the /api/push/* handlers on mux behind auth.
@@ -154,6 +194,13 @@ func (m *PushManager) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid subscription")
 		return
 	}
+	if device, ok := pairedDeviceFromContext(r.Context()); ok {
+		sub.DeviceID = device.ID
+		sub.Local = false
+	} else {
+		sub.DeviceID = ""
+		sub.Local = true
+	}
 	m.mu.Lock()
 	m.subs[sub.Endpoint] = sub
 	m.saveSubsLocked()
@@ -177,10 +224,34 @@ func (m *PushManager) handleUnsubscribe(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	m.mu.Lock()
-	delete(m.subs, body.Endpoint)
+	if device, ok := pairedDeviceFromContext(r.Context()); ok {
+		if sub, exists := m.subs[body.Endpoint]; exists && sub.DeviceID == device.ID {
+			delete(m.subs, body.Endpoint)
+		}
+	} else {
+		delete(m.subs, body.Endpoint)
+	}
 	m.saveSubsLocked()
 	m.mu.Unlock()
 	writeJSON(w, 0, map[string]any{"ok": true})
+}
+
+func (m *PushManager) RemoveDevice(deviceID string) {
+	if m == nil || deviceID == "" {
+		return
+	}
+	m.mu.Lock()
+	changed := false
+	for endpoint, sub := range m.subs {
+		if sub.DeviceID == deviceID {
+			delete(m.subs, endpoint)
+			changed = true
+		}
+	}
+	if changed {
+		m.saveSubsLocked()
+	}
+	m.mu.Unlock()
 }
 
 // NotifyDone sends a "response ready" push for a finished session.
@@ -221,24 +292,49 @@ func (m *PushManager) notify(payload map[string]string) {
 		m.mu.Unlock()
 		return
 	}
-	subs := make([]pushSub, 0, len(m.subs))
-	for _, s := range m.subs {
-		subs = append(subs, s)
+	type keyedSub struct {
+		key string
+		sub pushSub
+	}
+	subs := make([]keyedSub, 0, len(m.subs))
+	for key, sub := range m.subs {
+		subs = append(subs, keyedSub{key: key, sub: sub})
 	}
 	pub := m.publicKey
 	priv := m.privateKey
 	subj := m.subject
+	store := m.pairing
+	sendNotification := m.sendNotification
 	m.mu.Unlock()
 
 	payloadBytes, _ := json.Marshal(payload)
 
 	var stale []string
-	for _, s := range subs {
+	for _, item := range subs {
+		s := item.sub
+		if s.DeviceID != "" {
+			active := false
+			var err error
+			if store != nil {
+				active, err = store.IsDeviceActive(context.Background(), s.DeviceID)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "push device authorization failed: %v\n", err)
+				continue
+			}
+			if !active {
+				stale = append(stale, item.key)
+				continue
+			}
+		} else if !s.Local {
+			stale = append(stale, item.key)
+			continue
+		}
 		ws := &webpush.Subscription{
 			Endpoint: s.Endpoint,
 			Keys:     webpush.Keys{P256dh: s.Keys.P256dh, Auth: s.Keys.Auth},
 		}
-		resp, err := webpush.SendNotification(payloadBytes, ws, &webpush.Options{
+		resp, err := sendNotification(payloadBytes, ws, &webpush.Options{
 			HTTPClient:      m.client,
 			Subscriber:      subj,
 			VAPIDPublicKey:  pub,
@@ -252,7 +348,7 @@ func (m *PushManager) notify(payload map[string]string) {
 		if resp != nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusNotFound {
-				stale = append(stale, s.Endpoint)
+				stale = append(stale, item.key)
 			}
 		}
 	}

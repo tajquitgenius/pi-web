@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +49,17 @@ func TestHandleRenameSessionAppendsSessionInfo(t *testing.T) {
 func TestHandleApiSessionIncludesSessionName(t *testing.T) {
 	root := t.TempDir()
 	path := writeSessionFile(t, root, "test-project", "session.jsonl")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"type":"thinking_level_change","thinkingLevel":"high"}` + "\n"); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := sessions.RenameSession(path, "Live Title", func() time.Time { return time.Date(2026, 5, 8, 10, 1, 2, 0, time.UTC) }); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +90,9 @@ func TestHandleApiSessionIncludesSessionName(t *testing.T) {
 	}
 	if _, ok := payload["modelProvider"]; !ok {
 		t.Fatal("payload missing modelProvider")
+	}
+	if payload["thinkingLevel"] != "high" {
+		t.Fatalf("thinkingLevel = %#v, want high", payload["thinkingLevel"])
 	}
 }
 

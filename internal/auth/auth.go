@@ -17,6 +17,7 @@ type Middleware struct {
 	token             string
 	allowedHostsMu    sync.RWMutex
 	allowedHosts      map[string]struct{}
+	allowedSchemes    map[string]string
 	secureCookieHosts map[string]struct{}
 	allowAnyHost      bool
 	enforceKnownHosts bool
@@ -26,6 +27,7 @@ func New(token string) *Middleware {
 	return &Middleware{
 		token:             strings.TrimSpace(token),
 		allowedHosts:      make(map[string]struct{}),
+		allowedSchemes:    make(map[string]string),
 		secureCookieHosts: make(map[string]struct{}),
 	}
 }
@@ -56,9 +58,17 @@ func (a *Middleware) AllowHost(hostOrURL string) {
 	if len(authorities) == 0 {
 		return
 	}
+	expectedScheme := ""
+	if u, err := url.Parse(strings.TrimSpace(hostOrURL)); err == nil &&
+		(u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+		expectedScheme = u.Scheme
+	}
 	a.allowedHostsMu.Lock()
 	for _, authority := range authorities {
 		a.allowedHosts[authority] = struct{}{}
+		if expectedScheme != "" {
+			a.allowedSchemes[authority] = expectedScheme
+		}
 	}
 	a.enforceKnownHosts = true
 	a.allowedHostsMu.Unlock()
@@ -184,7 +194,7 @@ func (a *Middleware) allowsBoundary(w http.ResponseWriter, r *http.Request) bool
 		http.Error(w, "unrecognized host", http.StatusForbidden)
 		return false
 	}
-	if !allowsBrowserOrigin(r) {
+	if !a.allowsBrowserOrigin(r) {
 		http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
 		return false
 	}
@@ -296,7 +306,7 @@ func normalizeHostname(hostOrURL string) string {
 // auth is disabled for localhost. Browsers attach Origin to unsafe requests;
 // non-browser clients such as curl generally do not, so local automation stays
 // compatible. Sec-Fetch-Site covers browser requests that omit Origin.
-func allowsBrowserOrigin(r *http.Request) bool {
+func (a *Middleware) allowsBrowserOrigin(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return true
@@ -310,29 +320,30 @@ func allowsBrowserOrigin(r *http.Request) bool {
 		return false
 	}
 	u, err := url.Parse(origin)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if err != nil ||
+		(u.Scheme != "http" && u.Scheme != "https") ||
+		u.Host == "" ||
+		u.User != nil ||
+		u.Path != "" ||
+		u.RawQuery != "" ||
+		u.Fragment != "" {
 		return false
 	}
-	if normalizeHostname(u.Host) != normalizeHostname(r.Host) {
+
+	expectedScheme := "http"
+	authority := normalizeAuthority(r.Host)
+	a.allowedHostsMu.RLock()
+	configuredScheme := a.allowedSchemes[authority]
+	a.allowedHostsMu.RUnlock()
+	if configuredScheme != "" {
+		expectedScheme = configuredScheme
+	} else if r.TLS != nil {
+		expectedScheme = "https"
+	}
+	if u.Scheme != expectedScheme {
 		return false
 	}
-	originPort := u.Port()
-	requestURL, err := url.Parse("//" + r.Host)
-	if err != nil {
-		return false
-	}
-	requestPort := requestURL.Port()
-	defaultPort := "80"
-	if u.Scheme == "https" {
-		defaultPort = "443"
-	}
-	if originPort == "" {
-		originPort = defaultPort
-	}
-	if requestPort == "" {
-		requestPort = defaultPort
-	}
-	return originPort == requestPort
+	return normalizeAuthority(origin) == normalizeAuthority(expectedScheme+"://"+r.Host)
 }
 
 // cleanURL returns r.URL.Path with query string intact except for "token" and

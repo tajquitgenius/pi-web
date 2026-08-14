@@ -811,10 +811,23 @@ func TestHandleNewSessionRejectsUnknownExplicitModel(t *testing.T) {
 	}
 }
 
-func TestHandleNewSessionCopiesSourceModelAndThinking(t *testing.T) {
+func TestHandleNewSessionCopiesPersistedSourceModelAndThinking(t *testing.T) {
 	root := t.TempDir()
-	_ = writeSessionFile(t, root, "--tmp--source--", "source.jsonl")
-	fake := &fakeSender{state: workers.WorkerStatus{State: workers.WorkerStateIdle, ModelProvider: "openai", Model: "gpt-5", ThinkingLevel: "high"}}
+	sourcePath := writeSessionFile(t, root, "--tmp--source--", "source.jsonl")
+	sourceSettings := `{"type":"model_change","provider":"openai-codex-secondary","modelId":"gpt-5.6-sol"}` + "\n" +
+		`{"type":"thinking_level_change","thinkingLevel":"high"}` + "\n"
+	f, err := os.OpenFile(sourcePath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(sourceSettings); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeSender{getStateErr: errors.New("dormant source has no worker")}
 	s := &Server{sessionsDir: root, chatSender: fake}
 
 	projectPath := filepath.Join(root, "test-project")
@@ -848,21 +861,24 @@ func TestHandleNewSessionCopiesSourceModelAndThinking(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	if !strings.Contains(content, `"type":"model_change"`) || !strings.Contains(content, `"implicit":true`) {
+	if !strings.Contains(content, `"type":"model_change"`) ||
+		!strings.Contains(content, `"provider":"openai-codex-secondary"`) ||
+		!strings.Contains(content, `"modelId":"gpt-5.6-sol"`) ||
+		!strings.Contains(content, `"implicit":true`) {
 		t.Fatalf("new session file missing implicit model setting: %s", content)
+	}
+	if calls := fake.stateCalls(); calls != 0 {
+		t.Fatalf("GetState calls = %d, want 0 for a dormant source", calls)
 	}
 	if !strings.Contains(content, `"type":"thinking_level_change"`) || !strings.Contains(content, `"thinkingLevel":"high"`) {
 		t.Fatalf("new session file missing implicit thinking setting: %s", content)
 	}
 }
 
-func TestHandleNewSessionDoesNotSilentlyFallbackWhenSourceStateFails(t *testing.T) {
+func TestHandleNewSessionDoesNotSilentlyFallbackWhenPersistedSourceSettingsAreIncomplete(t *testing.T) {
 	root := t.TempDir()
 	_ = writeSessionFile(t, root, "--tmp--source--", "source.jsonl")
-	s := &Server{
-		sessionsDir: root,
-		chatSender:  &fakeSender{getStateErr: errors.New("worker unavailable")},
-	}
+	s := &Server{sessionsDir: root}
 	projectPath := filepath.Join(root, "test-project")
 	req := httptest.NewRequest(http.MethodPost, "/api/new-session", strings.NewReader(`{"path":`+jsonString(projectPath)+`,"sourceSessionId":"source.jsonl"}`))
 	req.Header.Set("Content-Type", "application/json")

@@ -355,6 +355,34 @@ func TestAuthRejectsCrossOriginMutationWhenTokenDisabled(t *testing.T) {
 	}
 }
 
+func TestAuthRejectsSameHostMutationFromDifferentScheme(t *testing.T) {
+	t.Run("configured public HTTPS rejects HTTP origin", func(t *testing.T) {
+		a := New("")
+		a.AllowHost("https://pi.example")
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://pi.example/api/pair", nil)
+		req.Header.Set("Origin", "http://pi.example")
+		req.Header.Set("Forwarded", "proto=https;host=pi.example")
+		req.Header.Set("X-Forwarded-Proto", "https")
+		a.Wrap(okHandler)(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", rec.Code)
+		}
+	})
+
+	t.Run("loopback HTTP rejects HTTPS origin", func(t *testing.T) {
+		a := New("")
+		a.AllowHost("127.0.0.1:31415")
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:31415/api/update", nil)
+		req.Header.Set("Origin", "https://127.0.0.1:31415")
+		a.Wrap(okHandler)(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", rec.Code)
+		}
+	})
+}
+
 func TestAuthRejectsSameHostMutationFromDifferentPort(t *testing.T) {
 	a := New("")
 	rec := httptest.NewRecorder()
@@ -362,6 +390,21 @@ func TestAuthRejectsSameHostMutationFromDifferentPort(t *testing.T) {
 	req.Header.Set("Origin", "http://127.0.0.1:8080")
 	a.Wrap(okHandler)(rec, req)
 
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestAuthIgnoresForwardedHeadersWhenCheckingHostAndOrigin(t *testing.T) {
+	a := New("")
+	a.AllowHost("https://pi.example")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "https://evil.example/api/pair", nil)
+	req.Header.Set("Origin", "https://pi.example")
+	req.Header.Set("Forwarded", "proto=https;host=pi.example")
+	req.Header.Set("X-Forwarded-Host", "pi.example")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	a.Wrap(okHandler)(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
 	}

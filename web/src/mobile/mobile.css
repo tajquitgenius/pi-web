@@ -1136,7 +1136,7 @@ textarea:disabled {
   z-index: 10;
   flex: none;
   min-width: 0;
-  padding: 6px max(8px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom))
+  padding: 3px max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom))
     max(8px, env(safe-area-inset-left));
   background: var(--chrome-bg);
   border-top: 1px solid var(--dim-2);
@@ -1500,6 +1500,41 @@ textarea:disabled {
 
 .mobile-device-row > svg {
   color: var(--muted);
+}
+
+.mobile-pairing-code-actions {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--dim-2);
+}
+
+.mobile-pairing-code-actions .mobile-secondary-button {
+  gap: 8px;
+}
+
+.mobile-pairing-code-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--dim);
+  border-radius: 10px;
+}
+
+.mobile-pairing-code-result output {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.mobile-pairing-code-result small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .mobile-settings-note {

@@ -15,8 +15,12 @@ import readline from "node:readline";
 
 const sessionArg = process.argv.indexOf("--session");
 let sessionPath = sessionArg >= 0 ? (process.argv[sessionArg + 1] ?? "") : "";
-let model = { id: "claude-opus-4-7", name: "Opus", provider: "anthropic" };
-let thinkingLevel = "medium";
+let model = {
+  id: "gpt-5.6-sol",
+  name: "GPT 5.6 Sol",
+  provider: "openai-codex-secondary",
+};
+let thinkingLevel = "high";
 let idSeq = 0;
 
 if (sessionPath) {
@@ -155,6 +159,24 @@ function handle(cmd) {
       break;
     case "get_state":
       respond(cmd.id, "get_state", { thinkingLevel, model });
+      break;
+    case "get_available_models":
+      respond(cmd.id, "get_available_models", {
+        models: [
+          {
+            provider: "openai-codex-secondary",
+            id: "gpt-5.6-sol",
+            name: "GPT 5.6 Sol",
+            reasoning: true,
+          },
+          {
+            provider: "anthropic",
+            id: "claude-opus-4-7",
+            name: "Claude Opus 4.7",
+            reasoning: true,
+          },
+        ],
+      });
       break;
     case "set_model":
       model = { id: cmd.modelId, name: cmd.modelId, provider: cmd.provider };
