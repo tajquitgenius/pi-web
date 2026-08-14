@@ -15,7 +15,6 @@ describe('PiWebClient', () => {
 
     await client.createSession({
       path: '/work/project',
-      sourceSessionId: 'source.jsonl',
       modelProvider: 'anthropic',
       modelId: 'claude-sonnet',
       thinkingLevel: 'high',
@@ -27,7 +26,6 @@ describe('PiWebClient', () => {
         method: 'POST',
         body: JSON.stringify({
           path: '/work/project',
-          sourceSessionId: 'source.jsonl',
           modelProvider: 'anthropic',
           modelId: 'claude-sonnet',
           thinkingLevel: 'high',

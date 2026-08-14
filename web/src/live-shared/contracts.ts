@@ -56,10 +56,27 @@ export interface SessionDefaults {
   thinkingLevel: ThinkingLevel;
 }
 
-export interface NewSessionInput extends SessionDefaults {
+interface NewSessionPath {
   path: string;
-  sourceSessionId?: string;
 }
+
+export type NewSessionInput =
+  | (NewSessionPath & {
+      sourceSessionId?: never;
+      modelProvider?: never;
+      modelId?: never;
+      thinkingLevel?: never;
+    })
+  | (NewSessionPath & {
+      sourceSessionId: string;
+      modelProvider?: never;
+      modelId?: never;
+      thinkingLevel?: never;
+    })
+  | (NewSessionPath &
+      SessionDefaults & {
+        sourceSessionId?: never;
+      });
 
 export interface NewSessionResult {
   ok: boolean;

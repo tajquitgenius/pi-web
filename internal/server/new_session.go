@@ -15,11 +15,12 @@ func (s *Server) handleSessionDefaults(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.sessionDefaults == nil {
+	sourceSessionID := r.URL.Query().Get("sourceSessionId")
+	if sourceSessionID == "" && s.sessionDefaults == nil {
 		writeJSONError(w, http.StatusServiceUnavailable, "session defaults are unavailable")
 		return
 	}
-	settings, err := s.sessionDefaults(r.Context())
+	settings, err := s.resolveInitialSettings(r.Context(), sourceSessionID)
 	if err != nil {
 		writeJSONError(w, http.StatusServiceUnavailable, "could not resolve session defaults")
 		return
