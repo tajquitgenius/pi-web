@@ -155,16 +155,18 @@ mux.HandleFunc("/api/chat", s.auth.Wrap(s.handleChat))
 ### 7. Static Asset Loading
 
 ```go
-if scripts, err := frontend.LoadScripts(web.DistFS(), frontend.AppEntry); err == nil {
-    for _, script := range scripts {
-        ui.SetAppScriptPath(script.Path)
-        mux.HandleFunc(script.Path, frontend.ServeJS(script.JS, true))
-    }
-    mux.HandleFunc("/static/assets/", frontend.ServeStaticAssets(web.DistFS()))
+builds := []liveBuild{
+    {web.DistFS(), frontend.AppEntry, "/static"},
+    {web.DesktopDistFS(), frontend.DesktopEntry, "/static/desktop"},
+    {web.MobileDistFS(), frontend.MobileEntry, "/static/mobile"},
+}
+for _, build := range builds {
+    scripts, err := frontend.LoadScriptsAt(build.fs, build.assetBase, build.entry)
+    // Register the hashed entrypoint, its surface-owned styles, and its chunks.
 }
 ```
 
-Reads Vite manifest to discover the hashed filename of the SPA bundle.
+Each Vite manifest resolves inside its own URL namespace, so desktop, mobile, and retained Svelte assets cannot collide.
 
 ### 8. State File
 

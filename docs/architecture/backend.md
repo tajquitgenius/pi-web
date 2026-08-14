@@ -7,7 +7,7 @@ pi-web/
 ├── cmd/pi-web/
 │   └── main.go                 # Tiny CLI entry point; passes build version to app.Main
 ├── web/
-│   └── assets_embed.go         # Embeds Vite build output from web/dist
+│   └── assets_embed.go         # Embeds Svelte, React desktop, and React mobile outputs
 ├── internal/
 │   ├── agentdir/
 │   │   └── agentdir.go         # Resolve ~/.pi/agent dir + the paths pi-web stores under it
@@ -24,7 +24,7 @@ pi-web/
 │   │   └── assets.go           # Vite manifest parsing + static asset handlers
 │   ├── ui/
 │   │   ├── spa_page.go         # Live SPA shell renderer (RenderAppShell)
-│   │   ├── app_script.go       # SPA Vite module URL path + script tag
+│   │   ├── app_script.go       # Per-surface Vite entrypoint and stylesheet paths
 │   │   ├── session_page.go     # Session page data prep (bootstrap base64 + CSS)
 │   │   ├── live_page.go        # Live document shell + theme/font providers
 │   │   ├── export.go           # Static export renderer

@@ -23,8 +23,8 @@ npx playwright test --ui                             # interactive debug UI
 npx playwright show-report                           # open last HTML report
 ```
 
-`make e2e` runs `make build` first because of `//go:embed web/dist` — the binary
-embeds the frontend, so E2E always runs against freshly built assets.
+`make e2e` runs `make build` first because the binary embeds the retained Svelte,
+React desktop, and React mobile outputs. E2E always runs against fresh assets.
 
 ## Watching tests run (headed mode)
 

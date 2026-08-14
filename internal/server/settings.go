@@ -14,7 +14,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	s.handleAppShell(w, r, "")
 }
 
-// handleAppShell renders the Svelte SPA shell for browser-owned routes. The
+// handleAppShell renders the selected SPA shell for browser-owned routes. The
 // optional bootstrap is the base64 session payload embedded so the session
 // route can paint without a round-trip to /api/session (empty for other routes).
 func (s *Server) handleAppShell(w http.ResponseWriter, r *http.Request, bootstrap string) {
@@ -27,7 +27,7 @@ func (s *Server) handleAppShell(w http.ResponseWriter, r *http.Request, bootstra
 	// cached: a stale shell would point at old (now-404) chunks and pin the
 	// browser to an outdated bundle after a rebuild.
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	if err := s.renderAppShell(w, bootstrap); err != nil {
+	if err := s.renderAppShell(w, r, bootstrap); err != nil {
 		if !isBrokenPipe(err) {
 			fmt.Fprintf(os.Stderr, "app shell template error: %v\n", err)
 		}
@@ -41,32 +41,32 @@ func (s *Server) handleAppShell(w http.ResponseWriter, r *http.Request, bootstra
 // live-timer state (sidebar widths, focus countdown, tree toggles) is NOT
 // listed here — it stays in localStorage only.
 var settingDefaults = map[string]string{
-	"pi-web-theme":                "dark",
-	"pi-web:v1:locale":            "en",
-	"pi-web:v1:custom-languages":  "",
-	"pi-web:v1:font-ui":           "system",
-	"pi-web:v1:font-content":      "system",
-	"pi-web:v1:font-code":         "mono",
-	"pi-web:v1:font-ui-size":      "14",
-	"pi-web:v1:font-content-size": "15",
-	"pi-sessions:spinner-style":   "runcat",
-	"pi-share:v1:notify-on-done":  "false",
-	"pi-share:v1:done-sound":      "cat.mp3",
-	"pi-sessions:view-layout":     "timeline",
-	"pi-web:v1:show-btw-in-index": "false",
-	"pi-web:v1:cat:enabled":       "true",
-	"pi-web:v1:cat:focus-min":     "25",
-	"pi-web:v1:cat:break-min":     "5",
-	"pi-web:v1:cat:bedtime":       "23:00",
-	"pi-web:v1:cat:wakeup":        "07:00",
-	"pi-web:v1:cat:sleep-min":     "2",
-	settingAutoTitleEnabled:       "true",
-	settingAutoTitleMode:          "each-turn",
-	settingAutoTitleModel:         "",
-	"pi-web:v1:artifacts:enabled": "true",
-	"pi-web:v1:artifacts:include": "*.md, *.html",
-	"pi-web:v1:toggle:thinking":      "true",
-	"pi-web:v1:toggle:tools":         "true",
+	"pi-web-theme":                  "dark",
+	"pi-web:v1:locale":              "en",
+	"pi-web:v1:custom-languages":    "",
+	"pi-web:v1:font-ui":             "system",
+	"pi-web:v1:font-content":        "system",
+	"pi-web:v1:font-code":           "mono",
+	"pi-web:v1:font-ui-size":        "14",
+	"pi-web:v1:font-content-size":   "15",
+	"pi-sessions:spinner-style":     "runcat",
+	"pi-share:v1:notify-on-done":    "false",
+	"pi-share:v1:done-sound":        "cat.mp3",
+	"pi-sessions:view-layout":       "timeline",
+	"pi-web:v1:show-btw-in-index":   "false",
+	"pi-web:v1:cat:enabled":         "true",
+	"pi-web:v1:cat:focus-min":       "25",
+	"pi-web:v1:cat:break-min":       "5",
+	"pi-web:v1:cat:bedtime":         "23:00",
+	"pi-web:v1:cat:wakeup":          "07:00",
+	"pi-web:v1:cat:sleep-min":       "2",
+	settingAutoTitleEnabled:         "true",
+	settingAutoTitleMode:            "each-turn",
+	settingAutoTitleModel:           "",
+	"pi-web:v1:artifacts:enabled":   "true",
+	"pi-web:v1:artifacts:include":   "*.md, *.html",
+	"pi-web:v1:toggle:thinking":     "true",
+	"pi-web:v1:toggle:tools":        "true",
 	"pi-web:v1:toggle:tool-outputs": "false",
 }
 

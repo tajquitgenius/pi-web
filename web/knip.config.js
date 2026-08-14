@@ -1,6 +1,12 @@
 /** @type {import('knip').KnipConfig} */
 export default {
   exclude: ['exports', 'types', 'nsExports', 'nsTypes', 'enumMembers', 'namespaceMembers'],
-  entry: ['src/main.js', 'src/export/export-entry.js', 'src/**/*.test.js'],
-  project: ['src/**/*.{js,svelte}', '*.config.js'],
+  entry: [
+    'src/main.js',
+    'src/desktop/bootstrap.tsx',
+    'src/mobile/bootstrap.tsx',
+    'src/export/export-entry.js',
+    'src/**/*.test.{js,ts,tsx}',
+  ],
+  project: ['src/**/*.{js,ts,tsx,svelte}', '*.config.js'],
 };

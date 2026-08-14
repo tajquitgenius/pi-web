@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -145,18 +146,56 @@ func Main(version string) {
 	mux := http.NewServeMux()
 	srv.Register(mux)
 	ui.RegisterPWAHandlers(mux)
-	dfs := web.DistFS()
-	if scripts, err := frontend.LoadScripts(dfs, frontend.AppEntry); err == nil {
-		for _, script := range scripts {
-			if script.Entry == frontend.AppEntry {
+	liveBuilds := []struct {
+		name        string
+		fs          fs.FS
+		entry       string
+		assetBase   string
+		assetPrefix string
+		applyAssets func(frontend.Script)
+	}{
+		{
+			name:        "svelte",
+			fs:          web.DistFS(),
+			entry:       frontend.AppEntry,
+			assetBase:   "/static",
+			assetPrefix: "/static/assets/",
+			applyAssets: func(script frontend.Script) {
 				ui.SetAppScriptPath(script.Path)
-			}
+			},
+		},
+		{
+			name:        "desktop",
+			fs:          web.DesktopDistFS(),
+			entry:       frontend.DesktopEntry,
+			assetBase:   "/static/desktop",
+			assetPrefix: "/static/desktop/assets/",
+			applyAssets: func(script frontend.Script) {
+				ui.SetSurfaceAssets(ui.DesktopSurface, script.Path, script.Styles)
+			},
+		},
+		{
+			name:        "mobile",
+			fs:          web.MobileDistFS(),
+			entry:       frontend.MobileEntry,
+			assetBase:   "/static/mobile",
+			assetPrefix: "/static/mobile/assets/",
+			applyAssets: func(script frontend.Script) {
+				ui.SetSurfaceAssets(ui.MobileSurface, script.Path, script.Styles)
+			},
+		},
+	}
+	for _, build := range liveBuilds {
+		scripts, err := frontend.LoadScriptsAt(build.fs, build.assetBase, build.entry)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: failed to load %s Vite frontend: %v (surface JS will be unavailable)\n", build.name, err)
+			continue
+		}
+		for _, script := range scripts {
+			build.applyAssets(script)
 			mux.HandleFunc(script.Path, frontend.ServeJS(script.JS, true))
 		}
-		// Serve all other hashed assets (lazy chunks, runtime) from the embed FS.
-		mux.HandleFunc("/static/assets/", frontend.ServeStaticAssets(dfs))
-	} else {
-		fmt.Fprintf(os.Stderr, "WARNING: failed to load Vite frontend scripts: %v (frontend JS will be unavailable)\n", err)
+		mux.HandleFunc(build.assetPrefix, frontend.ServeStaticAssetsAt(build.fs, build.assetPrefix))
 	}
 
 	addr := net.JoinHostPort(bindHost, *port)

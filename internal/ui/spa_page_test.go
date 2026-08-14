@@ -2,18 +2,26 @@ package ui
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
 )
 
 func TestAppShellPreservesPWAContract(t *testing.T) {
-	old := appScriptPath
-	appScriptPath = "/static/assets/app-test.js"
-	defer func() { appScriptPath = old }()
+	old := surfaceAppAssets[DesktopSurface]
+	SetSurfaceAssets(
+		DesktopSurface,
+		"/static/desktop/assets/desktop-test.js",
+		[]string{"/static/desktop/assets/desktop-test.css"},
+	)
+	defer func() { surfaceAppAssets[DesktopSurface] = old }()
 
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(&http.Cookie{Name: SurfaceCookieName, Value: "desktop"})
 	var b strings.Builder
-	if err := RenderAppShell(&b, ""); err != nil {
+	if err := RenderAppShell(&b, req, ""); err != nil {
 		t.Fatalf("RenderAppShell: %v", err)
 	}
 	html := b.String()
@@ -30,8 +38,9 @@ func TestAppShellPreservesPWAContract(t *testing.T) {
 		`navigator.windowControlsOverlay`,
 		`<link rel="stylesheet" href="/custom-themes.css">`,
 		`<style id="pi-web-fonts">`,
-		`<div id="spa-root"></div>`,
-		`<script type="module" src="/static/assets/app-test.js"></script>`,
+		`<link rel="stylesheet" href="/static/desktop/assets/desktop-test.css">`,
+		`<div id="spa-root" data-pi-web-surface="desktop"></div>`,
+		`<script type="module" src="/static/desktop/assets/desktop-test.js"></script>`,
 		`navigator.serviceWorker.register('/sw.js',{scope:'/'})`,
 	} {
 		if !strings.Contains(html, want) {
@@ -52,7 +61,7 @@ func TestAppShellInjectsEscapedHostContextJSON(t *testing.T) {
 	defer func() { hostContextProvider = old }()
 
 	var b strings.Builder
-	if err := RenderAppShell(&b, ""); err != nil {
+	if err := RenderAppShell(&b, httptest.NewRequest("GET", "/", nil), ""); err != nil {
 		t.Fatalf("RenderAppShell: %v", err)
 	}
 	html := b.String()
@@ -72,5 +81,24 @@ func TestAppShellInjectsEscapedHostContextJSON(t *testing.T) {
 	}
 	if strings.Contains(match[1], "</script>") {
 		t.Fatal("host context JSON contains a literal closing script tag")
+	}
+}
+
+func TestLegacySvelteAppShellRemainsRenderable(t *testing.T) {
+	old := legacyAppAssets
+	legacyAppAssets = appAssets{script: "/static/assets/app-legacy.js"}
+	defer func() { legacyAppAssets = old }()
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(&http.Cookie{Name: LegacySvelteCookieName, Value: "1"})
+	var b strings.Builder
+	if err := RenderAppShell(&b, req, ""); err != nil {
+		t.Fatalf("RenderAppShell: %v", err)
+	}
+	html := b.String()
+	if !strings.Contains(html, `data-pi-web-surface="svelte"`) ||
+		!strings.Contains(html, `src="/static/assets/app-legacy.js"`) ||
+		!strings.Contains(html, ".pi-chat-shell") {
+		t.Fatalf("legacy Svelte shell is incomplete: %s", html)
 	}
 }

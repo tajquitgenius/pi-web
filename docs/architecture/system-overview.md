@@ -9,9 +9,10 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 | Layer | Technology |
 |-------|------------|
 | Backend | Go 1.25+ |
-| Frontend (live app) | Svelte 5 SPA (`web/src/main.js` → `App.svelte`), built by Vite; the session viewer is fully component-driven over a reactive `SessionDataModel`. Go serves a single embedded shell (`internal/ui/embedded/app.html`) + injects bootstrap data |
-| Static export | Go `html/template` (`internal/ui/embedded/share-session.html`) + inlined `export.js`/CSS, built from the same `web/src/session/` modules (self-contained Gist) |
-| Styling | Custom CSS (multi-theme: dark/light/nord/dracula/custom) |
+| Frontend (live app) | Separate React desktop and mobile Vite builds selected per request; a Svelte 5 live build remains embedded during cutover |
+| Shared live transport | Typed `PiWebClient` contracts for HTTP, host context, SSE, and future pairing operations |
+| Static export | Independent Svelte IIFE rendered through Go `html/template`; self-contained and isolated from all live bundles |
+| Styling | Surface-owned live CSS plus the existing multi-theme shell variables |
 | Live Updates | Server-Sent Events (SSE) |
 | Chat RPC | JSONL over stdin/stdout via `pi --mode rpc` |
 | Session Storage | JSONL files on disk; pi-web creates new session files and appends `session_info` for browser rename |
@@ -24,17 +25,17 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                                 Browser                                   │
 │                                                                           │
-│   ┌──────────────────────────────────────┐  ┌─────────────────────────┐  │
-│   │        Svelte 5 SPA (#spa-root)       │  │   EventSource Client    │  │
-│   │  main.js → App.svelte (path router)   │  │      /events?id=…       │  │
-│   │                                       │  │                         │  │
-│   │  / → SessionsPage (Svelte index)      │  │  • reload (session)     │  │
-│   │  /session → SessionPage (Svelte       │  │  • new-session (index)  │  │
-│   │     components + reactive model)      │  │  • status-delta         │  │
-│   │  /settings → SettingsPage (Svelte)    │  │  • status-snapshot      │  │
-│   │  /login → LoginPage                   │  │  • annotations, btw…    │  │
-│   │  shared: CommandPalette, Version UI   │  │                         │  │
-│   └──────────────────────────────────────┘  └─────────────────────────┘  │
+│   cookie + conservative UA classification                                 │
+│                    │                                                      │
+│          ┌─────────┴─────────┐                 ┌──────────────────────┐   │
+│          ▼                   ▼                 │ PiWebClient          │   │
+│   React desktop       React mobile             │ HTTP · host · SSE    │   │
+│   / /session          / /session               └──────────────────────┘   │
+│   /settings           /settings                            │              │
+│          │                   │                              │              │
+│          └─────────┬─────────┘                              │              │
+│                    └────────────────────────────────────────┘              │
+│   Retained separately: Svelte live SPA · self-contained Svelte export     │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ HTTP
@@ -75,7 +76,7 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 │   /api/{version,check-update,update,restart} (self-update, optional)    │
 │   GET  /metrics / /api/metrics → worker metrics dashboard (gopsutil)    │
 │   PWA: /manifest.webmanifest, /sw.js, /icon.svg, /cat.webm, …           │
-│   GET  /static/…      →  embedded Vite assets                            │
+│   GET  /static/{assets,desktop/assets,mobile/assets}/… → embedded builds │
 │                                                                           │
 │   All handlers wrapped with auth.Middleware (token check)                │
 └──────────────────────────────────────────────────────────────────────────┘
