@@ -1,4 +1,7 @@
 import type {
+  ChatInput,
+  ChatResult,
+  ChatWorkerStatus,
   HostContext,
   ModelsResult,
   NewSessionInput,
@@ -19,6 +22,7 @@ import type {
   SessionList,
   SessionListQuery,
   SessionSummary,
+  ThinkingLevel,
 } from './contracts';
 
 const SSE_EVENT_NAMES: PiWebSSEEventName[] = [
@@ -199,6 +203,34 @@ export function createPiWebClient({
 
     listModels(): Promise<ModelsResult> {
       return request<ModelsResult>('/api/models');
+    },
+
+    sendChat(sessionId: string, input: ChatInput): Promise<ChatResult> {
+      const body = new FormData();
+      body.set('message', input.message);
+      for (const image of input.images ?? []) body.append('images', image);
+      return request<ChatResult>(`/api/chat?id=${encodeURIComponent(sessionId)}`, {
+        method: 'POST',
+        body,
+      });
+    },
+
+    cancelChat(sessionId: string): Promise<ChatResult> {
+      return request<ChatResult>(`/api/chat/cancel?id=${encodeURIComponent(sessionId)}`, {
+        method: 'POST',
+      });
+    },
+
+    getWorkerStatus(sessionId: string): Promise<ChatWorkerStatus> {
+      return request<ChatWorkerStatus>(`/api/worker-status?id=${encodeURIComponent(sessionId)}`);
+    },
+
+    setModel(sessionId: string, provider: string, modelId: string): Promise<unknown> {
+      return postJSON(`/api/set-model?id=${encodeURIComponent(sessionId)}`, { provider, modelId });
+    },
+
+    setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<unknown> {
+      return postJSON(`/api/set-thinking-level?id=${encodeURIComponent(sessionId)}`, { level });
     },
 
     getHostContext(): HostContext {

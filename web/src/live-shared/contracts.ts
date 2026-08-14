@@ -96,6 +96,25 @@ export interface ModelsResult {
   models: PiModel[];
 }
 
+export interface ChatInput {
+  message: string;
+  images?: File[];
+}
+
+export interface ChatResult {
+  ok: boolean;
+  status: string;
+}
+
+export interface ChatWorkerStatus {
+  state: 'idle' | 'running' | 'error';
+  error?: string;
+  model?: string;
+  modelName?: string;
+  modelProvider?: string;
+  thinkingLevel?: ThinkingLevel;
+}
+
 export interface HostPeer {
   label: string;
   url: string;
@@ -178,6 +197,11 @@ export interface PiWebClient {
   createSession(input: NewSessionInput): Promise<NewSessionResult>;
   getSessionDefaults(sourceSessionId?: string): Promise<SessionDefaults>;
   listModels(): Promise<ModelsResult>;
+  sendChat(sessionId: string, input: ChatInput): Promise<ChatResult>;
+  cancelChat(sessionId: string): Promise<ChatResult>;
+  getWorkerStatus(sessionId: string): Promise<ChatWorkerStatus>;
+  setModel(sessionId: string, provider: string, modelId: string): Promise<unknown>;
+  setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<unknown>;
   getHostContext(): HostContext;
   subscribe(topic: PiWebSSETopic, handlers: SSESubscriptionHandlers): SSESubscription;
   getPairingStatus(): Promise<PairingStatus>;

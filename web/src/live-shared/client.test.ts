@@ -65,6 +65,30 @@ describe('PiWebClient', () => {
     });
   });
 
+  it('wraps the shared chat controls', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ ok: true, status: 'queued' })));
+    const client = createPiWebClient({ fetchImpl });
+
+    await client.sendChat('session one.jsonl', { message: 'hello' });
+    await client.cancelChat('session one.jsonl');
+    await client.getWorkerStatus('session one.jsonl');
+    await client.setModel('session one.jsonl', 'openai-codex-secondary', 'gpt-5.6-sol');
+    await client.setThinkingLevel('session one.jsonl', 'high');
+
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      '/api/chat?id=session%20one.jsonl',
+      '/api/chat/cancel?id=session%20one.jsonl',
+      '/api/worker-status?id=session%20one.jsonl',
+      '/api/set-model?id=session%20one.jsonl',
+      '/api/set-thinking-level?id=session%20one.jsonl',
+    ]);
+    expect(fetchImpl.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+    );
+  });
+
   it('reads host context from the server-owned bootstrap element', () => {
     const documentImpl = {
       getElementById: () => ({
