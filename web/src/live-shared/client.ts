@@ -219,19 +219,19 @@ export function createPiWebClient({
     },
 
     getPairingStatus(): Promise<PairingStatus> {
-      return request<PairingStatus>('/api/pairing/status');
+      return request<PairingStatus>('/api/pairing-status');
     },
 
     submitPairing(input: PairingSubmission): Promise<PairingResult> {
-      return postJSON<PairingResult>('/api/pairing/submit', input);
+      return postJSON<PairingResult>('/api/pair', input);
     },
 
     listPairedDevices(): Promise<PairedDevicesResult> {
-      return request<PairedDevicesResult>('/api/pairing/devices');
+      return request<PairedDevicesResult>('/api/devices');
     },
 
     async revokePairedDevice(deviceId: string): Promise<void> {
-      await request<void>(`/api/pairing/devices/${encodeURIComponent(deviceId)}`, {
+      await request<void>(`/api/devices/${encodeURIComponent(deviceId)}`, {
         method: 'DELETE',
       });
     },

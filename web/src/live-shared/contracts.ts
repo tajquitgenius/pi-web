@@ -145,27 +145,27 @@ export interface SSESubscription {
 }
 
 export interface PairingStatus {
-  enabled: boolean;
   paired: boolean;
-  deviceId?: string;
+  local: boolean;
 }
 
 export interface PairingSubmission {
   code: string;
-  deviceName: string;
-}
-
-export interface PairingResult {
-  paired: boolean;
-  deviceId: string;
+  label: string;
 }
 
 export interface PairedDevice {
   id: string;
-  name: string;
+  label: string;
   createdAt: string;
-  lastSeenAt?: string;
-  current?: boolean;
+  lastUsedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+}
+
+export interface PairingResult {
+  paired: boolean;
+  device: PairedDevice;
 }
 
 export interface PairedDevicesResult {

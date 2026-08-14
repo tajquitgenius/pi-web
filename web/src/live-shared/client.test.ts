@@ -84,14 +84,14 @@ describe('PiWebClient', () => {
     });
   });
 
-  it('exposes typed pairing device operations without implementing a backend', async () => {
+  it('uses the device-pairing backend routes', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     const client = createPiWebClient({ fetchImpl });
 
     await client.revokePairedDevice('device/one');
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      '/api/pairing/devices/device%2Fone',
+      '/api/devices/device%2Fone',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });

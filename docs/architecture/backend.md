@@ -32,7 +32,10 @@ pi-web/
 │   │   ├── pwa.go              # PWA routes: manifest, sw.js, icons, css, cat.webm
 │   │   └── embedded/     # Embedded HTML/CSS/assets (shells, styles, export/)
 │   ├── auth/
-│   │   └── auth.go             # Token-based HTTP middleware
+│   │   └── auth.go             # Token auth plus exact Host/Origin boundary
+│   ├── pairing/
+│   │   ├── store.go            # Pairing codes, device credentials, rate limits (SQLite)
+│   │   └── key.go              # Owner-only HMAC key creation/loading
 │   ├── chat/
 │   │   └── request.go          # Multipart chat request parser (text + images)
 │   ├── files/
@@ -52,6 +55,7 @@ pi-web/
 │   │   └── oneshot.go          # One-shot RPC for model enumeration
 │   ├── server/
 │   │   ├── server.go           # Server type, deps, SSE registry, route registration, SQLite open
+│   │   ├── pairing_routes.go   # Pairing API wiring + whole-mux public device gate
 │   │   ├── handlers.go         # index, session, api/session(s), new, fork/clone, rename, locations, models, custom-themes
 │   │   ├── chat.go             # Chat, set-model, set-thinking, worker-status, commands handlers
 │   │   ├── new_session.go      # New-session creation logic
@@ -111,6 +115,8 @@ type Server struct {
     chatSender    ChatSender      // workers.Manager
     cache         *sessions.Cache // modtime-aware parse cache
     auth          *auth.Middleware
+    pairing       *pairing.Store
+    publicAuthority string       // exact configured public HTTPS Host
     shareRunner   shareCmdRunner  // overridable in tests
     now           func() time.Time
     renderExportSession func(s sessions.Session, theme string) string
@@ -146,23 +152,22 @@ type Server struct {
 
 `Deps` (passed to `New`) supplies everything wired from `internal/app`: the
 `RenderExportSession` and `RenderAppShell` renderers, `Models`, `Cache`, `Auth`,
-`ChatSender`, plus the optional `Updater`, `RunInstall`, and `RunRestart`. When
+`PublicURL`, `ChatSender`, plus the optional `Updater`, `RunInstall`, and
+`RunRestart`. When
 `Updater` is nil the version/update routes are not registered; when
 `RunInstall`/`RunRestart` are nil the corresponding endpoints respond `503`.
 `DisableBackgroundJobs` marks the internal development server: it still watches
 and serves the shared data, but does not run scheduling, queue draining,
 auto-titling, or push-delivery side effects.
 
-On `New`, the server opens (and migrates) a SQLite database at
-`~/.pi/agent/pi-web.sqlite` with six tables: `scratchpads` (per project path),
-`settings` (server-backed user settings key/value), `project_prefs` (which
-projects are enabled), `app_settings` (the project-filter master switch, default
-off), `btw_sessions` (the btw scratch-chat registry), and `annotations`
-(per-session review notes keyed by session id; see `annotations.go`). See
-`projects.go`, `settings.go`, and `btw.go`. The pool is capped to a single
-connection (`SetMaxOpenConns(1)`) so concurrent writers queue instead of failing
-with "database is locked". A `PushManager` (when configured) persists web-push
-subscriptions and VAPID keys under the agent dir.
+On `New`, the server opens and migrates `~/.pi/agent/pi-web.sqlite`. Alongside
+session-adjacent settings, annotations, schedules, reviews, and chat queue data,
+the database stores HMAC-only pairing codes, hash-only device credentials, and
+rate-limit timestamps. The pool is capped to one connection
+(`SetMaxOpenConns(1)`) so concurrent writers queue instead of failing with
+"database is locked". See [Device Pairing Backend](device-pairing.md) for the
+pairing schema and request boundary. A `PushManager` (when configured) persists
+web-push subscriptions and VAPID keys under the agent dir.
 
 ### `sessions.Session`
 
@@ -253,6 +258,12 @@ Before pi-web creates a fresh session, it starts an ephemeral `pi --mode rpc --n
 | `/session` | GET | `handleSession` | Render SPA shell for the session route |
 | `/settings` | GET | `handleSettingsPage` | Render SPA shell for the settings route |
 | `/login` | GET | `handleAppShell` | Render SPA shell for the login route |
+| `/pairing` | GET | `handlePairingShell` | Public pairing bootstrap shell on the configured public Host |
+| `/api/pairing-codes` | POST | `handlePairingCodes` | Create one five-minute code from loopback |
+| `/api/pair` | POST | `handlePairDevice` | Redeem a code and set the device credential cookie |
+| `/api/devices` | GET | `handleDevices` | List paired-device metadata from loopback |
+| `/api/devices/{id}` | DELETE | `handleDevice` | Revoke a paired device from loopback |
+| `/api/pairing-status` | GET | `handlePairingStatus` | Report local trust or public device-pairing state |
 | `/api/session` | GET | `handleApiSession` | JSON session data |
 | `/api/sessions` | GET | `handleApiSessions` | JSON list of session summaries |
 | `/api/chat` | POST | `handleChat` | Send chat message (multipart) |
