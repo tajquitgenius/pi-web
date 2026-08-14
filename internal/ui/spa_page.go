@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"html/template"
 	"io"
+	"net/http"
+	"strings"
 )
 
 //go:embed embedded/app.html
@@ -36,20 +38,41 @@ func SetHostContextProvider(fn func() HostContext) {
 	}
 }
 
-func appStylesheets() template.HTML {
+func legacyAppStylesheets() template.HTML {
 	return template.HTML("<style>\n" + liveThemeCss + "\n" + indexCSS + "\n" + settingsCSS + "\n" + schedulesCSS + "\n" + liveSessionCss + "\n" + liveMenuCss + "\n" + livePaletteCss + "\n</style>")
 }
 
-// RenderAppShell renders the Svelte SPA host document. It deliberately reuses
-// the same live-document boot path as the existing Go-rendered pages so the
-// installed PWA keeps its viewport, theme, WCO, font, and service-worker
-// behavior while routes migrate into Svelte incrementally.
-//
-// bootstrap, when non-empty, is the base64 session payload the SPA reads to
-// render the first paint without fetching /api/session — see the session route.
-func RenderAppShell(w io.Writer, bootstrap string) error {
-	scriptSrc := template.HTMLEscapeString(appScriptPath)
-	preload := template.HTML(`<link rel="modulepreload" href="` + scriptSrc + `">`)
+func appAssetLinks(assets appAssets) template.HTML {
+	var links strings.Builder
+	links.WriteString(`<link rel="modulepreload" href="`)
+	links.WriteString(template.HTMLEscapeString(assets.script))
+	links.WriteString(`">`)
+	for _, stylesheet := range assets.styles {
+		links.WriteString(`<link rel="stylesheet" href="`)
+		links.WriteString(template.HTMLEscapeString(stylesheet))
+		links.WriteString(`">`)
+	}
+	return template.HTML(links.String())
+}
+
+// RenderAppShell selects and renders one React live surface for this request.
+// Session bootstrap data and host context stay in the server-owned shell so the
+// two products can share transport contracts without sharing product UI.
+func RenderAppShell(w io.Writer, r *http.Request, bootstrap string) error {
+	if useLegacySvelte(r) {
+		return RenderLegacyAppShell(w, bootstrap)
+	}
+	surface := SelectSurface(r)
+	return renderAppShell(w, string(surface), surfaceAppAssets[surface], bootstrap, "")
+}
+
+// RenderLegacyAppShell keeps the existing Svelte SPA renderable until final
+// cutover. It is intentionally separate from React surface selection.
+func RenderLegacyAppShell(w io.Writer, bootstrap string) error {
+	return renderAppShell(w, "svelte", legacyAppAssets, bootstrap, legacyAppStylesheets())
+}
+
+func renderAppShell(w io.Writer, surface string, assets appAssets, bootstrap string, styles template.HTML) error {
 	hostContext := hostContextProvider()
 	if hostContext.Peers == nil {
 		hostContext.Peers = []HostPeer{}
@@ -66,23 +89,26 @@ func RenderAppShell(w io.Writer, bootstrap string) error {
 		// base64 only (A-Za-z0-9+/=), so it cannot break out of the script tag.
 		bootstrapTag = template.HTML(`<script id="pi-session-bootstrap" type="application/json">` + template.HTMLEscapeString(bootstrap) + `</script>`)
 	}
+	scriptSrc := template.HTMLEscapeString(assets.script)
 	data := struct {
 		LiveDocumentStart template.HTML
 		ThemeBoot         template.HTML
 		HostContext       template.HTML
 		Bootstrap         template.HTML
+		Surface           string
 		AppScript         template.HTML
 		ServiceWorker     template.HTML
 		LiveDocumentEnd   template.HTML
 	}{
 		LiveDocumentStart: template.HTML(renderLiveDocumentStart(liveDocumentData{
 			Title:   "pi-web",
-			Preload: preload,
-			Styles:  appStylesheets(),
+			Preload: appAssetLinks(assets),
+			Styles:  styles,
 		})),
 		ThemeBoot:       liveThemeBootScript(),
 		HostContext:     hostContextTag,
 		Bootstrap:       bootstrapTag,
+		Surface:         surface,
 		AppScript:       template.HTML(`<script type="module" src="` + scriptSrc + `"></script>`),
 		ServiceWorker:   liveServiceWorkerScript(),
 		LiveDocumentEnd: liveDocumentEnd(),

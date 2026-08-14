@@ -6,14 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"mime"
 	"net/http"
+	"path"
 	"strings"
 
 	"pi-web/internal/render"
 )
 
 const (
-	AppEntry = "src/main.js"
+	AppEntry     = "src/main.js"
+	DesktopEntry = "src/desktop/bootstrap.tsx"
+	MobileEntry  = "src/mobile/bootstrap.tsx"
 
 	// Backward-compatible unexported alias used by package tests.
 	appEntry = AppEntry
@@ -21,9 +25,10 @@ const (
 
 // Script is one Vite-built JavaScript entrypoint ready to be served by Go.
 type Script struct {
-	Entry string
-	Path  string
-	JS    string
+	Entry  string
+	Path   string
+	JS     string
+	Styles []string
 }
 
 type frontendScript = Script
@@ -57,34 +62,54 @@ func validateManifestEntry(manifest render.Manifest, entryName string) (render.M
 	return entry, nil
 }
 
-func loadFrontendScript(distFS fs.FS, manifest render.Manifest, entryName string) (frontendScript, error) {
+func loadFrontendScript(distFS fs.FS, manifest render.Manifest, assetBase, entryName string) (frontendScript, error) {
 	entry, err := validateManifestEntry(manifest, entryName)
 	if err != nil {
 		return frontendScript{}, err
-	}
-	scriptPath, ok := manifest.ScriptPath(entryName)
-	if !ok {
-		return frontendScript{}, fmt.Errorf("manifest script path not found: %s", entryName)
 	}
 	content, err := fs.ReadFile(distFS, entry.File)
 	if err != nil {
 		return frontendScript{}, fmt.Errorf("read %s js: %w", entryName, err)
 	}
-	return frontendScript{Entry: entryName, Path: scriptPath, JS: string(content)}, nil
+	base := strings.TrimRight(assetBase, "/")
+	styles := make([]string, 0, len(entry.CSS))
+	for _, stylesheet := range entry.CSS {
+		if stylesheet == "" || strings.HasPrefix(stylesheet, "/") || strings.Contains(stylesheet, "..") {
+			return frontendScript{}, fmt.Errorf("invalid stylesheet path for %s: %s", entryName, stylesheet)
+		}
+		styles = append(styles, base+"/"+stylesheet)
+	}
+	return frontendScript{
+		Entry:  entryName,
+		Path:   base + "/" + entry.File,
+		JS:     string(content),
+		Styles: styles,
+	}, nil
 }
 
 func LoadScripts(distFS fs.FS, entryNames ...string) ([]Script, error) {
-	return loadFrontendScripts(distFS, entryNames...)
+	return loadFrontendScriptsAt(distFS, "/static", entryNames...)
+}
+
+func LoadScriptsAt(distFS fs.FS, assetBase string, entryNames ...string) ([]Script, error) {
+	if assetBase == "" || !strings.HasPrefix(assetBase, "/") || strings.Contains(assetBase, "..") {
+		return nil, fmt.Errorf("invalid asset base: %q", assetBase)
+	}
+	return loadFrontendScriptsAt(distFS, assetBase, entryNames...)
 }
 
 func loadFrontendScripts(distFS fs.FS, entryNames ...string) ([]Script, error) {
+	return loadFrontendScriptsAt(distFS, "/static", entryNames...)
+}
+
+func loadFrontendScriptsAt(distFS fs.FS, assetBase string, entryNames ...string) ([]Script, error) {
 	manifest, err := loadManifest(distFS)
 	if err != nil {
 		return nil, err
 	}
 	scripts := make([]Script, 0, len(entryNames))
 	for _, entryName := range entryNames {
-		script, err := loadFrontendScript(distFS, manifest, entryName)
+		script, err := loadFrontendScript(distFS, manifest, assetBase, entryName)
 		if err != nil {
 			return nil, err
 		}
@@ -93,41 +118,58 @@ func loadFrontendScripts(distFS fs.FS, entryNames ...string) ([]Script, error) {
 	return scripts, nil
 }
 
-func gzipJS(js string) []byte {
+func gzipAsset(data []byte) []byte {
 	var buf bytes.Buffer
 	w, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {
-		return []byte(js)
+		return data
 	}
-	_, _ = w.Write([]byte(js))
+	_, _ = w.Write(data)
 	_ = w.Close()
 	return buf.Bytes()
 }
 
 type staticAsset struct {
-	raw        []byte
-	compressed []byte
+	raw         []byte
+	compressed  []byte
+	contentType string
 }
 
-// serveStaticAssets serves hashed JS chunks (lazy hljs chunk, rolldown
-// runtime) from the embed FS. All assets are pre-compressed at startup.
 func ServeStaticAssets(dfs fs.FS) http.HandlerFunc {
-	// Pre-load and compress all assets at startup.
+	return ServeStaticAssetsAt(dfs, "/static/assets/")
+}
+
+// ServeStaticAssetsAt serves every Vite-generated file under assets/ from one
+// output-specific URL namespace. This keeps desktop, mobile, and legacy chunk
+// names independent even when two builds emit the same filename.
+func ServeStaticAssetsAt(dfs fs.FS, requestPrefix string) http.HandlerFunc {
 	cache := make(map[string]staticAsset)
 	entries, _ := fs.ReadDir(dfs, "assets")
-	for _, e := range entries {
-		if e.IsDir() {
+	for _, entry := range entries {
+		if entry.IsDir() {
 			continue
 		}
-		raw, err := fs.ReadFile(dfs, "assets/"+e.Name())
+		raw, err := fs.ReadFile(dfs, "assets/"+entry.Name())
 		if err != nil {
 			continue
 		}
-		cache[e.Name()] = staticAsset{raw: raw, compressed: gzipJS(string(raw))}
+		contentType := mime.TypeByExtension(path.Ext(entry.Name()))
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		cache[entry.Name()] = staticAsset{
+			raw:         raw,
+			compressed:  gzipAsset(raw),
+			contentType: contentType,
+		}
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		name := r.URL.Path[len("/static/assets/"):]
+		if !strings.HasPrefix(r.URL.Path, requestPrefix) {
+			http.NotFound(w, r)
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, requestPrefix)
 		if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
 			http.NotFound(w, r)
 			return
@@ -137,7 +179,7 @@ func ServeStaticAssets(dfs fs.FS) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Content-Type", asset.contentType)
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			w.Header().Set("Content-Encoding", "gzip")
@@ -150,7 +192,7 @@ func ServeStaticAssets(dfs fs.FS) http.HandlerFunc {
 
 func ServeJS(js string, immutable bool) http.HandlerFunc {
 	raw := []byte(js)
-	compressed := gzipJS(js)
+	compressed := gzipAsset(raw)
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		if immutable {

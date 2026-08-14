@@ -6,6 +6,8 @@ pi-sessions-viewer
 /pi-web
 web/node_modules/
 web/dist/
+web/dist-desktop/
+web/dist-mobile/
 web/dist-export/
 internal/ui/embedded/export/export.js
 .pi/extensions/node_modules/

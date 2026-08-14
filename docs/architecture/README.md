@@ -8,7 +8,7 @@ This directory contains the architecture documentation for **pi-web**, a local w
 |----------|-------------|
 | [system-overview.md](./system-overview.md) | High-level system architecture, component diagram, and tech stack |
 | [backend.md](./backend.md) | Go backend: packages, responsibilities, and key types |
-| [frontend.md](./frontend.md) | Frontend architecture: embedded templates, Vite build, and vanilla JS |
+| [frontend.md](./frontend.md) | Frontend architecture: React surfaces, typed client, retained Svelte app, and static export |
 | [data-flow.md](./data-flow.md) | Session file format, data model, and storage layout |
 
 ## Architecture at a Glance
@@ -52,8 +52,9 @@ This directory contains the architecture documentation for **pi-web**, a local w
 
 3. **Chat via RPC workers**: Each session gets a dedicated `pi --mode rpc` subprocess. Workers are cached and reaped after 10 minutes of idle time.
 
-4. **Dual frontend strategy**:
-   - **Index page** (`/`): Built with Vite + vanilla JS, served from embedded `web/dist`
-   - **Session page** (`/session`): Server-rendered HTML shell with Vite-built session JS
+4. **Separate live products and export**:
+   - **Desktop and mobile**: Independent React/Vite outputs selected by cookie or conservative user-agent classification
+   - **Transition fallback**: The existing Svelte SPA remains built and embedded until final cutover
+   - **Static export**: A separate self-contained Svelte bundle with no live-server dependency
 
 5. **Security**: Remote deployments keep pi-web on loopback behind an external HTTPS tunnel. `PI_WEB_PUBLIC_URL` declares the exact allowed public origin, and `PI_WEB_TOKEN` provides optional defense in depth. Any direct non-loopback bind still requires the token.

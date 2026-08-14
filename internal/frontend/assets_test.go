@@ -1,6 +1,8 @@
 package frontend
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"testing/fstest"
 )
@@ -53,6 +55,41 @@ func TestLoadFrontendScriptsLoadsMultipleEntrypoints(t *testing.T) {
 		if scripts[i].Path != check.path || scripts[i].JS != check.js {
 			t.Fatalf("scripts[%d] = (%q, %q), want (%q, %q)", i, scripts[i].Path, scripts[i].JS, check.path, check.js)
 		}
+	}
+}
+
+func TestLoadFrontendScriptsUsesIndependentAssetNamespace(t *testing.T) {
+	fsys := fstest.MapFS{
+		".vite/manifest.json": &fstest.MapFile{
+			Data: []byte(`{"src/desktop/bootstrap.tsx":{"file":"assets/desktop-abc123.js","css":["assets/desktop-def456.css"]}}`),
+		},
+		"assets/desktop-abc123.js": &fstest.MapFile{Data: []byte("desktop")},
+	}
+	scripts, err := LoadScriptsAt(fsys, "/static/desktop", DesktopEntry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := scripts[0].Path, "/static/desktop/assets/desktop-abc123.js"; got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+	if got, want := scripts[0].Styles[0], "/static/desktop/assets/desktop-def456.css"; got != want {
+		t.Fatalf("style = %q, want %q", got, want)
+	}
+}
+
+func TestServeStaticAssetsAtUsesAssetContentType(t *testing.T) {
+	fsys := fstest.MapFS{
+		"assets/mobile.css": &fstest.MapFile{Data: []byte("body{}")},
+	}
+	handler := ServeStaticAssetsAt(fsys, "/static/mobile/assets/")
+	req := httptest.NewRequest(http.MethodGet, "/static/mobile/assets/mobile.css", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/css; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want CSS", got)
 	}
 }
 

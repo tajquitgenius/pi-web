@@ -44,7 +44,7 @@ type Deps struct {
 	ChatSender          ChatSender
 	Cache               *sessions.Cache
 	RenderExportSession func(s sessions.Session, theme string) string
-	RenderAppShell      func(w io.Writer, bootstrap string) error
+	RenderAppShell      func(w io.Writer, r *http.Request, bootstrap string) error
 	Models              func(ctx context.Context) (json.RawMessage, error)
 	Now                 func() time.Time
 	// Updater reports current/latest version + changelog. Optional; when nil
@@ -76,7 +76,7 @@ type Server struct {
 	shareRunner           shareCmdRunner
 	now                   func() time.Time
 	renderExportSession   func(s sessions.Session, theme string) string
-	renderAppShell        func(w io.Writer, bootstrap string) error
+	renderAppShell        func(w io.Writer, r *http.Request, bootstrap string) error
 	models                func(ctx context.Context) (json.RawMessage, error)
 	lastKnown             map[string]struct{} // session ids currently broadcast as running
 	lastKnownMu           sync.Mutex

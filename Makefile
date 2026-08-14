@@ -1,4 +1,4 @@
-.PHONY: build setup frontend-setup go-setup root-setup frontend-build frontend-test frontend-knip frontend-lint frontend-format-check extension-test memory-test go-test install-test vet test check clean dev docs docs-dev release-patch release-minor release-major release-beta e2e e2e-setup
+.PHONY: build setup frontend-setup go-setup root-setup frontend-build frontend-test frontend-typecheck frontend-knip frontend-lint frontend-format-check extension-test memory-test go-test install-test vet test check clean dev docs docs-dev release-patch release-minor release-major release-beta e2e e2e-setup
 
 BINARY ?= pi-web
 WEB_DIR := web
@@ -38,6 +38,9 @@ frontend-build: frontend-setup
 frontend-test: frontend-setup
 	cd $(WEB_DIR) && npm run test
 
+frontend-typecheck: frontend-setup
+	cd $(WEB_DIR) && npm run typecheck
+
 frontend-knip: frontend-setup
 	cd $(WEB_DIR) && npm run knip
 
@@ -53,7 +56,7 @@ extension-test: root-setup
 memory-test:
 	PYTHONDONTWRITEBYTECODE=1 python3 .pi/skills/memory/scripts/test_memory.py
 
-go-test: go-setup
+go-test: go-setup frontend-build
 	go test ./...
 
 install-test:
@@ -61,12 +64,12 @@ install-test:
 	PYTHONDONTWRITEBYTECODE=1 python3 tests/install/service_env_test.py
 	@if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -File tests/install/install_ps1_test.ps1; else echo "SKIP: pwsh unavailable"; fi
 
-vet: go-setup
+vet: go-setup frontend-build
 	go vet ./...
 
 test: frontend-test extension-test memory-test go-test install-test
 
-check: frontend-lint frontend-format-check frontend-knip frontend-test extension-test memory-test frontend-build go-test install-test vet
+check: frontend-lint frontend-format-check frontend-typecheck frontend-knip frontend-test extension-test memory-test frontend-build go-test install-test vet
 
 dev: frontend-setup go-setup
 	@echo "Starting secondary dev instance at http://127.0.0.1:31416 (frontend watcher + Go hot-reloader)..."
@@ -93,7 +96,7 @@ e2e: build
 
 clean:
 	rm -f $(BINARY)
-	rm -rf $(WEB_DIR)/dist
+	rm -rf $(WEB_DIR)/dist $(WEB_DIR)/dist-desktop $(WEB_DIR)/dist-mobile $(WEB_DIR)/dist-export
 
 # Docs site (VitePress). Assemble the generated srcDir from user-docs + authored
 # pages, then build/preview. Not part of `make check` — never gates the app.

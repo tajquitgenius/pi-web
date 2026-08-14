@@ -5,7 +5,8 @@ import "strings"
 type Manifest map[string]ManifestEntry
 
 type ManifestEntry struct {
-	File string `json:"file"`
+	File string   `json:"file"`
+	CSS  []string `json:"css,omitempty"`
 }
 
 func (m Manifest) ScriptPath(entry string) (string, bool) {

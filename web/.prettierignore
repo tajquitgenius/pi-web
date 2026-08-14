@@ -1,4 +1,6 @@
 dist
+dist-desktop
+dist-mobile
 dist-export
 node_modules
 package-lock.json
