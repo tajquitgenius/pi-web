@@ -980,3 +980,203 @@ body.modal-sheet-open { overflow: hidden; }
         -webkit-backdrop-filter: none;
     }
 }
+
+/* ── Remote workspace redesign ───────────────────────────────────── */
+.header-inner,
+.content {
+    max-width: 1180px;
+}
+.header-inner { padding: 18px 28px 20px; }
+.header-brand {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+}
+.header-brand .pi-logo-mark {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    background: var(--text);
+    -webkit-mask: url('/pi-logo.svg') center / contain no-repeat;
+    mask: url('/pi-logo.svg') center / contain no-repeat;
+}
+.header-brand-copy {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.header-product-name {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+.header-actions { gap: 8px; }
+.header-new-session {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 13px;
+    border: 1px solid var(--accent);
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--body-bg);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+.header-new-session:hover { filter: brightness(1.06); }
+.header-new-session:focus-visible,
+.nav-search-btn:focus-visible,
+.nav-menu-btn:focus-visible,
+.layout-toggle button:focus-visible,
+.schedules-nav-btn:focus-visible,
+.session-card:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+.workspace-summary {
+    align-items: flex-end;
+    margin-top: 30px;
+}
+.workspace-heading h1 {
+    color: var(--text);
+    font-size: clamp(24px, 3vw, 34px);
+    line-height: 1.1;
+    letter-spacing: -0.045em;
+}
+.workspace-stats {
+    margin-top: 9px;
+    color: var(--muted);
+    font-size: 13px;
+}
+.content { padding-top: 34px; }
+.active-sessions {
+    margin-bottom: 44px;
+    padding: 20px;
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--dim));
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+.section-heading-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 15px;
+}
+.section-heading-row--recent { margin: 0 0 18px; }
+.section-eyebrow {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+.section-heading-row h2 {
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+}
+.section-count {
+    min-width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+    font-weight: 700;
+}
+.session-grid { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.session-card {
+    min-height: 148px;
+    padding: 17px 18px 16px;
+    border-radius: 12px;
+    background: var(--surface);
+}
+.session-card--running {
+    background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--dim));
+}
+.session-title-row { margin-bottom: 8px; }
+.session-title {
+    font-size: 15px;
+    font-weight: 680;
+    line-height: 1.38;
+}
+.session-project {
+    display: block;
+    margin-bottom: 23px;
+    color: var(--text-soft);
+    font-family: var(--font-code);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.session-meta {
+    align-items: center;
+    gap: 0;
+    font-size: 12px;
+}
+.session-meta > span + span::before {
+    content: '';
+    width: 3px;
+    height: 3px;
+    display: inline-block;
+    margin: 0 9px 2px;
+    border-radius: 50%;
+    background: var(--dim);
+}
+.session-model { margin: 0; color: var(--muted); }
+.session-active-status { gap: 7px; font-weight: 700; }
+.session-active-status .status-dot { width: 7px; height: 7px; }
+.timeline-section { margin-bottom: 30px; }
+.date-separator {
+    margin-bottom: 14px;
+    border-bottom-color: color-mix(in srgb, var(--dim) 55%, transparent);
+}
+
+@media (max-width: 700px) {
+    .header-inner { padding: 10px 14px 16px; }
+    .header-top { align-items: center; }
+    .header-brand { gap: 7px; }
+    .header-brand .pi-logo-mark { width: 25px; height: 25px; }
+    .header-product-name { display: none; }
+    .header-new-session {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0 12px;
+    }
+    .header-new-session span { display: none; }
+    .nav-menu-btn { width: 44px; height: 44px; }
+    .nav-search-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        padding: 0;
+    }
+    .nav-search-label { display: none; }
+    .nav-search-icon { display: inline-flex; }
+    .workspace-summary {
+        align-items: flex-start;
+        margin-top: 20px;
+    }
+    .workspace-views { margin-top: 2px; }
+    .schedules-nav-btn span:last-child { display: none; }
+    .schedules-nav-btn { width: 40px; height: 40px; justify-content: center; padding: 0; }
+    .layout-toggle button { min-height: 40px; font-size: 12px; }
+    .content { padding: 24px 14px calc(32px + env(safe-area-inset-bottom)); }
+    .active-sessions { margin: 0 -2px 34px; padding: 14px; border-radius: 14px; }
+    .session-grid { grid-template-columns: 1fr; }
+    .session-card { min-height: 142px; }
+}

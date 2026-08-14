@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import SessionInfoHeader from './SessionInfoHeader.svelte';
 import { SessionDataModel } from '../../session/data/session-data.svelte.js';
 
-function mount(overrides = {}) {
+function mount(overrides = {}, props = {}) {
   const model = new SessionDataModel({
     header: { id: 'sid-123', timestamp: '2026-01-01T00:00:00Z' },
     entries: [
@@ -24,7 +24,7 @@ function mount(overrides = {}) {
     ],
     ...overrides,
   });
-  return { model, ...render(SessionInfoHeader, { props: { model } }) };
+  return { model, ...render(SessionInfoHeader, { props: { model, ...props } }) };
 }
 
 describe('SessionInfoHeader', () => {
@@ -38,6 +38,16 @@ describe('SessionInfoHeader', () => {
     // messages summary reflects the entries
     expect(container.textContent).toContain('1 user, 1 assistant');
     expect(container.textContent).toContain('↑1.2k');
+  });
+
+  it('collapses live session metadata behind a details disclosure', async () => {
+    const { container } = mount({}, { compact: true });
+    const summary = screen.getByRole('button', { name: /Session details/ });
+    expect(summary).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelector('.session-details-content--compact')).not.toHaveClass('open');
+    await userEvent.click(summary);
+    expect(summary).toHaveAttribute('aria-expanded', 'true');
+    expect(container.querySelector('.session-details-content--compact')).toHaveClass('open');
   });
 
   it('renders an expandable system prompt and toggles on click', async () => {

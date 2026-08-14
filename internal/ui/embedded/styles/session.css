@@ -456,7 +456,7 @@
 
     :root {
       --line-height: 18px; /* 12px font * 1.5 */
-      --sidebar-width: 400px;
+      --sidebar-width: 300px;
       --sidebar-min-width: 240px;
       --sidebar-max-width: 840px;
       --sidebar-resizer-width: 6px;
@@ -6725,4 +6725,203 @@
       flex: 0 0 auto;
       font-size: 12px;
       color: var(--text-soft, var(--muted));
+    }
+
+    /* ── Conversation-first remote workspace ─────────────────────── */
+    .session-header-bar {
+      padding-inline: 14px;
+      gap: 12px;
+    }
+    .session-header-context {
+      min-width: 0;
+      flex: 1 1 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      color: var(--muted);
+    }
+    .session-header-context .host-switcher { flex: 0 1 auto; }
+    .session-header-divider { color: var(--dimGray); }
+    .session-header-project {
+      min-width: 0;
+      max-width: 22vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--font-code);
+      font-size: 12px;
+    }
+    .session-header-title {
+      position: static;
+      transform: none;
+      min-width: 0;
+      max-width: 30vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .session-header-back {
+      min-height: 36px;
+      padding: 0 8px;
+      border-radius: 7px;
+    }
+    .session-header-back:hover { background: var(--hover); }
+    .session-header-back span { display: inline-flex; }
+    .session-header-actions,
+    .session-header-new,
+    .session-header-shortcuts-help {
+      min-height: 36px;
+      border-radius: 7px;
+    }
+    .session-header-actions:focus-visible,
+    .session-header-new:focus-visible,
+    .session-header-shortcuts-help:focus-visible,
+    .session-details-summary:focus-visible,
+    .pi-chat-icon-button:focus-visible,
+    .pi-chat-send:focus-visible,
+    .pi-chat-cancel:focus-visible,
+    .pi-chat-queue:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+
+    .session-details-summary {
+      width: 100%;
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 14px;
+      border: 1px solid color-mix(in srgb, var(--dim) 75%, transparent);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+    }
+    .session-details-summary:hover { background: var(--surface-2); }
+    .session-details-summary-main {
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      font-weight: 650;
+    }
+    .session-details-summary-stats {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 450;
+    }
+    .session-details-summary-chevron {
+      display: inline-flex;
+      color: var(--muted);
+      transition: transform 0.16s ease;
+    }
+    .session-details-summary-chevron.open { transform: rotate(180deg); }
+    .session-details-content--compact { display: none; }
+    .session-details-content--compact.open {
+      display: block;
+      padding-top: 10px;
+    }
+    #header-container { padding: 12px 16px 0; }
+    #header-container .session-details-content--compact .header,
+    #header-container .session-details-content--compact + * {
+      border-radius: 10px;
+    }
+
+    .pi-chat-shell {
+      border-radius: 12px;
+      box-shadow: 0 10px 32px color-mix(in srgb, #000 18%, transparent);
+    }
+    .pi-chat-cwd {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--font-code);
+    }
+
+    @media (min-width: 901px) and (max-width: 1400px) {
+      .right-sidebar {
+        display: flex !important;
+        position: fixed;
+        right: 0;
+        top: 52px;
+        bottom: 0;
+        z-index: 1200;
+        height: calc(100vh - 52px);
+        box-shadow: -12px 0 40px color-mix(in srgb, #000 38%, transparent);
+        transform: translateX(100%);
+        transition: transform 0.22s ease;
+      }
+      body:not(.right-sidebar-collapsed) .right-sidebar { transform: translateX(0); }
+      body:not(.right-sidebar-collapsed) .right-sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 52px 0 0;
+        z-index: 1199;
+        background: color-mix(in srgb, #000 38%, transparent);
+      }
+      .right-sidebar-resizer { display: none !important; }
+    }
+
+    @media (max-width: 900px) {
+      .session-header-bar { gap: 4px; padding-inline: 8px; }
+      .session-header-left { gap: 2px; }
+      .session-header-back,
+      .session-header-actions,
+      .session-header-new,
+      .session-header-shortcuts-help {
+        min-width: 44px;
+        min-height: 44px;
+        margin: 0;
+        justify-content: center;
+      }
+      .session-header-back-label,
+      .session-header-shortcuts-help,
+      .session-header-project,
+      .session-header-divider { display: none; }
+      .session-header-context { justify-content: flex-start; gap: 2px; }
+      .session-header-context .host-switcher-trigger { max-width: 31vw; }
+      .session-header-title {
+        max-width: none;
+        flex: 1 1 auto;
+        margin: 0 4px;
+        text-align: left;
+      }
+      #header-container { padding: 10px 10px 0; }
+      .session-details-summary {
+        min-height: 44px;
+        padding-inline: 12px;
+      }
+      .session-details-summary-stats { display: none; }
+      .pi-chat-icon-button,
+      .pi-chat-send,
+      .pi-chat-remove,
+      .pi-chat-cancel,
+      .pi-chat-queue,
+      .pi-chat-expand-button {
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+        font-size: 13px;
+        border-radius: 8px;
+      }
+      .pi-chat-send { padding-inline: 16px; }
+      .pi-chat-toolbar { min-height: 52px; padding: 4px 8px; }
+      .pi-chat-cwd-bar { min-height: 30px; padding-left: 10px; font-size: 11px; }
+      #pi-chat-message { font-size: 16px; line-height: 1.45; }
+    }
+
+    @media print {
+      .session-details-summary { display: none; }
+      .session-details-content--compact { display: block; }
     }

@@ -25,7 +25,7 @@
   let customDraft = $state({ ui: null, content: null, code: null });
 
   function fontValue(kind) {
-    return valueFor(settings, FONT_KEYS[kind], 'mono');
+    return valueFor(settings, FONT_KEYS[kind], kind === 'code' ? 'mono' : 'system');
   }
   function isCustomFont(kind) {
     const v = fontValue(kind);

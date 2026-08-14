@@ -7,6 +7,7 @@
     path = $bindable(''),
     creating = false,
     error = '',
+    instanceName = '',
     onClose = () => {},
     onCreate = () => {},
   } = $props();
@@ -44,10 +45,10 @@
         onclick={onClose}
       >
         <span aria-hidden="true">←</span>
-        <span>{t('index.startNewSession')}</span>
+        <span>{t('host.newSession', { host: instanceName || t('host.thisComputer') })}</span>
       </button>
     </div>
-    <h2>{t('index.startNewSession')}</h2>
+    <h2>{t('host.newSession', { host: instanceName || t('host.thisComputer') })}</h2>
     <div class="recent-locations" id="recentLocations">
       {#each recent as loc (loc)}
         <button type="button" class="recent-chip" onclick={() => chooseRecent(loc)}>{loc}</button>

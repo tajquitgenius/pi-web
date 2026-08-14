@@ -1,19 +1,41 @@
 <script>
   import { onMount } from 'svelte';
-  import { icon, PanelLeft, Plus, SquarePen, MoreHorizontal } from '../../shared/icons.js';
+  import {
+    icon,
+    ChevronLeft,
+    PanelLeft,
+    Plus,
+    SquarePen,
+    MoreHorizontal,
+  } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
   import { navigate, handleNavClick } from '../../shared/navigation.js';
   import { showToast } from '../../shared/toast.js';
   import { copyToClipboard } from '../../shared/clipboard.js';
   import { sessionTitle, setSessionTitle } from '../../session/session-title.svelte.js';
-  let { title = 'Session', cwd = '', sessionId = '', sessionUUID = '' } = $props();
+  import HostSwitcher from '../shared/HostSwitcher.svelte';
+  let {
+    title = 'Session',
+    host = { instanceName: 'This computer', currentUrl: '', peers: [] },
+    cwd = '',
+    sessionId = '',
+    sessionUUID = '',
+  } = $props();
+
+  const projectName = $derived(
+    String(cwd || '')
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .pop() || t('index.unknownProject'),
+  );
 
   // The title prop seeds the shared store (and re-seeds it on session switch);
   // renames/auto-titling update the store, which this component renders and
   // mirrors into document.title.
   $effect(() => setSessionTitle(title));
   $effect(() => {
-    if (sessionTitle.name) document.title = sessionTitle.name;
+    if (sessionTitle.name) document.title = `${sessionTitle.name} · ${host.instanceName} · pi-web`;
   });
 
   // Resume ("Terminal") + New Session behavior, absorbed from the former
@@ -97,7 +119,9 @@
 <div class="session-header-bar">
   <div class="session-header-left">
     <a href="/" class="session-header-back" onclick={(event) => handleNavClick(event, '/')}
-      ><span>←</span> {t('session.back')}</a
+      ><span aria-hidden="true">{@html icon(ChevronLeft, { size: 16 })}</span><span
+        class="session-header-back-label">{t('session.back')}</span
+      ></a
     >
     <button
       id="tree-toggle"
@@ -107,7 +131,13 @@
       aria-pressed="true">{@html icon(PanelLeft, { size: 14 })}</button
     >
   </div>
-  <span class="session-header-title" id="session-header-title">{sessionTitle.name || title}</span>
+  <div class="session-header-context">
+    <HostSwitcher {host} compact />
+    <span class="session-header-divider" aria-hidden="true">/</span>
+    <span class="session-header-project" title={cwd}>{projectName}</span>
+    <span class="session-header-divider" aria-hidden="true">/</span>
+    <span class="session-header-title" id="session-header-title">{sessionTitle.name || title}</span>
+  </div>
   <div class="session-header-right">
     <button
       id="new-session-header-btn"

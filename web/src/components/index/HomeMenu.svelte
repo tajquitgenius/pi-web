@@ -20,10 +20,38 @@
     onManageProjects = () => {},
   } = $props();
 
+  let menuEl = $state(null);
+
   function handleBackdropClick(e) {
     e.stopPropagation();
     onClose();
   }
+
+  function handleMenuKeydown(event) {
+    const items = [...(menuEl?.querySelectorAll('[role="menuitem"]') || [])];
+    const current = items.indexOf(document.activeElement);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      document.getElementById('web-menu-btn')?.focus();
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || items.length === 0) return;
+    event.preventDefault();
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (current + 1 + items.length) % items.length
+            : (current - 1 + items.length) % items.length;
+    items[next]?.focus();
+  }
+
+  $effect(() => {
+    if (open) requestAnimationFrame(() => menuEl?.querySelector('[role="menuitem"]')?.focus());
+  });
 </script>
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
@@ -33,15 +61,11 @@
   class="mobile-command-backdrop"
   class:open
   style:display={open ? '' : 'none'}
-  role="button"
-  tabindex="0"
-  aria-label={t('common.close')}
+  role="presentation"
   onclick={handleBackdropClick}
-  onkeydown={(e) => {
-    if (e.key === 'Enter' || e.key === ' ') handleBackdropClick(e);
-  }}
 ></div>
 <div
+  bind:this={menuEl}
   id="web-menu"
   class="web-menu"
   class:open
@@ -50,7 +74,7 @@
   aria-labelledby="web-menu-btn"
   hidden={!open}
   onclick={(e) => e.stopPropagation()}
-  onkeydown={() => {}}
+  onkeydown={handleMenuKeydown}
 >
   <div class="web-menu-section">
     <button

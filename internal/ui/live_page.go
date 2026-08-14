@@ -113,7 +113,7 @@ func renderLiveDocumentStart(data liveDocumentData) string {
 	var b strings.Builder
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n")
 	b.WriteString("<meta charset=\"UTF-8\">\n")
-	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content\">\n")
+	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, interactive-widget=resizes-content\">\n")
 	b.WriteString("<title>")
 	b.WriteString(template.HTMLEscapeString(data.Title))
 	b.WriteString("</title>\n")

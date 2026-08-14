@@ -11,7 +11,7 @@
 }
 
 :root {
-    --font-sans: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+    --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     /* Font for rendered message content; falls back to the interface font and
        is overridden by the server-injected #pi-web-fonts style when set. */
     --font-content: var(--font-sans);
@@ -21,8 +21,8 @@
     --font-code: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
     /* Adjustable font sizes (overridden by the server-injected #pi-web-fonts
        style and live by the settings page). */
-    --font-size-ui: 12px;
-    --font-content-size: 13px;
+    --font-size-ui: 14px;
+    --font-content-size: 15px;
     --palette-surface: var(--surface);
     --palette-surface-2: var(--surface-2);
     --palette-text-soft: var(--text-soft);
@@ -35,6 +35,8 @@
      */
     --chrome-bg: color-mix(in srgb, var(--body-bg) 90%, #000);
     --input-bg: color-mix(in srgb, var(--body-bg) 86%, #fff);
+    --focus-ring: color-mix(in srgb, var(--accent) 88%, white);
+    --elevated-shadow: 0 18px 48px color-mix(in srgb, #000 34%, transparent);
 }
 
 :root,
@@ -400,4 +402,105 @@
     --border-accent: #ff79c6;
     --userMessageText: #f8f8f2;
     --customMessageText: #f8f8f2;
+}
+
+/* Shared host identity and switcher. Every remote instance uses this same
+   control; peer hosts are ordinary top-level links, never cross-origin API calls. */
+.host-switcher {
+    position: relative;
+    min-width: 0;
+    font-family: var(--font-sans);
+}
+.host-switcher-trigger {
+    min-height: 34px;
+    max-width: min(260px, 42vw);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    border: 1px solid color-mix(in srgb, var(--dim) 80%, transparent);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.host-switcher-trigger--static { cursor: default; }
+.host-switcher--compact .host-switcher-trigger {
+    min-height: 28px;
+    padding: 0 8px;
+    border-color: transparent;
+    background: transparent;
+}
+.host-presence {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.host-switcher-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.host-switcher-chevron {
+    display: inline-flex;
+    color: var(--muted);
+}
+.host-switcher-trigger:not(.host-switcher-trigger--static):hover,
+.host-switcher-trigger:not(.host-switcher-trigger--static):focus-visible,
+.host-switcher-trigger[aria-expanded='true'] {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--dim));
+    background: var(--surface-2);
+}
+.host-switcher-trigger:focus-visible,
+.host-switcher-peer:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+.host-switcher-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 1400;
+    width: min(280px, calc(100vw - 24px));
+    padding: 8px;
+    border: 1px solid var(--dim);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    box-shadow: var(--elevated-shadow);
+    backdrop-filter: blur(18px);
+}
+.host-switcher-caption {
+    padding: 6px 9px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.host-switcher-caption--peers { margin-top: 5px; }
+.host-switcher-current,
+.host-switcher-peer {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 10px;
+    border-radius: 8px;
+    color: var(--text);
+    text-decoration: none;
+}
+.host-switcher-current { color: var(--accent); }
+.host-switcher-current span:first-child { display: inline-flex; }
+.host-switcher-peer:hover,
+.host-switcher-peer:focus-visible { background: var(--hover); }
+
+@media (max-width: 700px) {
+    .host-switcher-trigger { min-height: 44px; }
+    .host-switcher--compact .host-switcher-trigger { min-height: 40px; }
 }

@@ -48,6 +48,13 @@
       : null,
   );
   const queueStore = new QueueStore({ api: queueApi });
+  const cwdLabel = $derived(
+    String(cwd || '')
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .pop() || cwd,
+  );
 
   // The composer runtime lives in <script module> (runChatComposer). It reads the
   // shared model + navigateTo (owned by SessionPage runtime context) at mount —
@@ -113,7 +120,11 @@
   <div class="pi-chat-shell">
     <ChatExpandButton {chatAvailable} />
     {#if cwd}<div class="pi-chat-toolbar pi-chat-cwd-bar">
-        <span class="pi-chat-cwd" title={t('composer.copyPath')} data-cwd={cwd}>cwd: {cwd}</span
+        <span
+          class="pi-chat-cwd"
+          title={`${cwd} · ${t('composer.copyPath')}`}
+          aria-label={`cwd: ${cwd}`}
+          data-cwd={cwd}>cwd: {cwdLabel}</span
         ><span class="pi-chat-focus-shortcut">{t('composer.focusShortcut')}</span>
       </div>{/if}
     {#if !chatAvailable}<div class="pi-chat-disabled-notice">{chatDisabledReason}</div>{/if}

@@ -1,14 +1,18 @@
 <script>
-  import { icon, MoreHorizontal, CalendarClock } from '../../shared/icons.js';
+  import { icon, MoreHorizontal, CalendarClock, Plus, Search } from '../../shared/icons.js';
   import { t } from '../../shared/i18n.js';
+  import HostSwitcher from '../shared/HostSwitcher.svelte';
 
   let {
     layout = 'timeline',
     totalSessionsLabel = t('index.sessionsCount', { count: 0 }),
     runningCount = 0,
     runningVisible = false,
+    host = { instanceName: 'This computer', currentUrl: '', peers: [] },
+    menuOpen = false,
     onSearch = () => {},
     onToggleMenu = () => {},
+    onNewSession = () => {},
     onLayoutChange = () => {},
     onSchedules = () => {},
   } = $props();
@@ -19,22 +23,36 @@
 <div class="header">
   <div class="header-inner">
     <div class="header-top">
-      <h1><span class="pi-logo-mark" aria-hidden="true"></span><span>{t('index.title')}</span></h1>
+      <div class="header-brand">
+        <span class="pi-logo-mark" aria-hidden="true"></span>
+        <div class="header-brand-copy">
+          <span class="header-product-name">pi-web</span>
+          <HostSwitcher {host} compact />
+        </div>
+      </div>
       <div class="header-actions">
+        <button class="header-new-session" type="button" onclick={onNewSession}
+          >{@html icon(Plus, { size: 16 })}<span>{t('index.newSession')}</span></button
+        >
         <button
           class="nav-search-btn"
           id="open-search"
           type="button"
           aria-haspopup="dialog"
           aria-controls="sessionPalette"
-          onclick={onSearch}><span>{t('index.searchSessions')}</span><kbd>⌘K</kbd></button
+          onclick={onSearch}
+          ><span class="nav-search-icon" aria-hidden="true">{@html icon(Search, { size: 16 })}</span
+          ><span class="nav-search-label">{t('host.search', { host: host.instanceName })}</span><kbd
+            >⌘K</kbd
+          ></button
         >
         <button
           class="nav-menu-btn"
           id="web-menu-btn"
           type="button"
+          aria-label={t('session.actions')}
           aria-haspopup="menu"
-          aria-expanded={String(false)}
+          aria-expanded={String(menuOpen)}
           aria-controls="web-menu"
           onclick={(e) => {
             e.stopPropagation();
@@ -44,13 +62,20 @@
       </div>
     </div>
     <div class="workspace-summary">
-      <div class="workspace-stats">
-        <span data-total-count>{totalSessionsLabel}</span>
-        <span class="stat-running" class:visible={runningVisible} id="statRunning" data-running-stat
-          ><span class="status-dot" aria-hidden="true"></span><span data-running-count
-            >{runningCount}</span
-          ><span class="stat-running-label"> {t('index.active')}</span></span
-        >
+      <div class="workspace-heading">
+        <h1>{t('index.title')}</h1>
+        <div class="workspace-stats">
+          <span data-total-count>{totalSessionsLabel}</span>
+          <span
+            class="stat-running"
+            class:visible={runningVisible}
+            id="statRunning"
+            data-running-stat
+            ><span class="status-dot" aria-hidden="true"></span><span data-running-count
+              >{runningCount}</span
+            ><span class="stat-running-label"> {t('index.running')}</span></span
+          >
+        </div>
       </div>
       <div class="workspace-views">
         <div class="layout-toggle" aria-label={t('index.sessionLayout')}>
