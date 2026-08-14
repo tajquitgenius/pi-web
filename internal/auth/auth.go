@@ -84,11 +84,10 @@ func (a *Middleware) AllowAnyHost() {
 
 // Wrap returns a handler that enforces the token check when auth is enabled.
 //
-// Token sources (checked in order): for browser POSTs, form body first;
-// otherwise query parameter, Authorization header, X-Pi-Token header, and
-// cookie. When the token arrives via query or POST, a cookie is set and the
-// browser is redirected to the same URL without the token, so the secret never
-// appears in the address bar or browser history.
+// Token sources (checked in order): browser login form body, Authorization
+// header, X-Pi-Token header, and cookie. Credentials in query parameters are
+// rejected at the request boundary. A valid form submission sets an HttpOnly
+// cookie and redirects to the same credential-free URL.
 //
 // When auth fails and the request appears to come from a browser (Accept
 // header includes text/html), the middleware serves an HTML token prompt
@@ -105,11 +104,8 @@ func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 		}
 
 		got := ""
-		fromQuery := false
 		fromPost := false
 
-		// Browser login form submissions should prefer the submitted token over
-		// any stale token that may still be present in the URL query string.
 		if r.Method == http.MethodPost && strings.Contains(r.Header.Get("Accept"), "text/html") {
 			// ParseForm is idempotent; safe to call even if already parsed.
 			r.ParseForm()
@@ -120,7 +116,7 @@ func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if got == "" {
-			got, fromQuery = ExtractToken(r)
+			got = ExtractToken(r)
 		}
 
 		if subtle.ConstantTimeCompare([]byte(got), []byte(a.token)) != 1 {
@@ -150,10 +146,9 @@ func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Token is valid. Set a cookie if it came from query or POST so
+		// A valid browser form submission becomes an HttpOnly cookie so
 		// subsequent requests authenticate automatically.
-		shouldSetCookie := fromQuery || fromPost
-		if shouldSetCookie {
+		if fromPost {
 			http.SetCookie(w, &http.Cookie{
 				Name:     TokenCookieName,
 				Value:    got,
@@ -165,10 +160,8 @@ func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 			})
 		}
 
-		// Redirect to a clean URL (no token in query or error flag) when
-		// the token arrived via query or POST. This keeps the secret out
-		// of the address bar and browser history.
-		if fromQuery || fromPost {
+		// Redirect after a form submission so refreshing cannot resubmit it.
+		if fromPost {
 			http.Redirect(w, r, cleanURL(r), http.StatusFound)
 			return
 		}
@@ -190,6 +183,10 @@ func (a *Middleware) WrapBoundary(h http.Handler) http.Handler {
 }
 
 func (a *Middleware) allowsBoundary(w http.ResponseWriter, r *http.Request) bool {
+	if _, hasTokenQuery := r.URL.Query()["token"]; hasTokenQuery {
+		http.Error(w, "credentials are not accepted in URLs", http.StatusBadRequest)
+		return false
+	}
 	if !a.allowsHost(r.Host) {
 		http.Error(w, "unrecognized host", http.StatusForbidden)
 		return false
@@ -346,11 +343,9 @@ func (a *Middleware) allowsBrowserOrigin(r *http.Request) bool {
 	return normalizeAuthority(origin) == normalizeAuthority(expectedScheme+"://"+r.Host)
 }
 
-// cleanURL returns r.URL.Path with query string intact except for "token" and
-// "error" parameters, which are stripped.
+// cleanURL returns r.URL.Path with the transient login error flag removed.
 func cleanURL(r *http.Request) string {
 	q := r.URL.Query()
-	q.Del("token")
 	q.Del("error")
 	if len(q) == 0 {
 		return r.URL.Path
@@ -358,20 +353,17 @@ func cleanURL(r *http.Request) string {
 	return r.URL.Path + "?" + q.Encode()
 }
 
-// ExtractToken returns the candidate token and whether it came from the query
-// string (in which case a cookie should be set).
-func ExtractToken(r *http.Request) (string, bool) {
-	if t := r.URL.Query().Get("token"); t != "" {
-		return t, true
-	}
+// ExtractToken returns a candidate from credential-bearing headers or the
+// HttpOnly browser cookie. Query parameters are rejected by allowsBoundary.
+func ExtractToken(r *http.Request) string {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimPrefix(h, "Bearer "), false
+		return strings.TrimPrefix(h, "Bearer ")
 	}
 	if h := r.Header.Get("X-Pi-Token"); h != "" {
-		return h, false
+		return h
 	}
 	if c, err := r.Cookie(TokenCookieName); err == nil {
-		return c.Value, false
+		return c.Value
 	}
-	return "", false
+	return ""
 }

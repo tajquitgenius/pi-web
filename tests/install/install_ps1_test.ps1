@@ -31,5 +31,34 @@ if ($latest -ne 'v10.0.0-beta.1') {
   throw "Get-LatestTag returned $latest; expected v10.0.0-beta.1"
 }
 
-Remove-Item Env:PI_WEB_INSTALLER_TEST
-Write-Host 'PASS: install.ps1 semver release selection'
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ("pi-web-installer-test-" + [guid]::NewGuid())
+$script:ConfigDir = Join-Path $testRoot '.config\pi-web'
+$script:EnvFile = Join-Path $ConfigDir 'env'
+try {
+  Remove-Item Env:PI_WEB_TOKEN -ErrorAction SilentlyContinue
+  Initialize-EnvFile
+  if (Select-String -Path $EnvFile -Pattern '^PI_WEB_TOKEN=' -Quiet) {
+    throw 'Initialize-EnvFile generated PI_WEB_TOKEN without an explicit value'
+  }
+
+  Set-Content -Path $EnvFile -Value @('PI_WEB_TOKEN=existing-secret', 'KEEP=value')
+  Initialize-EnvFile
+  if (-not (Select-String -Path $EnvFile -SimpleMatch 'PI_WEB_TOKEN=existing-secret' -Quiet)) {
+    throw 'Initialize-EnvFile did not preserve the existing token'
+  }
+
+  $env:PI_WEB_TOKEN = 'explicit-secret'
+  $output = Initialize-EnvFile | Out-String
+  if (-not (Select-String -Path $EnvFile -SimpleMatch 'PI_WEB_TOKEN=explicit-secret' -Quiet)) {
+    throw 'Initialize-EnvFile did not persist the explicit token'
+  }
+  if ($output -match 'explicit-secret') {
+    throw 'Initialize-EnvFile printed the explicit token'
+  }
+} finally {
+  Remove-Item Env:PI_WEB_TOKEN -ErrorAction SilentlyContinue
+  Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item Env:PI_WEB_INSTALLER_TEST
+}
+
+Write-Host 'PASS: install.ps1 release selection and optional token handling'

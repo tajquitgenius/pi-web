@@ -11,33 +11,26 @@ import (
 	"pi-web/internal/sessions"
 )
 
-// share-session.html renders the static export/share snapshot only; the live
-// session page is the Svelte SPA served via the app.html shell.
+// share-session.html renders the isolated static export/share snapshot. Live
+// session pages are owned by the desktop and mobile React products.
+//
 //go:embed embedded/share-session.html
 var exportSessionHtml string
 
 var exportSessionTmpl = template.Must(template.New("export_session").Parse(exportSessionHtml))
 
 //go:embed embedded/styles/theme.css
-var liveThemeCss string
+var exportThemeCSS string
 
 //go:embed embedded/styles/session.css
-var liveSessionCss string
+var exportSessionCSS string
 
-//go:embed embedded/styles/menu.css
-var liveMenuCss string
-
-//go:embed embedded/styles/palette.css
-var livePaletteCss string
-
-// LargeSessionTailEntries controls how many trailing entries get embedded
-// in the initial HTML render for huge sessions. The frontend exposes a
-// "Load earlier" affordance that fetches preceding windows via
-// /api/session?id=...&from=N&count=K.
+// LargeSessionTailEntries controls the initial tail window returned to live
+// React products for huge sessions. Static exports always embed the complete
+// conversation because they cannot fetch preceding windows.
 //
-// Defaults are production values; both are overridable via env vars so tests
-// (and future config plumbing) can trigger truncation with a small session
-// instead of rendering thousands of entries. Read once at startup.
+// Defaults are production values and are overridable for tests. Read once at
+// startup.
 var (
 	LargeSessionThreshold   = envInt("PI_WEB_LARGE_SESSION_THRESHOLD", 1500)
 	LargeSessionTailEntries = envInt("PI_WEB_LARGE_SESSION_TAIL_ENTRIES", 1000)
@@ -52,13 +45,8 @@ func envInt(name string, def int) int {
 	return def
 }
 
-// prepareSessionPageData computes the payload (base64-encoded session data,
-// themed CSS, and body attributes) for the static export/share snapshot.
-//
-// For sessions with more than LargeSessionThreshold entries we embed only the
-// tail (LargeSessionTailEntries) and add { truncated, total, from } fields so
-// the frontend can render a "Load earlier" banner and lazily fetch preceding
-// windows. Small sessions get the full payload as before — zero behavior change.
+// prepareSessionPageData computes the complete base64 session payload, CSS, and
+// body attributes for a self-contained static export/share snapshot.
 func prepareSessionPageData(session sessions.Session, cssTemplate string) (dataBase64, css, bodyAttrs string) {
 	leafID := ""
 	for i := len(session.Entries) - 1; i >= 0; i-- {
@@ -71,27 +59,14 @@ func prepareSessionPageData(session sessions.Session, cssTemplate string) (dataB
 		}
 	}
 
-	total := len(session.Entries)
-	entries := session.Entries
-	from := 0
-	truncated := false
-	if total > LargeSessionThreshold {
-		from = total - LargeSessionTailEntries
-		entries = session.Entries[from:]
-		truncated = true
-	}
-
 	sessionData := map[string]any{
 		"header":        session.Header,
-		"entries":       entries,
+		"entries":       session.Entries,
 		"name":          session.Name,
 		"leafId":        leafID,
 		"systemPrompt":  nil,
 		"tools":         nil,
 		"renderedTools": nil,
-		"total":         total,
-		"from":          from,
-		"truncated":     truncated,
 	}
 
 	dataJSON, _ := json.Marshal(sessionData)

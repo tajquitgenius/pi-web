@@ -1,22 +1,13 @@
 <script>
-  // One conversation entry in the message pane, rendered declaratively (the
-  // decomposition of the former renderEntry()). {@html} is used only for markdown
-  // (safeMarkedParse) — everything else is escaped Svelte template. The wrapper
-  // keeps its `entry-<id>` anchor so annotation offsets + scroll/toggle survive.
-  // Shared by the live app and the static export (model passed as a prop).
+  // One static snapshot conversation entry. {@html} is used only for sanitized
+  // markdown; all other values are escaped by Svelte.
   import { marked } from 'marked';
-  import { icon, GitFork, Link2, Tag } from '../../shared/icons.js';
-  import { t } from '../../shared/i18n.js';
   import { safeMarkedParse } from '../../session/render/markdown.js';
   import { formatTimestamp } from '../../session/render/entry-format.js';
   import ToolCall from './ToolCall.svelte';
   import ToolOutput from './ToolOutput.svelte';
 
-  // `live` (passed from <SessionContent>) gates the fork/label buttons, which
-  // need the chat composer; copy-link is always shown. The static export passes
-  // false. (Replaces the former renderForkButton/renderLabelButton isLive check —
-  // a prop, not a DOM probe, since entries mount before the composer.)
-  let { entry, model = null, live = false } = $props();
+  let { entry, model = null } = $props();
 
   const ts = $derived(formatTimestamp(entry?.timestamp));
   const md = (text) => safeMarkedParse(text, { marked });
@@ -39,25 +30,11 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
-{#snippet actions(id)}
-  {#if live}<button class="fork-btn" data-entry-id={id} title="Fork session from this message"
-      >{@html icon(GitFork, { size: 13 })}</button
-    >{/if}
-  {#if live}<button
-      class="label-btn"
-      data-entry-id={id}
-      title={t('session.labelEntry')}
-      aria-label={t('session.labelEntry')}>{@html icon(Tag, { size: 13 })}</button
-    >{/if}
-  <button class="copy-link-btn" data-entry-id={id} title="Copy link to this message"
-    >{@html icon(Link2, { size: 14 })}</button
-  >
-{/snippet}
 {#snippet timestamp()}{#if ts}<div class="message-timestamp">{ts}</div>{/if}{/snippet}
 
 {#if msg && msg.role === 'user'}
   <div class="user-message" id={`entry-${entry.id}`}>
-    {@render actions(entry.id)}{@render timestamp()}
+    {@render timestamp()}
     {#if userImages.length > 0}<div class="message-images">
         {#each userImages as img, imgIndex (imgIndex)}<img
             src={`data:${img.mimeType || 'image/png'};base64,${img.data}`}
@@ -69,7 +46,7 @@
   </div>
 {:else if msg && msg.role === 'assistant'}
   <div class="assistant-message" id={`entry-${entry.id}`}>
-    {@render actions(entry.id)}{@render timestamp()}
+    {@render timestamp()}
     {#each msg.content as block, blockIndex (blockIndex)}
       {#if block.type === 'text' && block.text.trim()}<div class="assistant-text markdown-content">
           {@html md(block.text)}

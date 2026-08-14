@@ -24,6 +24,11 @@ const inPlaceUpdateEnv = "PI_WEB_INPLACE_UPDATE"
 func installCmd(ctx context.Context) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "pi", "install", installPackage)
 	cmd.Env = append(os.Environ(), inPlaceUpdateEnv+"=1")
+	if executable, err := os.Executable(); err == nil {
+		// Keep self-updates on the path that systemd/launchd already starts. This
+		// includes unprivileged installs such as ~/.local/bin/pi-web.
+		cmd.Env = append(cmd.Env, "PI_WEB_INSTALL_DIR="+filepath.Dir(executable))
+	}
 	return cmd
 }
 

@@ -1,7 +1,4 @@
-// Pure session statistics + token formatting, shared by the live app and the
-// static export. Extracted from session-header-renderer.js during the Svelte
-// migration so the header card can be a component while the math stays a
-// framework-free, unit-tested function. See docs/dev/svelte-migration-plan.md.
+// Framework-free statistics and token formatting for the static export header.
 
 export function formatTokens(count) {
   if (count < 1000) return count.toString();
@@ -70,8 +67,7 @@ export function computeSessionStats(entryList = []) {
   };
 }
 
-// Pre-formatted summary strings used by the header card (kept here so they are
-// unit-testable and identical between live + export).
+// Pre-formatted summary strings used by the static export header card.
 export function summarizeSessionStats(stats) {
   const totalCost =
     stats.cost.input + stats.cost.output + stats.cost.cacheRead + stats.cost.cacheWrite;

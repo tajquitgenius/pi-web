@@ -43,6 +43,8 @@ pi remove npm:@ygncode/pi-web
 pi install git:github.com/tajquitgenius/pi-web
 ```
 
+The installer never generates or prints `PI_WEB_TOKEN`. It preserves a token already stored in `~/.config/pi-web/env`, and persists a new token only when you explicitly provide `PI_WEB_TOKEN` in the installer environment.
+
 The install command:
 - Installs the current, unpinned fork from GitHub
 - Runs the package `postinstall` script (`install.sh`, or `install.ps1` on Windows)
@@ -72,6 +74,14 @@ irm https://raw.githubusercontent.com/tajquitgenius/pi-web/main/install.ps1 | ie
 ```
 
 This downloads the latest pi-web binary, installs it to `/usr/local/bin` (`~/.pi/agent/bin` on Windows), and sets up auto-start on login. No Go, Node, or pi required.
+
+For an unprivileged Linux install, keep the binary and systemd user service in your home directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tajquitgenius/pi-web/main/install.sh | PI_WEB_INSTALL_DIR="$HOME/.local/bin" bash
+```
+
+The generated user unit starts `~/.local/bin/pi-web` and reads `~/.config/pi-web/env`. In-app updates preserve that executable directory.
 
 ### Download binary
 
@@ -122,9 +132,10 @@ make build   # builds the Vite bundle, then embeds it into the Go binary
 cp pi-web ~/.pi/agent/bin/
 ```
 
-The frontend bundle is embedded by `web/assets_embed.go`, so `go build` needs
-`web/dist` to exist first. `make build` does both steps in order; if you build
-by hand, run `npm --prefix web install && npm --prefix web run build` before
+The frontend artifacts are embedded by `web/assets_embed.go`, so `go build` needs
+`web/dist-desktop`, `web/dist-mobile`, and the generated static-export bundle.
+`make build` creates all three before compiling Go. If you build by hand, run
+`npm --prefix web install && npm --prefix web run build` before
 `go build ./cmd/pi-web`.
 
 ### Develop alongside an installed instance

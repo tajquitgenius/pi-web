@@ -1,8 +1,5 @@
 <script>
-  // The ask_user_question tool card. Renders the structure declaratively; the
-  // option/submit buttons carry data-question/data-answer + classes that the chat
-  // composer's delegated click handler turns into a chat reply. Mirrors the former
-  // renderAskUserQuestionTool().
+  // Read-only ask_user_question card for a static conversation snapshot.
   import { icon, Check } from '../../shared/icons.js';
 
   let { args = {}, result = null } = $props();
@@ -12,8 +9,6 @@
   const cancelled = $derived(result?.details?.cancelled === true);
   const awaitingChatReply = $derived(result?.details?.awaitingChatReply === true);
   const questionToolFailed = $derived(result?.isError === true);
-  const canClick = $derived(!result || questionToolFailed || awaitingChatReply);
-  const isInteractive = $derived(canClick || cancelled);
   const isMulti = $derived(questions.length > 1);
   const anyMultiSelect = $derived(questions.some((q) => q && q.multiSelect === true));
   const needsSubmit = $derived(isMulti || anyMultiSelect);
@@ -90,50 +85,17 @@
             {@const label = optionLabel(option)}
             {@const desc = optionDesc(option)}
             {@const selected = isSelected(answer, label)}
-            {#if isInteractive}
-              <button
-                type="button"
-                class="ask-question-option{selected ? ' selected' : ''} ask-question-option-action"
-                data-question={questionText}
-                data-answer={label}
-              >
-                <div class="ask-question-option-label">
-                  {#if selected}{@html icon(Check, { size: 13 })}
-                  {/if}{label}
-                </div>
-                {#if desc}<div class="ask-question-option-desc">{desc}</div>{/if}
-              </button>
-            {:else}
-              <div class="ask-question-option{selected ? ' selected' : ''}">
-                <div class="ask-question-option-label">
-                  {#if selected}{@html icon(Check, { size: 13 })}
-                  {/if}{label}
-                </div>
-                {#if desc}<div class="ask-question-option-desc">{desc}</div>{/if}
+            <div class="ask-question-option{selected ? ' selected' : ''}">
+              <div class="ask-question-option-label">
+                {#if selected}{@html icon(Check, { size: 13 })}
+                {/if}{label}
               </div>
-            {/if}
+              {#if desc}<div class="ask-question-option-desc">{desc}</div>{/if}
+            </div>
           {/each}
         </div>
       {/if}
       {#if answer}<div class="ask-question-answer"><span>Answer:</span> {String(answer)}</div>{/if}
     </div>
   {/each}
-
-  {#if isInteractive}
-    {#if needsSubmit}
-      <div class="ask-question-actions" style="display:none">
-        <button type="button" class="ask-question-submit-btn">Send answers</button>
-      </div>
-    {:else if questionToolFailed}
-      <div class="ask-question-hint">
-        Use these options as a fallback — click an option to send your answer to pi.
-      </div>
-    {:else if cancelled}
-      <div class="ask-question-hint">Click an option to send your answer to pi.</div>
-    {:else if !result || awaitingChatReply}
-      <div class="ask-question-hint">
-        Click an option, or use the chat composer below, to answer this question.
-      </div>
-    {/if}
-  {/if}
 </div>

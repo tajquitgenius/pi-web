@@ -5,18 +5,10 @@ import (
 	"strings"
 )
 
-const (
-	SurfaceCookieName      = "pi-web-surface"
-	LegacySvelteCookieName = "pi-web-svelte"
-)
+const SurfaceCookieName = "pi-web-surface"
 
 // SelectSurface applies an explicit desktop/mobile cookie first. The auto value,
 // an absent cookie, and an invalid value all use the same conservative UA check.
-func useLegacySvelte(r *http.Request) bool {
-	cookie, err := r.Cookie(LegacySvelteCookieName)
-	return err == nil && cookie.Value == "1"
-}
-
 func SelectSurface(r *http.Request) Surface {
 	if cookie, err := r.Cookie(SurfaceCookieName); err == nil {
 		switch cookie.Value {

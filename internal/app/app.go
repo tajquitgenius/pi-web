@@ -147,7 +147,7 @@ func Main(version string) {
 	mux := http.NewServeMux()
 	srv.Register(mux)
 	ui.RegisterPWAHandlers(mux)
-	liveBuilds := []struct {
+	productBuilds := []struct {
 		name        string
 		fs          fs.FS
 		entry       string
@@ -155,16 +155,6 @@ func Main(version string) {
 		assetPrefix string
 		applyAssets func(frontend.Script)
 	}{
-		{
-			name:        "svelte",
-			fs:          web.DistFS(),
-			entry:       frontend.AppEntry,
-			assetBase:   "/static",
-			assetPrefix: "/static/assets/",
-			applyAssets: func(script frontend.Script) {
-				ui.SetAppScriptPath(script.Path)
-			},
-		},
 		{
 			name:        "desktop",
 			fs:          web.DesktopDistFS(),
@@ -186,10 +176,10 @@ func Main(version string) {
 			},
 		},
 	}
-	for _, build := range liveBuilds {
+	for _, build := range productBuilds {
 		scripts, err := frontend.LoadScriptsAt(build.fs, build.assetBase, build.entry)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: failed to load %s Vite frontend: %v (surface JS will be unavailable)\n", build.name, err)
+			fmt.Fprintf(os.Stderr, "WARNING: failed to load %s React product: %v (surface JS will be unavailable)\n", build.name, err)
 			continue
 		}
 		for _, script := range scripts {

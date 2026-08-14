@@ -31,7 +31,7 @@ function outputRoot(): string {
   );
 }
 
-test("merged React product accepts a full stub-Pi task flow", async (
+test("dedicated React product accepts a full stub-Pi task flow", async (
   { page, baseURL, sessionsDir, agentDir },
   testInfo,
 ) => {

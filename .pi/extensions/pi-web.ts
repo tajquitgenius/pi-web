@@ -318,25 +318,30 @@ export function normalizeCommandArgs(args: unknown): string[] {
   return [];
 }
 
+export function piWebBinaryCandidates(
+  agentRoot = agentDir(),
+  home = homedir(),
+): string[] {
+  return [
+    "./pi-web",
+    join(agentRoot, "bin", "pi-web"),
+    join(home, ".local", "bin", "pi-web"),
+  ];
+}
+
 async function findPiWebBinary(pi: ExtensionAPI): Promise<string | null> {
-  // 1. Local dev build (e.g. when working inside the pi-web repo).
-  try {
-    accessSync("./pi-web", fsConstants.X_OK);
-    return "./pi-web";
-  } catch {
-    // not in cwd
+  // Check the dev build and both supported unprivileged install locations even
+  // when the service manager gave Pi a minimal PATH.
+  for (const candidate of piWebBinaryCandidates()) {
+    try {
+      accessSync(candidate, fsConstants.X_OK);
+      return candidate;
+    } catch {
+      // Try the next supported location.
+    }
   }
 
-  // 2. Pi-managed install (may not be in PATH).
-  const piBin = `${agentDir()}/bin/pi-web`;
-  try {
-    accessSync(piBin, fsConstants.X_OK);
-    return piBin;
-  } catch {
-    // not found
-  }
-
-  // 3. Fall back to PATH lookup.
+  // Fall back to PATH lookup.
   try {
     const result = await pi.exec("which", ["pi-web"]);
     const bin = result.stdout.trim();
@@ -709,7 +714,7 @@ export default function (pi: ExtensionAPI) {
       if (subcommand === "version") {
         if (!bin) {
           ctx.ui.notify(
-            "pi-web binary not found in ~/.pi/agent/bin or /usr/local/bin",
+            "pi-web binary not found in ~/.pi/agent/bin, ~/.local/bin, or PATH",
             "warning",
           );
           return;
@@ -860,7 +865,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const lines = [
-        `binary: ${bin || "not found (~/.pi/agent/bin/pi-web, /usr/local/bin/pi-web)"}`,
+        `binary: ${bin || "not found (~/.pi/agent/bin/pi-web, ~/.local/bin/pi-web, or PATH)"}`,
         `status: ${running ? "running" : "not responding"}`,
         `local: http://${host}:${port}`,
       ];

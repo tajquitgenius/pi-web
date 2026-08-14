@@ -38,10 +38,6 @@ func SetHostContextProvider(fn func() HostContext) {
 	}
 }
 
-func legacyAppStylesheets() template.HTML {
-	return template.HTML("<style>\n" + liveThemeCss + "\n" + indexCSS + "\n" + settingsCSS + "\n" + schedulesCSS + "\n" + liveSessionCss + "\n" + liveMenuCss + "\n" + livePaletteCss + "\n</style>")
-}
-
 func appAssetLinks(assets appAssets) template.HTML {
 	var links strings.Builder
 	links.WriteString(`<link rel="modulepreload" href="`)
@@ -59,20 +55,11 @@ func appAssetLinks(assets appAssets) template.HTML {
 // Session bootstrap data and host context stay in the server-owned shell so the
 // two products can share transport contracts without sharing product UI.
 func RenderAppShell(w io.Writer, r *http.Request, bootstrap string) error {
-	if useLegacySvelte(r) {
-		return RenderLegacyAppShell(w, bootstrap)
-	}
 	surface := SelectSurface(r)
-	return renderAppShell(w, string(surface), surfaceAppAssets[surface], bootstrap, "")
+	return renderAppShell(w, string(surface), surfaceAppAssets[surface], bootstrap)
 }
 
-// RenderLegacyAppShell keeps the existing Svelte SPA renderable until final
-// cutover. It is intentionally separate from React surface selection.
-func RenderLegacyAppShell(w io.Writer, bootstrap string) error {
-	return renderAppShell(w, "svelte", legacyAppAssets, bootstrap, legacyAppStylesheets())
-}
-
-func renderAppShell(w io.Writer, surface string, assets appAssets, bootstrap string, styles template.HTML) error {
+func renderAppShell(w io.Writer, surface string, assets appAssets, bootstrap string) error {
 	hostContext := hostContextProvider()
 	if hostContext.Peers == nil {
 		hostContext.Peers = []HostPeer{}
@@ -103,7 +90,7 @@ func renderAppShell(w io.Writer, surface string, assets appAssets, bootstrap str
 		LiveDocumentStart: template.HTML(renderLiveDocumentStart(liveDocumentData{
 			Title:   "pi-web",
 			Preload: appAssetLinks(assets),
-			Styles:  styles,
+			Styles:  "",
 		})),
 		ThemeBoot:       liveThemeBootScript(),
 		HostContext:     hostContextTag,

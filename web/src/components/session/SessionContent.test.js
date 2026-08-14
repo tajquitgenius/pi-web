@@ -57,23 +57,6 @@ describe('SessionContent', () => {
     expect(ids).toEqual(['entry-root', 'entry-other']);
   });
 
-  it('reactively appends a new entry that extends the active path (live reload)', async () => {
-    const { container, model } = mount();
-    const newEntry = {
-      id: 'leaf2',
-      parentId: 'leaf',
-      timestamp: '2026-01-01T00:04:00Z',
-      type: 'message',
-      message: { role: 'assistant', content: 'new' },
-    };
-    // Mimic live reconcile: in-place entries splice + byId refill.
-    model.entries.push(newEntry);
-    model.byId.set('leaf2', newEntry);
-    model.navigateTo('leaf2');
-    await Promise.resolve();
-    expect(container.querySelector('#entry-leaf2')).toBeInTheDocument();
-  });
-
   it('runs afterRender(container) when the path changes', async () => {
     const afterRender = vi.fn();
     const model = new SessionDataModel({ entries, header: {}, leafId: 'leaf' });

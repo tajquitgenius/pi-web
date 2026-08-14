@@ -1,10 +1,4 @@
-// Navigation + scroll only. The message pane (#messages) is rendered reactively
-// by the Svelte <SessionContent> component from the shared SessionDataModel, so
-// the navigator no longer builds DOM, caches nodes, or wires per-entry buttons.
-// It just moves the active leaf/target (which the reactive model reads to
-// recompute the path) and scrolls to the requested entry once Svelte has
-// flushed. Copy/fork/label buttons are handled by a single delegated click
-// listener in session-content-runtime.js.
+// Branch navigation and scrolling for the read-only static conversation export.
 export function createSessionNavigator({
   documentImpl = document,
   renderTree = () => {},

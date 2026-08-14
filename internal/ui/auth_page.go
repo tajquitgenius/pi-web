@@ -32,7 +32,7 @@ func RenderAuthPrompt(w io.Writer, cookieTheme string) error {
 		ThemeBoot   template.HTML
 	}{
 		ServerTheme: theme,
-		ThemeCss:    template.HTML("<style>\n" + liveThemeCss + "\n</style>"),
+		ThemeCss:    template.HTML("<style>\n" + exportThemeCSS + "\n</style>"),
 		ThemeBoot:   liveThemeBootScript(),
 	}
 	var buf bytes.Buffer

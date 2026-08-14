@@ -73,11 +73,11 @@ check: frontend-lint frontend-format-check frontend-typecheck frontend-knip fron
 
 dev: frontend-setup go-setup
 	@echo "Starting secondary dev instance at http://127.0.0.1:31416 (frontend watcher + Go hot-reloader)..."
-	@rm -f $(WEB_DIR)/dist/.vite/manifest.json; \
+	@rm -f $(WEB_DIR)/dist-desktop/.vite/manifest.json $(WEB_DIR)/dist-mobile/.vite/manifest.json internal/ui/embedded/export/export.js; \
 	cd $(WEB_DIR) && npm run dev & \
 	VITE_PID=$$!; \
 	trap "kill $$VITE_PID 2>/dev/null; exit" INT TERM EXIT; \
-	until [ -f $(WEB_DIR)/dist/.vite/manifest.json ]; do \
+	until [ -f $(WEB_DIR)/dist-desktop/.vite/manifest.json ] && [ -f $(WEB_DIR)/dist-mobile/.vite/manifest.json ] && [ -f internal/ui/embedded/export/export.js ]; do \
 		kill -0 $$VITE_PID 2>/dev/null || exit 1; \
 		sleep 0.1; \
 	done; \

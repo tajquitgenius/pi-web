@@ -218,60 +218,17 @@ After 10 minutes of idle time (no user-initiated actions), the reaper goroutine 
 
 `handleSetModel` updates the worker model via RPC. On success, the worker automatically refreshes its thinking level (`refreshThinkingLevel`) so the UI stays consistent.
 
-### 11. Steering and Queuing
+### 11. Server queue API
 
-While a response is running the composer stays enabled and the toolbar swaps the
-**Send** button for **Steer** plus a **Queue** button (`ChatToolbar.svelte`). A
-docked panel (`QueuePanel.svelte`) sits above the composer card showing every
-pending message — queued and in-flight steers alike — with keyboard navigation,
-pause/resume, and per-row delete / send-now / edit actions.
+The server still owns persistent queue state and its autonomous drainer:
 
-- **Steer** sends the message immediately through the same `POST /api/chat` path.
-  Because the worker is already `running`, `piRPCWorker.Prompt` tags the command
-  `streamingBehavior:"steer"` (step 4) so pi folds it into the active turn. The
-  message appears as a steer row in the panel until the run completes; the user
-  can also dismiss the row early (the message is still with pi). Steers are
-  **browser-local** — closing the tab discards any unsent steer chip.
-- **Queue** holds the message on the **server** in the `chat_queue_items`
-  SQLite table (see `internal/chatqueue`). The autonomous backend drainer
-  (`internal/server/chat_queue_drainer.go`) watches every session: whenever a
-  worker transitions `running → idle`, the periodic 5-second tick fires, or a
-  queue mutation arrives, the drainer pops the head item and feeds it to
-  `chatSender.Send`. The browser is just a viewer; queues survive refreshes,
-  browser closes, and pi-web restarts.
-- **Pause / Resume** (header button): pause is per-session state in
-  `chat_queue_state.paused`, so it persists across tabs and reloads. The
-  drainer skips paused sessions; resuming PATCHes `paused=false` and kicks the
-  drainer to pick up the next item if the worker is idle.
-- **Keyboard** (document-level, only when textarea is empty): ↑↓ navigate, ⌫
-  delete the focused row, ↩ send the focused queued message now (skip-ahead),
-  **E** pop the focused queued message back into the textarea for editing, Esc
-  blur the panel.
-
-REST surface (single handler in `internal/server/chat_queue.go`):
-
-- `GET    /api/chat/queue?id=<sessionID>`            → `{items, paused}`
-- `POST   /api/chat/queue?id=<sessionID>`            body `{message, displayText}`
+- `GET /api/chat/queue?id=<sessionID>` → `{items, paused}`
+- `POST /api/chat/queue?id=<sessionID>` with `{message, displayText}`
 - `DELETE /api/chat/queue?id=<sessionID>&position=N`
-- `PATCH  /api/chat/queue?id=<sessionID>`            body `{paused}`
+- `PATCH /api/chat/queue?id=<sessionID>` with `{paused}`
 
-On every mutation the server broadcasts an SSE `queue` event on the session
-topic; `live-events.js` translates it to a `pi-queue-event` window event that
-`ChatComposer.svelte` listens for and re-fetches the queue from. That keeps
-multi-tab and drainer-driven changes (auto-dequeue, etc.) in sync without
-polling.
-
-State lives in `web/src/components/session/chat/queue-store.svelte.js` (a
-Svelte 5 `$state` class with `items`, `paused`, `focusIndex`). The runtime glue
-in `steer-queue.js` calls `queue-api.js` for the queued-side mutations, and
-installs `sendNow` / `edit` / `resume` callbacks the panel calls back into. An
-`activeRun` flag — driven solely by the `pi-chat-message-sent` (→ true) and
-`pi-worker-done` (→ false) events — distinguishes the run-starting message
-from later steers, so the first message of a run and auto-dequeued messages
-are never mistaken for steers. Dismissed steers are browser-local and gone on
-reload; queued rows persist server-side until the drainer dispatches them or
-the user removes them.
+Queue mutations broadcast a named `queue` SSE event. The React products in this beta do not expose the removed live-Svelte steering and queue panel.
 
 ---
 
-**E2E coverage:** `e2e/tests/chat.spec.ts` drives this flow end-to-end with a stub `pi` worker (`e2e/lib/stub-pi/pi`); `e2e/tests/steer-queue.spec.ts` covers the steer/queue flow. See [docs/dev/e2e-testing.md](../dev/e2e-testing.md).
+**E2E coverage:** `e2e/tests/react-products.spec.ts` drives chat through both React products with the stub `pi` worker in `e2e/lib/stub-pi/pi`. See [docs/dev/e2e-testing.md](../dev/e2e-testing.md).

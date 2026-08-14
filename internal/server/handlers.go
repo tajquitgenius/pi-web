@@ -20,8 +20,8 @@ import (
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// "/" is registered as a catch-all subtree, so it also matches any path
 	// without a more specific route. Only the root is the index; anything else
-	// is a genuine 404. Serving index HTML for e.g. a missing /static/assets/*.js
-	// would surface in the browser as a "module script has MIME text/html" error.
+	// is a genuine 404. Serving index HTML for a missing static module would
+	// surface in the browser as a "module script has MIME text/html" error.
 	if r.URL.Path != "/" {
 		if s.renderAppShell != nil && isSPABrowserPath(r) {
 			s.handleAppShell(w, r, "")

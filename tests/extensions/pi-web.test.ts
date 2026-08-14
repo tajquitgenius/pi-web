@@ -48,12 +48,23 @@ import {
   readPiWebToken,
   writePiWebToken,
   cleanupPiWebNpmTemps,
+  piWebBinaryCandidates,
 } from '../../.pi/extensions/pi-web.ts';
 
 declare global {
   var __MOCK_PI_WEB_TOKEN__: string | null | undefined;
   var __MOCK_PI_WEB_ENV_CONTENT__: string | undefined;
 }
+
+describe('piWebBinaryCandidates', () => {
+  it('includes the unprivileged user binary independently of PATH', () => {
+    expect(piWebBinaryCandidates('/tmp/agent', '/home/work-claw')).toEqual([
+      './pi-web',
+      '/tmp/agent/bin/pi-web',
+      '/home/work-claw/.local/bin/pi-web',
+    ]);
+  });
+});
 
 // ── isSSH ───────────────────────────────────────────────────────────
 describe('isSSH', () => {

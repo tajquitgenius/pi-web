@@ -6,10 +6,6 @@ import (
 	"testing"
 )
 
-// Toggle-state behavior is owned by the shared modules (toggle-state.js,
-// session-ui-runner.js) plus the header markup (SessionInfoHeader.svelte) and
-// session CSS. Live and static export both reuse these, so assert against the
-// source rather than the minified export bundle.
 func readSrc(t *testing.T, rel string) string {
 	t.Helper()
 	data, err := os.ReadFile(repoPath(rel))
@@ -19,10 +15,9 @@ func readSrc(t *testing.T, rel string) string {
 	return string(data)
 }
 
-func TestSessionToggleButtonsReflectPersistedActiveState(t *testing.T) {
+func TestExportToggleButtonsReflectPersistedActiveState(t *testing.T) {
 	toggleSrc := readSrc(t, "web/src/session/ui/toggle-state.js")
 	runnerSrc := readSrc(t, "web/src/session/ui/session-ui-runner.js")
-	// The header toggle-button markup now lives in the Svelte header card.
 	headerSrc := readSrc(t, "web/src/components/session/SessionInfoHeader.svelte")
 
 	srcChecks := map[string][]string{
@@ -31,9 +26,6 @@ func TestSessionToggleButtonsReflectPersistedActiveState(t *testing.T) {
 			"toolsVisible: true",
 			"toolOutputsExpanded: false",
 			"storage?.getItem(TOGGLE_STATE_STORAGE_KEY)",
-			// Toggle state persists under TOGGLE_STATE_STORAGE_KEY, but as a
-			// { [sessionId]: state } map so changing the configured default in
-			// /settings affects every session the user hasn't explicitly toggled.
 			"storage?.setItem(TOGGLE_STATE_STORAGE_KEY, JSON.stringify(map));",
 			"btn.classList.toggle('active', isActive);",
 			"btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');",
@@ -44,16 +36,16 @@ func TestSessionToggleButtonsReflectPersistedActiveState(t *testing.T) {
 	for src, checks := range srcChecks {
 		for _, check := range checks {
 			if !strings.Contains(src, check) {
-				t.Fatalf("session toggle controls missing persisted active-state behavior %q", check)
+				t.Fatalf("export toggle controls missing persisted state behavior %q", check)
 			}
 		}
 	}
-	if !strings.Contains(liveSessionCss, ".header-toggle-btn.active") {
-		t.Fatal("session CSS missing .header-toggle-btn.active styling")
+	if !strings.Contains(exportSessionCSS, ".header-toggle-btn.active") {
+		t.Fatal("export CSS missing active toggle styling")
 	}
 }
 
-func TestToolsVisibilityAndOutputExpansionAreSeparateStates(t *testing.T) {
+func TestExportToolsVisibilityAndOutputExpansionAreSeparateStates(t *testing.T) {
 	src := readSrc(t, "web/src/session/ui/toggle-state.js")
 	checks := []string{
 		"node.querySelectorAll('.tool-execution, .compaction').forEach((el) => {",
@@ -61,80 +53,41 @@ func TestToolsVisibilityAndOutputExpansionAreSeparateStates(t *testing.T) {
 		"node.querySelectorAll('.tool-output.expandable').forEach((el) => {",
 		"el.classList.toggle('expanded', state.toolOutputsExpanded);",
 		"toggleToolsVisibility: () => toggle('toolsVisible'),",
-		// toggleToolOutputs no-ops when tools are hidden so the P shortcut and a
-		// disabled-button click stay quiet (output blocks are inside the hidden
-		// .tool-execution wrapper, so there's nothing to expand or collapse).
 		"if (!state.toolsVisible) return;",
 		"toggle('toolOutputsExpanded');",
 	}
 	for _, check := range checks {
 		if !strings.Contains(src, check) {
-			t.Fatalf("tools visibility and output expansion are not separate; missing %q", check)
+			t.Fatalf("export tool toggle behavior missing %q", check)
 		}
 	}
 }
 
-func TestNavigationReappliesCurrentToggleStateAfterRenderingMessages(t *testing.T) {
-	// The message pane is now rendered by the reactive <SessionContent>, which
-	// runs an afterRender(container) hook after each (re)render; the live content
-	// runtime wires that hook to re-apply persisted toggle state via
-	// applyToggleStateToNode.
+func TestExportReappliesToggleStateAfterRenderingMessages(t *testing.T) {
 	contentSrc := readSrc(t, "web/src/components/session/SessionContent.svelte")
-	runtimeSrc := readSrc(t, "web/src/session/session-content-runtime.js")
-	srcChecks := map[string][]string{
+	exportSrc := readSrc(t, "web/src/export/export-entry.js")
+	for src, checks := range map[string][]string{
 		contentSrc: {"afterRender(containerEl)"},
-		runtimeSrc: {
-			"contentRuntime.afterRender =",
-			"sessionRuntime.toggleState?.applyToNode(container)",
-		},
-	}
-	for src, checks := range srcChecks {
+		exportSrc:  {"sessionRuntime.toggleState?.applyToNode(container)"},
+	} {
 		for _, check := range checks {
 			if !strings.Contains(src, check) {
-				t.Fatalf("message pane does not reapply persisted toggle state after rendering; missing %q", check)
+				t.Fatalf("export message pane does not reapply toggle state; missing %q", check)
 			}
 		}
 	}
 }
 
-func TestLiveReloadEntriesInheritCurrentToggleState(t *testing.T) {
-	// A single shared applyToggleStateToNode hook is reused by the controller and
-	// static export. Live reload no longer patches the DOM (the reactive model +
-	// <SessionContent>'s afterRender re-apply toggle state — see
-	// TestNavigationReappliesCurrentToggleStateAfterRenderingMessages), so only
-	// the shared hook's existence is asserted here.
-	toggleSrc := readSrc(t, "web/src/session/ui/toggle-state.js")
-	runnerSrc := readSrc(t, "web/src/session/ui/session-ui-runner.js")
-	hookChecks := map[string][]string{
-		toggleSrc: {
-			"export function applyToggleStateToNode(node, state) {",
-			"const applyToNode = (node) => applyToggleStateToNode(node, state);",
-		},
-		runnerSrc: {"sessionRuntime.toggleState = toggleController;"},
-	}
-	for src, checks := range hookChecks {
-		for _, check := range checks {
-			if !strings.Contains(src, check) {
-				t.Fatalf("template JS missing reusable toggle-state hook %q", check)
-			}
-		}
-	}
-}
-
-func TestLiveReloadRendererUsesToggleableThinkingAndToolMarkup(t *testing.T) {
-	// The message pane is rendered by <SessionEntry> (thinking blocks) + its
-	// <ToolOutput> child (expandable tool output) for both live reload and export;
-	// assert the toggle-compatible markup classes survive the decomposition.
+func TestExportRendererUsesToggleableThinkingAndToolMarkup(t *testing.T) {
 	entrySrc := readSrc(t, "web/src/components/session/SessionEntry.svelte")
 	outputSrc := readSrc(t, "web/src/components/session/ToolOutput.svelte")
-	srcChecks := map[string][]string{
-		entrySrc: {`thinking-block`, `Thinking ...`},
+	for src, checks := range map[string][]string{
+		entrySrc:  {`thinking-block`, `Thinking ...`},
 		outputSrc: {`tool-output expandable`, `output-preview`, `output-full`},
-	}
-	for src, checks := range srcChecks {
+	} {
 		for _, check := range checks {
 			if !strings.Contains(src, check) {
-				t.Fatalf("entry markup missing toggle-compatible class %q", check)
+				t.Fatalf("export entry markup missing toggle-compatible class %q", check)
 			}
 		}
 	}

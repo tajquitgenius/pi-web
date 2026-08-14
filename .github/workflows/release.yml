@@ -35,10 +35,12 @@ jobs:
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
           package_version="$(node -p "require('./package.json').version")"
-          if [ "$package_version" != "$tag_version" ]; then
-            echo "package.json version ($package_version) does not match tag ($tag_version)"
+          lock_version="$(node -p "require('./package-lock.json').version")"
+          if [ "$package_version" != "$tag_version" ] || [ "$lock_version" != "$tag_version" ]; then
+            echo "release metadata does not match tag ($tag_version): package=$package_version lock=$lock_version"
             exit 1
           fi
+          test -f ".github/release-notes/${GITHUB_REF_NAME}.md"
 
       - name: Run checks
         run: make check
@@ -104,6 +106,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v6
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
@@ -115,5 +120,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
-          generate_release_notes: true
+          body_path: .github/release-notes/${{ github.ref_name }}.md
+          generate_release_notes: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') || contains(github.ref, '-rc') }}

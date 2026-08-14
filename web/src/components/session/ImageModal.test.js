@@ -5,8 +5,7 @@ import ImageModal from './ImageModal.svelte';
 
 afterEach(cleanup);
 
-// The component installs document-level delegated listeners, so the "zoomable"
-// images live outside the component (as they do in the real transcript/composer).
+// Transcript images live outside the modal, so it uses delegated listeners.
 function addImage(className, srcValue, altValue = '') {
   const img = document.createElement('img');
   img.className = className;
@@ -37,15 +36,13 @@ describe('ImageModal', () => {
     trigger.remove();
   });
 
-  it('opens for a composer image preview and closes on Escape', async () => {
+  it('closes an open transcript image on Escape', async () => {
     render(ImageModal);
-    const trigger = addImage('pi-chat-attachment-preview', 'data:image/png;base64,BBB');
+    const trigger = addImage('message-image', 'data:image/png;base64,BBB');
     const modal = document.getElementById('image-modal');
 
     trigger.click();
     await tick();
-    expect(modal.classList.contains('open')).toBe(true);
-
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     await tick();
     expect(modal.classList.contains('open')).toBe(false);

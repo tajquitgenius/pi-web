@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 
 export default [
   {
-    ignores: ['dist/', 'dist-desktop/', 'dist-mobile/', 'dist-export/', 'node_modules/'],
+    ignores: ['dist-desktop/', 'dist-mobile/', 'dist-export/', 'node_modules/'],
   },
   js.configs.recommended,
   ...svelte.configs.recommended,
@@ -50,7 +50,7 @@ export default [
     },
   },
   {
-    files: ['*.config.js', 'vite.config.*.js'],
+    files: ['*.config.js', 'vite.config.*.js', 'scripts/*.mjs'],
     languageOptions: {
       globals: {
         ...globals.node,

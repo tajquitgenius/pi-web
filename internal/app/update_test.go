@@ -22,6 +22,14 @@ func TestInstallCmdSignalsInPlaceUpdate(t *testing.T) {
 	if !slices.Contains(cmd.Env, want) {
 		t.Errorf("env missing %q; got %v", want, cmd.Env)
 	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantInstallDir := "PI_WEB_INSTALL_DIR=" + filepath.Dir(executable)
+	if !slices.Contains(cmd.Env, wantInstallDir) {
+		t.Errorf("env missing %q; got %v", wantInstallDir, cmd.Env)
+	}
 }
 
 func TestCleanupStaleNPMTemps(t *testing.T) {

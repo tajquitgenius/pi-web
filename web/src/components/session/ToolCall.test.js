@@ -34,7 +34,7 @@ describe('ToolCall', () => {
     expect(container.querySelector('.tool-command')?.textContent).toContain('ls -la');
   });
 
-  it('renders an ask_user_question card with clickable options', () => {
+  it('renders an ask_user_question card with read-only options', () => {
     const call = {
       id: 'q',
       name: 'ask_user_question',
@@ -44,9 +44,10 @@ describe('ToolCall', () => {
     };
     const { container } = render(ToolCall, { props: { call, model: model() } });
     expect(container.querySelector('.ask-question-card')).not.toBeNull();
-    const opts = container.querySelectorAll('.ask-question-option-action');
+    const opts = container.querySelectorAll('.ask-question-option');
     expect(opts.length).toBe(2);
-    expect(opts[0].dataset.answer).toBe('A');
+    expect(opts[0].textContent).toContain('A');
+    expect(container.querySelector('button')).toBeNull();
   });
 
   it('renders ask_question question_text payloads', () => {
@@ -70,9 +71,7 @@ describe('ToolCall', () => {
       'What should I do?',
     );
     expect(container.querySelector('.ask-question-header')?.textContent).toBe('Action');
-    expect(container.querySelector('.ask-question-option-action')?.dataset.answer).toBe(
-      'Keep current',
-    );
+    expect(container.querySelector('.ask-question-option')?.textContent).toContain('Keep current');
   });
 
   it('renders completed ask_question array answers', () => {

@@ -87,13 +87,6 @@ export async function startServer(): Promise<StartedServer> {
         { label: "Personal", url: "https://personal.pi.test" },
         { label: "Cloud", url: "https://cloud.pi.test" },
       ]),
-      // Lower the large-session truncation thresholds so the load-earlier spec
-      // can exercise pagination with a ~150-entry session instead of rendering
-      // thousands of messages (which flaked under parallel CPU contention).
-      // Comfortably above every other spec's session size (max ~34 entries).
-      // Keep in sync with tests/load-earlier.spec.ts.
-      PI_WEB_LARGE_SESSION_THRESHOLD: "100",
-      PI_WEB_LARGE_SESSION_TAIL_ENTRIES: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

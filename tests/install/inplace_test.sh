@@ -14,17 +14,25 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 # $1: "inplace" or "normal".
 # $2: optional npm package version. When set, install.sh should download the
 #     matching release tag instead of querying the latest release.
+# $3: optional explicitly supplied PI_WEB_TOKEN.
+# $4: optional PI_WEB_TOKEN already present in ~/.config/pi-web/env.
 run_case() {
   local mode="$1"
   local package_version="${2:-}"
+  local explicit_token="${3:-}"
+  local existing_token="${4:-}"
   local expected_tag="v10.0.0-beta.1"
   [[ -n "$package_version" ]] && expected_tag="v${package_version#v}"
   local workdir bindir shimdir calllog
   workdir="$(mktemp -d)"
-  bindir="$workdir/bin"
+  bindir="$workdir/.local/bin"
   shimdir="$workdir/shim"
   calllog="$workdir/calls.log"
   mkdir -p "$bindir" "$shimdir"
+  if [[ -n "$existing_token" ]]; then
+    mkdir -p "$workdir/.config/pi-web"
+    printf 'PI_WEB_TOKEN=%s\n' "$existing_token" > "$workdir/.config/pi-web/env"
+  fi
 
   # curl shim: serve the GitHub "latest release" JSON and a fake binary download.
   # The fake binary echoes the release tag from its download URL so tests can
@@ -51,6 +59,16 @@ else
 fi
 SHIM
 
+  # Exercise the unprivileged Ubuntu systemd-user path on every development OS.
+  cat > "$shimdir/uname" <<'SHIM'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-m" ]]; then
+  echo x86_64
+else
+  echo Linux
+fi
+SHIM
+
   # Service managers / pkill / sudo: log the call so we can assert on it.
   local tool
   for tool in systemctl launchctl pkill sudo; do
@@ -74,6 +92,7 @@ SHIM
     "PATH=$shimdir:/usr/bin:/bin"
   )
   [[ "$mode" == "inplace" ]] && env_vars+=("PI_WEB_INPLACE_UPDATE=1")
+  [[ -n "$explicit_token" ]] && env_vars+=("PI_WEB_TOKEN=$explicit_token")
   if [[ -n "$package_version" ]]; then
     env_vars+=("npm_package_name=@tajquitgenius/pi-web" "npm_package_version=$package_version")
   fi
@@ -91,6 +110,26 @@ SHIM
   else
     grep -Eq 'systemctl|launchctl|pkill' "$calllog" \
       || fail "[normal] expected the running instance to be stopped, but nothing was called"
+    local env_file="$workdir/.config/pi-web/env"
+    local service_file="$workdir/.config/systemd/user/pi-web.service"
+    grep -Fq "ExecStart=$bindir/pi-web" "$service_file" \
+      || fail "[normal] systemd user service did not preserve ~/.local/bin install path"
+    if [[ -n "$explicit_token" ]]; then
+      grep -Fxq "PI_WEB_TOKEN=$explicit_token" "$env_file" \
+        || fail "[normal] explicitly supplied token was not persisted"
+      ! grep -Fq "$explicit_token" "$workdir/out.log" \
+        || fail "[normal] explicitly supplied token leaked to installer output"
+    elif [[ -n "$existing_token" ]]; then
+      grep -Fxq "PI_WEB_TOKEN=$existing_token" "$env_file" \
+        || fail "[normal] existing token was not preserved"
+      ! grep -Fq "$existing_token" "$workdir/out.log" \
+        || fail "[normal] existing token leaked to installer output"
+    else
+      ! grep -q '^PI_WEB_TOKEN=' "$env_file" \
+        || fail "[normal] installer generated an unexpected token"
+    fi
+    ! grep -Eq 'Generated PI_WEB_TOKEN|Use this token' "$workdir/out.log" \
+      || fail "[normal] installer printed legacy token guidance"
   fi
 
   echo "ok: $mode"
@@ -119,5 +158,7 @@ test_refuses_upstream_coinstall() {
 run_case inplace
 run_case normal
 run_case normal 1.2.3-beta.4
+run_case normal "" "operator-secret"
+run_case normal "" "" "existing-secret"
 test_refuses_upstream_coinstall
 echo "PASS: install.sh in-place self-update"
