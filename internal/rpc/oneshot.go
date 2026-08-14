@@ -15,11 +15,15 @@ import (
 // response, and tears the subprocess down. It exists so sessionless RPCs (e.g.
 // get_available_models) don't reimplement spawn/scan/timeout machinery.
 func OneShot(ctx context.Context, command string, extraFields map[string]any) (json.RawMessage, error) {
+	return oneShot(ctx, []string{"--mode", "rpc"}, command, extraFields)
+}
+
+func oneShot(ctx context.Context, args []string, command string, extraFields map[string]any) (json.RawMessage, error) {
 	if _, err := exec.LookPath("pi"); err != nil {
 		return nil, fmt.Errorf("pi executable not found: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, "pi", "--mode", "rpc")
+	cmd := exec.CommandContext(ctx, "pi", args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

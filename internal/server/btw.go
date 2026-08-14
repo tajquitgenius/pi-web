@@ -243,7 +243,12 @@ func (s *Server) handleNewBtw(w http.ResponseWriter, r *http.Request) {
 		path, _ = os.UserHomeDir()
 	}
 
-	id, err := sessions.CreateSessionFileWithSettings(s.sessionsDir, path, sessions.InitialSettings{})
+	settings, err := s.resolveInitialSettings(r.Context(), "")
+	if err != nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "could not resolve session defaults")
+		return
+	}
+	id, err := sessions.CreateSessionFileWithSettings(s.sessionsDir, path, settings)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -255,7 +260,7 @@ func (s *Server) handleNewBtw(w http.ResponseWriter, r *http.Request) {
 	if s.chatSender != nil {
 		if resolved, err := sessions.ResolveByID(s.sessionsDir, id); err == nil {
 			s.startTask(func(ctx context.Context) {
-				s.initializeNewSessionWorker(ctx, resolved.Session.ID, resolved.Path, sessions.InitialSettings{})
+				s.initializeNewSessionWorker(ctx, resolved.Session.ID, resolved.Path, settings)
 			})
 		}
 	}

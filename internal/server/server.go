@@ -46,6 +46,7 @@ type Deps struct {
 	RenderExportSession func(s sessions.Session, theme string) string
 	RenderAppShell      func(w io.Writer, bootstrap string) error
 	Models              func(ctx context.Context) (json.RawMessage, error)
+	SessionDefaults     func(ctx context.Context) (sessions.InitialSettings, error)
 	Now                 func() time.Time
 	// Updater reports current/latest version + changelog. Optional; when nil
 	// the version endpoints are not registered.
@@ -78,6 +79,7 @@ type Server struct {
 	renderExportSession   func(s sessions.Session, theme string) string
 	renderAppShell        func(w io.Writer, bootstrap string) error
 	models                func(ctx context.Context) (json.RawMessage, error)
+	sessionDefaults       func(ctx context.Context) (sessions.InitialSettings, error)
 	lastKnown             map[string]struct{} // session ids currently broadcast as running
 	lastKnownMu           sync.Mutex
 	push                  *PushManager
@@ -161,6 +163,7 @@ func New(deps Deps) (*Server, error) {
 		renderExportSession:   deps.RenderExportSession,
 		renderAppShell:        deps.RenderAppShell,
 		models:                deps.Models,
+		sessionDefaults:       deps.SessionDefaults,
 		lastKnown:             make(map[string]struct{}),
 		stopCh:                make(chan struct{}),
 		taskCtx:               taskCtx,
@@ -338,6 +341,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/set-model", s.auth.Wrap(s.handleSetModel))
 	mux.HandleFunc("/api/set-thinking-level", s.auth.Wrap(s.handleSetThinkingLevel))
 	mux.HandleFunc("/api/models", s.auth.Wrap(s.handleAvailableModels))
+	mux.HandleFunc("/api/session-defaults", s.auth.Wrap(s.handleSessionDefaults))
 	mux.HandleFunc("/api/worker-status", s.auth.Wrap(s.handleWorkerStatus))
 	mux.HandleFunc("/api/commands", s.auth.Wrap(s.handleCommands))
 	mux.HandleFunc("/share", s.auth.Wrap(s.handleShare))

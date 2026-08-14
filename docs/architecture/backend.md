@@ -243,6 +243,8 @@ type piRPCWorker struct {
 }
 ```
 
+Before pi-web creates a fresh session, it starts an ephemeral `pi --mode rpc --no-session` process and reads `get_state`. Global extensions therefore get a chance to select the preferred provider account. pi-web writes that provider, model, and thinking level into the new JSONL file as implicit entries, then starts its worker with `pi --mode rpc --session <path>`. Launching directly on the file is important: starting a blank worker and calling `switch_session` later can reset an extension-provided account alias. A caller may instead supply an explicit provider/model/thinking selection, while sessions created from an existing session inherit that source worker's state. If the selected state cannot be resolved, creation stops rather than silently using another account.
+
 ## HTTP Handler Map
 
 | Route | Method | Handler | Description |
@@ -258,6 +260,7 @@ type piRPCWorker struct {
 | `/api/set-model` | POST | `handleSetModel` | Change model for session |
 | `/api/set-thinking-level` | POST | `handleSetThinkingLevel` | Change thinking level |
 | `/api/models` | GET | `handleAvailableModels` | List available AI models |
+| `/api/session-defaults` | GET | `handleSessionDefaults` | Resolve the provider, model, and thinking level for a fresh session |
 | `/api/worker-status` | GET | `handleWorkerStatus` | Get worker state for session |
 | `/api/commands` | GET | `handleCommands` | List slash commands exposed by the session worker |
 | `/metrics` | GET | `handleMetricsPage` | Worker metrics dashboard (self-contained HTML) |
@@ -265,7 +268,7 @@ type piRPCWorker struct {
 | `/api/debug/pprof/` | GET | `pprof.Index` (+ cmdline/profile/symbol/trace) | Go runtime profiler, auth-gated (`/api`-stripped before Index) |
 | `/share` | POST | `handleShare` | Create private GitHub Gist |
 | `/events` | GET | `handleEvents` | SSE stream |
-| `/api/new-session` | POST | `handleNewSession` | Create new session file |
+| `/api/new-session` | POST | `handleNewSession` | Create a session with explicit, inherited, or freshly resolved initial settings |
 | `/api/fork-session` | POST | `handleApiForkSession` | Fork a session into a new file |
 | `/api/clone-session` | POST | `handleApiCloneSession` | Clone a session into a new file |
 | `/api/rename-session` | POST | `handleRenameSession` | Append `session_info` rename metadata |

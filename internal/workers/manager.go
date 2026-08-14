@@ -75,8 +75,8 @@ type Manager struct {
 	factory  Factory
 
 	// pendingSends counts Send calls that have been accepted but whose prompt
-	// has not been acked yet. Spawning a worker (process start + switch_session
-	// + get_state) can take seconds, and the worker only reports Running once
+	// has not been acked yet. Spawning a worker (process start + session load +
+	// get_state) can take seconds, and the worker only reports Running once
 	// Prompt lands — without this, Status dips to idle mid-send, letting the
 	// queue drainer dispatch queued items into a run that is still starting and
 	// making status polls fire a spurious idle transition.

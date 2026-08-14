@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -665,6 +666,151 @@ func TestHandleNewSessionPreinitializesWorker(t *testing.T) {
 	}
 }
 
+func TestHandleSessionDefaultsReturnsResolvedProviderModelAndThinking(t *testing.T) {
+	s := &Server{
+		sessionDefaults: func(context.Context) (sessions.InitialSettings, error) {
+			return sessions.InitialSettings{
+				ModelProvider: "openai-codex-secondary",
+				ModelID:       "gpt-5.6-sol",
+				ThinkingLevel: "high",
+			}, nil
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/session-defaults", nil)
+	w := httptest.NewRecorder()
+	s.handleSessionDefaults(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["modelProvider"] != "openai-codex-secondary" || body["modelId"] != "gpt-5.6-sol" || body["thinkingLevel"] != "high" {
+		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestHandleNewSessionPersistsResolvedDefaults(t *testing.T) {
+	root := t.TempDir()
+	s := &Server{
+		sessionsDir: root,
+		sessionDefaults: func(context.Context) (sessions.InitialSettings, error) {
+			return sessions.InitialSettings{
+				ModelProvider: "openai-codex-secondary",
+				ModelID:       "gpt-5.6-sol",
+				ThinkingLevel: "high",
+			}, nil
+		},
+	}
+
+	projectPath := filepath.Join(root, "test-project")
+	req := httptest.NewRequest(http.MethodPost, "/api/new-session", strings.NewReader(`{"path":`+jsonString(projectPath)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleNewSession(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := body["id"].(string)
+	data, err := os.ReadFile(filepath.Join(root, sessions.EncodeProjectName(projectPath), id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		`"type":"model_change"`,
+		`"provider":"openai-codex-secondary"`,
+		`"modelId":"gpt-5.6-sol"`,
+		`"thinkingLevel":"high"`,
+		`"implicit":true`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("new session file missing %s: %s", want, content)
+		}
+	}
+}
+
+func TestHandleNewSessionUsesExplicitProviderWithoutResolvingDefaults(t *testing.T) {
+	root := t.TempDir()
+	resolverCalled := false
+	s := &Server{
+		sessionsDir: root,
+		sessionDefaults: func(context.Context) (sessions.InitialSettings, error) {
+			resolverCalled = true
+			return sessions.InitialSettings{}, nil
+		},
+	}
+
+	projectPath := filepath.Join(root, "test-project")
+	requestBody := `{"path":` + jsonString(projectPath) + `,"modelProvider":"openai-codex-secondary","modelId":"gpt-5.6-sol","thinkingLevel":"minimal"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/new-session", strings.NewReader(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleNewSession(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	if resolverCalled {
+		t.Fatal("explicit settings should not resolve defaults")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := body["id"].(string)
+	data, err := os.ReadFile(filepath.Join(root, sessions.EncodeProjectName(projectPath), id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `"provider":"openai-codex-secondary"`) || !strings.Contains(content, `"modelId":"gpt-5.6-sol"`) || !strings.Contains(content, `"thinkingLevel":"minimal"`) {
+		t.Fatalf("new session file does not contain explicit settings: %s", content)
+	}
+}
+
+func TestHandleNewSessionRejectsIncompleteExplicitSettings(t *testing.T) {
+	root := t.TempDir()
+	s := &Server{sessionsDir: root}
+	projectPath := filepath.Join(root, "test-project")
+	requestBody := `{"path":` + jsonString(projectPath) + `,"modelProvider":"openai-codex-secondary"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/new-session", strings.NewReader(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleNewSession(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleNewSessionRejectsUnknownExplicitModel(t *testing.T) {
+	root := t.TempDir()
+	s := &Server{
+		sessionsDir: root,
+		models: func(context.Context) (json.RawMessage, error) {
+			return json.RawMessage(`{"models":[{"provider":"openai-codex-secondary","id":"gpt-5.6-sol"}]}`), nil
+		},
+	}
+	projectPath := filepath.Join(root, "test-project")
+	requestBody := `{"path":` + jsonString(projectPath) + `,"modelProvider":"openai-codex","modelId":"gpt-5.6-sol","thinkingLevel":"high"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/new-session", strings.NewReader(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleNewSession(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+}
+
 func TestHandleNewSessionCopiesSourceModelAndThinking(t *testing.T) {
 	root := t.TempDir()
 	_ = writeSessionFile(t, root, "--tmp--source--", "source.jsonl")
@@ -707,6 +853,24 @@ func TestHandleNewSessionCopiesSourceModelAndThinking(t *testing.T) {
 	}
 	if !strings.Contains(content, `"type":"thinking_level_change"`) || !strings.Contains(content, `"thinkingLevel":"high"`) {
 		t.Fatalf("new session file missing implicit thinking setting: %s", content)
+	}
+}
+
+func TestHandleNewSessionDoesNotSilentlyFallbackWhenSourceStateFails(t *testing.T) {
+	root := t.TempDir()
+	_ = writeSessionFile(t, root, "--tmp--source--", "source.jsonl")
+	s := &Server{
+		sessionsDir: root,
+		chatSender:  &fakeSender{getStateErr: errors.New("worker unavailable")},
+	}
+	projectPath := filepath.Join(root, "test-project")
+	req := httptest.NewRequest(http.MethodPost, "/api/new-session", strings.NewReader(`{"path":`+jsonString(projectPath)+`,"sourceSessionId":"source.jsonl"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleNewSession(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
 }
 

@@ -2,11 +2,13 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"pi-web/internal/sessions"
@@ -142,6 +144,47 @@ func TestHandleNewBtwThenGet(t *testing.T) {
 	}
 	if other["sessionId"] != "" {
 		t.Fatalf("expected empty btw for other parent, got %v", other["sessionId"])
+	}
+}
+
+func TestHandleNewBtwPersistsResolvedDefaults(t *testing.T) {
+	db := newBtwDB(t)
+	dir := t.TempDir()
+	s := &Server{
+		db:          db,
+		sessionsDir: dir,
+		sessionDefaults: func(context.Context) (sessions.InitialSettings, error) {
+			return sessions.InitialSettings{
+				ModelProvider: "openai-codex-secondary",
+				ModelID:       "gpt-5.6-sol",
+				ThinkingLevel: "high",
+			}, nil
+		},
+	}
+	raw, err := json.Marshal(map[string]string{"path": dir, "parent": "parent-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	s.handleNewBtw(w, httptest.NewRequest(http.MethodPost, "/api/btw/new", bytes.NewReader(raw)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var created map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := sessions.ResolveByID(dir, created["id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(resolved.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `"provider":"openai-codex-secondary"`) || !strings.Contains(content, `"thinkingLevel":"high"`) {
+		t.Fatalf("btw session file missing resolved defaults: %s", content)
 	}
 }
 

@@ -20,7 +20,6 @@ import (
 type piRPCWorker struct {
 	mu                   sync.Mutex
 	writeMu              sync.Mutex
-	sessionPath          string
 	startedAt            time.Time
 	cmd                  *exec.Cmd
 	stdin                io.WriteCloser
@@ -69,7 +68,7 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink) (work
 	if _, err := exec.LookPath("pi"); err != nil {
 		return nil, fmt.Errorf("pi executable not found: %w", err)
 	}
-	cmd := exec.Command("pi", "--mode", "rpc")
+	cmd := exec.Command("pi", "--mode", "rpc", "--session", sessionPath)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -81,7 +80,6 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink) (work
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf
 	worker := &piRPCWorker{
-		sessionPath:   sessionPath,
 		startedAt:     time.Now(),
 		cmd:           cmd,
 		stdin:         stdin,
@@ -96,12 +94,6 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink) (work
 	}
 	go worker.consume(stdout)
 	go worker.wait()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := worker.switchSession(ctx); err != nil {
-		_ = worker.Close()
-		return nil, err
-	}
 	// Best-effort: refresh model/thinking-level from pi so a respawned worker
 	// doesn't show stale defaults after the in-memory cache was lost on reap.
 	stateCtx, stateCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -337,10 +329,6 @@ func (w *piRPCWorker) Close() error {
 
 func (w *piRPCWorker) nextID() string {
 	return fmt.Sprintf("req-%d", w.seq.Add(1))
-}
-
-func (w *piRPCWorker) switchSession(ctx context.Context) error {
-	return w.sendAndAwait(ctx, buildSwitchSessionCommand(w.nextID(), w.sessionPath))
 }
 
 func (w *piRPCWorker) sendAndAwait(ctx context.Context, cmd map[string]any) error {

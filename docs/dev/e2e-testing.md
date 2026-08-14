@@ -134,7 +134,7 @@ already-watched subdir, so the 7 parallel projects never collide.
 Chat uses a `pi --mode rpc` worker (`internal/rpc`). CI has no real pi and no API
 keys, so `e2e/lib/stub-pi/pi` answers the line-delimited JSON protocol:
 
-- `switch_session` → remembers the session file path.
+- `--session <path>` → loads the session file and its initial model/thinking settings.
 - `get_state` / `set_model` / `set_thinking_level` / `abort` → acknowledge.
 - `prompt` → acks, then appends a user turn + a deterministic
   `Stub reply: <prompt>` assistant turn to the session JSONL (like real pi owns

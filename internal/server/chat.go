@@ -142,7 +142,7 @@ func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 		status.State = workers.WorkerStateRunning
 	} else if s.chatSender != nil {
 		// Do not create/prewarm workers from status polling. A browser can poll
-		// many visible sessions at once; if one pi RPC switch_session hangs, eager
+		// many visible sessions at once; if one pi RPC session startup hangs, eager
 		// prewarming accumulates stuck `pi --mode rpc` processes and starves real
 		// chat requests. Only report state for an already-created worker here.
 		stateCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)

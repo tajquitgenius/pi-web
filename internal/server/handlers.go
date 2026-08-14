@@ -340,6 +340,9 @@ func (s *Server) handleNewSession(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path            string `json:"path"`
 		SourceSessionID string `json:"sourceSessionId"`
+		ModelProvider   string `json:"modelProvider"`
+		ModelID         string `json:"modelId"`
+		ThinkingLevel   string `json:"thinkingLevel"`
 	}
 	if !decodeJSONBody(w, r, &body) {
 		return
@@ -349,7 +352,51 @@ func (s *Server) handleNewSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings := s.initialSettingsFromSource(r.Context(), body.SourceSessionID)
+	hasExplicitSettings := body.ModelProvider != "" || body.ModelID != "" || body.ThinkingLevel != ""
+	if hasExplicitSettings && (body.ModelProvider == "" || body.ModelID == "") {
+		writeJSONError(w, http.StatusBadRequest, "modelProvider and modelId are required together")
+		return
+	}
+	if hasExplicitSettings && body.SourceSessionID != "" {
+		writeJSONError(w, http.StatusBadRequest, "explicit settings cannot be combined with sourceSessionId")
+		return
+	}
+	if body.ThinkingLevel != "" {
+		validThinkingLevel := body.ThinkingLevel == "off" || body.ThinkingLevel == "minimal" || body.ThinkingLevel == "low" || body.ThinkingLevel == "medium" || body.ThinkingLevel == "high" || body.ThinkingLevel == "xhigh"
+		if !validThinkingLevel {
+			writeJSONError(w, http.StatusBadRequest, "invalid thinkingLevel")
+			return
+		}
+	}
+	if hasExplicitSettings {
+		modelCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		available, err := s.modelSelectionAvailable(modelCtx, body.ModelProvider, body.ModelID)
+		cancel()
+		if err != nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "could not validate selected model")
+			return
+		}
+		if !available {
+			writeJSONError(w, http.StatusBadRequest, "selected model is not available")
+			return
+		}
+	}
+
+	var settings sessions.InitialSettings
+	var err error
+	if hasExplicitSettings {
+		settings = sessions.InitialSettings{
+			ModelProvider: body.ModelProvider,
+			ModelID:       body.ModelID,
+			ThinkingLevel: body.ThinkingLevel,
+		}
+	} else {
+		settings, err = s.resolveInitialSettings(r.Context(), body.SourceSessionID)
+		if err != nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "could not resolve session defaults")
+			return
+		}
+	}
 	id, err := sessions.CreateSessionFileWithSettings(s.sessionsDir, body.Path, settings)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
