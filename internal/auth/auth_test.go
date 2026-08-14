@@ -309,6 +309,34 @@ func TestAuthAllowsBrowserWithCorrectTokenViaCookie(t *testing.T) {
 	}
 }
 
+func TestBoundaryWrapSkipsTokenButKeepsHostAndOriginChecks(t *testing.T) {
+	a := New("secret")
+	a.AllowHost("https://pi.example")
+
+	allowed := httptest.NewRecorder()
+	allowedReq := httptest.NewRequest(http.MethodPost, "https://pi.example/api/pair", nil)
+	allowedReq.Header.Set("Origin", "https://pi.example")
+	a.WrapBoundary(http.HandlerFunc(okHandler)).ServeHTTP(allowed, allowedReq)
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("same-origin boundary status = %d, want 200 without token", allowed.Code)
+	}
+
+	crossOrigin := httptest.NewRecorder()
+	crossOriginReq := httptest.NewRequest(http.MethodPost, "https://pi.example/api/pair", nil)
+	crossOriginReq.Header.Set("Origin", "https://evil.example")
+	a.WrapBoundary(http.HandlerFunc(okHandler)).ServeHTTP(crossOrigin, crossOriginReq)
+	if crossOrigin.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin boundary status = %d, want 403", crossOrigin.Code)
+	}
+
+	unknownHost := httptest.NewRecorder()
+	unknownHostReq := httptest.NewRequest(http.MethodGet, "https://evil.example/static/assets/app.js", nil)
+	a.WrapBoundary(http.HandlerFunc(okHandler)).ServeHTTP(unknownHost, unknownHostReq)
+	if unknownHost.Code != http.StatusForbidden {
+		t.Fatalf("unknown-host boundary status = %d, want 403", unknownHost.Code)
+	}
+}
+
 func TestAuthRejectsCrossOriginMutationWhenTokenDisabled(t *testing.T) {
 	a := New("")
 	called := false

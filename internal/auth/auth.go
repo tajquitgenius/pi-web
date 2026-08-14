@@ -86,12 +86,7 @@ func (a *Middleware) AllowAnyHost() {
 // a plain 401.
 func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !a.allowsHost(r.Host) {
-			http.Error(w, "unrecognized host", http.StatusForbidden)
-			return
-		}
-		if !allowsBrowserOrigin(r) {
-			http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+		if !a.allowsBoundary(w, r) {
 			return
 		}
 		if !a.Enabled() {
@@ -170,6 +165,30 @@ func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 
 		h(w, r)
 	}
+}
+
+// WrapBoundary applies exact Host and browser Origin validation without
+// requiring the optional PI_WEB_TOKEN. It protects public bootstrap assets and
+// the device-pairing endpoints that must be reachable before login.
+func (a *Middleware) WrapBoundary(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.allowsBoundary(w, r) {
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+func (a *Middleware) allowsBoundary(w http.ResponseWriter, r *http.Request) bool {
+	if !a.allowsHost(r.Host) {
+		http.Error(w, "unrecognized host", http.StatusForbidden)
+		return false
+	}
+	if !allowsBrowserOrigin(r) {
+		http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 func (a *Middleware) usesSecureCookies(rawHost string) bool {

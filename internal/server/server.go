@@ -19,6 +19,7 @@ import (
 	"pi-web/internal/agentdir"
 	"pi-web/internal/auth"
 	"pi-web/internal/chatqueue"
+	"pi-web/internal/pairing"
 	"pi-web/internal/render"
 	"pi-web/internal/rpc"
 	"pi-web/internal/schedules"
@@ -41,6 +42,7 @@ type Deps struct {
 	AgentDir            string
 	SessionsDir         string
 	Auth                *auth.Middleware
+	PublicURL           string
 	ChatSender          ChatSender
 	Cache               *sessions.Cache
 	RenderExportSession func(s sessions.Session, theme string) string
@@ -89,6 +91,8 @@ type Server struct {
 	taskCancel            context.CancelFunc
 	stopping              bool
 	db                    *sql.DB
+	pairing               *pairing.Store
+	publicAuthority       string
 	schedules             *schedules.Store
 	chatQueue             *chatqueue.Store
 	queueDrainer          *queueDrainer
@@ -147,6 +151,16 @@ func New(deps Deps) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	codeKey, err := pairing.LoadOrCreateCodeKey(agentDir)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	pairingStore, err := pairing.NewStore(db, codeKey, now)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 
 	taskCtx, taskCancel := context.WithCancel(context.Background())
 	s := &Server{
@@ -166,6 +180,8 @@ func New(deps Deps) (*Server, error) {
 		taskCtx:               taskCtx,
 		taskCancel:            taskCancel,
 		db:                    db,
+		pairing:               pairingStore,
+		publicAuthority:       normalizeHTTPSAuthority(deps.PublicURL),
 		schedules:             schedules.NewStore(db),
 		chatQueue:             chatqueue.NewStore(db),
 		updater:               deps.Updater,
@@ -268,6 +284,10 @@ func initDB(agentDir string) (*sql.DB, error) {
 		{"chat_queue_items table", chatqueue.ItemsTableDDL},
 		{"chat_queue_items index", chatqueue.ItemsSessionIndexDDL},
 		{"chat_queue_state table", chatqueue.StateTableDDL},
+		{"pairing_codes table", pairing.CodesTableDDL},
+		{"paired_devices table", pairing.DevicesTableDDL},
+		{"pairing_redemption_attempts table", pairing.AttemptsTableDDL},
+		{"pairing_redemption_attempts index", pairing.AttemptsIndexDDL},
 	}
 	for _, s := range schema {
 		if _, err := db.Exec(s.stmt); err != nil {
@@ -328,6 +348,7 @@ func (s *Server) startTask(task func(context.Context)) bool {
 // Register installs every HTTP handler on mux, wrapped with the auth
 // middleware from Deps.
 func (s *Server) Register(mux *http.ServeMux) {
+	s.registerDevicePairingRoutes(mux)
 	mux.HandleFunc("/", s.auth.Wrap(s.handleIndex))
 	mux.HandleFunc("/session", s.auth.Wrap(s.handleSession))
 	mux.HandleFunc("/settings", s.auth.Wrap(s.handleSettingsPage))

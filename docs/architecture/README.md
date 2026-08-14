@@ -8,6 +8,7 @@ This directory contains the architecture documentation for **pi-web**, a local w
 |----------|-------------|
 | [system-overview.md](./system-overview.md) | High-level system architecture, component diagram, and tech stack |
 | [backend.md](./backend.md) | Go backend: packages, responsibilities, and key types |
+| [device-pairing.md](./device-pairing.md) | Public device gate, credentials, local administration, and SQLite storage |
 | [frontend.md](./frontend.md) | Frontend architecture: embedded templates, Vite build, and vanilla JS |
 | [data-flow.md](./data-flow.md) | Session file format, data model, and storage layout |
 
@@ -56,4 +57,4 @@ This directory contains the architecture documentation for **pi-web**, a local w
    - **Index page** (`/`): Built with Vite + vanilla JS, served from embedded `web/dist`
    - **Session page** (`/session`): Server-rendered HTML shell with Vite-built session JS
 
-5. **Security**: Remote deployments keep pi-web on loopback behind an external HTTPS tunnel. `PI_WEB_PUBLIC_URL` declares the exact allowed public origin, and `PI_WEB_TOKEN` provides optional defense in depth. Any direct non-loopback bind still requires the token.
+5. **Security**: Remote deployments keep pi-web on loopback behind an external HTTPS tunnel. `PI_WEB_PUBLIC_URL` declares the exact public origin and activates persistent device pairing there; `PI_WEB_TOKEN` remains optional defense in depth. Any direct non-loopback bind still requires the token.

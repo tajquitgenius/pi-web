@@ -108,6 +108,7 @@ func Main(version string) {
 		AgentDir:            agentDir,
 		SessionsDir:         sessionsDir,
 		Auth:                authMiddleware,
+		PublicURL:           publicURL,
 		ChatSender:          manager,
 		Cache:               sessions.NewCache(),
 		RenderExportSession: ui.RenderExportSessionPage,
@@ -185,7 +186,7 @@ func Main(version string) {
 
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           srv.HTTPHandler(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		// WriteTimeout intentionally 0 — SSE streams are long-lived.

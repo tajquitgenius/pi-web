@@ -123,9 +123,15 @@ proxy-specific headers.
 
 The public URL must be an absolute HTTPS origin with no user information,
 non-root path, query, or fragment. Its hostname is added to the auth host
-allowlist. `PI_WEB_INSTANCE_NAME` and `PI_WEB_PEERS_JSON` supply the read-only
-multi-host context embedded in the SPA shell; peer URLs follow the same HTTPS
-origin rules.
+allowlist and becomes the device-pairing boundary. Unpaired public requests can
+load only the pairing bootstrap and submit or check pairing; paired requests
+continue through the optional `PI_WEB_TOKEN` layer. Loopback Host values remain
+locally trusted for code creation and device administration. Pi-web never uses
+tunnel-forwarded headers to decide which side of this boundary a request uses.
+See [Device Pairing Backend](device-pairing.md).
+
+`PI_WEB_INSTANCE_NAME` and `PI_WEB_PEERS_JSON` supply the read-only multi-host
+context embedded in the SPA shell; peer URLs follow the same HTTPS origin rules.
 ```
 
 ## Session Directory Layout
@@ -142,8 +148,9 @@ origin rules.
 ├── session-status/
 │   ├── 2026-01-15T10-30-00.000Z_a1b2c3d4.jsonl   ← terminal writes here
 │   └── …
-├── pi-web.sqlite           ← scratchpads + annotations + project visibility prefs + user settings + btw registry
+├── pi-web.sqlite           ← app data + pairing code/device hashes + rate-limit timestamps
 └── pi-web/
+    ├── device-pairing.key      ← owner-only HMAC key for short pairing codes
     ├── pi-web-state.json       ← regular server state + lock
     ├── pi-web-state-dev.json   ← development state + lock (while running)
     ├── custom-themes.css       ← optional user custom theme
@@ -179,14 +186,15 @@ across devices. See `internal/server/projects.go`.
 3. Determine the bind host and validate the optional public HTTPS origin and host context
 4. Require loopback binding for a public origin; otherwise enforce auth for explicit non-loopback binds
 5. Add the bind and public hostnames to the auth allowlist
-6. Build `server.Deps` (renderers, cache, workers, auth)
-7. Create `Server` → starts file watcher + status watcher + sweeper
+6. Build `server.Deps` (renderers, cache, workers, auth, public URL)
+7. Create `Server` → migrate pairing storage, load/create its HMAC key, then start watchers and sweepers
 8. Register routes on `http.ServeMux`
 9. Load Vite manifest and register static assets
-10. Write and lock the regular state file, or `pi-web-state-dev.json` in development mode
-11. Optionally open the local URL in a browser
-12. Warm models cache (async)
-13. Start `http.Server` with timeouts; graceful shutdown on `SIGINT`/`SIGTERM`
+10. Wrap the complete mux in the exact Host/Origin boundary and public device gate
+11. Write and lock the regular state file, or `pi-web-state-dev.json` in development mode
+12. Optionally open the local URL in a browser
+13. Warm models cache (async)
+14. Start `http.Server` with timeouts; graceful shutdown on `SIGINT`/`SIGTERM`
 
 The internal development mode shares session files and SQLite data but disables
 the autonomous scheduler, chat-queue drainer, auto-titler, and push delivery.
