@@ -27,7 +27,6 @@ export default {
   'host.menu': 'Switch computer',
   'host.currentComputer': 'Current computer',
   'host.otherComputers': 'Other computers',
-  'host.search': 'Search on {host}',
   'host.newSession': 'New session on {host}',
 
   // ── Sessions index ──

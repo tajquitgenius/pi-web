@@ -42,9 +42,7 @@
           aria-controls="sessionPalette"
           onclick={onSearch}
           ><span class="nav-search-icon" aria-hidden="true">{@html icon(Search, { size: 16 })}</span
-          ><span class="nav-search-label">{t('host.search', { host: host.instanceName })}</span><kbd
-            >⌘K</kbd
-          ></button
+          ><span class="nav-search-label">{t('index.searchSessions')}</span><kbd>⌘K</kbd></button
         >
         <button
           class="nav-menu-btn"

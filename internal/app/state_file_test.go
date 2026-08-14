@@ -54,7 +54,11 @@ func TestStateFileEmitsPublicURLWithoutLegacyTailscaleState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write state: %v", err)
 	}
-	defer file.Close()
+	// Windows locks the state file against other handles for the process lifetime.
+	// Close this test's owner handle before reopening it to inspect the payload.
+	if err := file.Close(); err != nil {
+		t.Fatalf("close state: %v", err)
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
