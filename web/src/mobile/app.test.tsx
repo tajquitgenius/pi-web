@@ -165,6 +165,25 @@ describe('mobile sessions home', () => {
     expect(screen.queryByText('Session 2')).not.toBeInTheDocument();
   });
 
+  it('blocks task creation and explains when this host has no authenticated model', async () => {
+    const client = makeClient({
+      getSessionDefaults: vi
+        .fn()
+        .mockRejectedValue(new Error('could not resolve session defaults')),
+      listModels: vi.fn().mockResolvedValue({ models: [] }),
+    });
+    const user = userEvent.setup();
+    render(<MobileApp client={client} path="/" search="" />);
+
+    await user.click(screen.getByRole('button', { name: 'New task' }));
+    const taskScreen = await screen.findByRole('region', { name: 'New task' });
+    expect(await within(taskScreen).findByRole('alert')).toHaveTextContent(
+      'Open Pi on Work Mac and log in to a model provider',
+    );
+    expect(within(taskScreen).getByRole('button', { name: 'Create task' })).toBeDisabled();
+    expect(within(taskScreen).queryByText('openai-codex-secondary')).not.toBeInTheDocument();
+  });
+
   it('loads and submits explicit defaults from the full-screen New Task flow', async () => {
     const createSession = vi.fn().mockResolvedValue({ ok: true, id: 'created.jsonl' });
     const client = makeClient({ createSession });

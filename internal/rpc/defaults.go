@@ -29,8 +29,9 @@ func ResolveSessionDefaults(ctx context.Context) (SessionDefaults, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return SessionDefaults{}, err
 	}
-	if state.Model.Provider == "" || state.Model.ID == "" || state.ThinkingLevel == "" {
-		return SessionDefaults{}, errors.New("pi returned incomplete session defaults")
+	if state.Model.Provider == "" || state.Model.ID == "" || state.ThinkingLevel == "" ||
+		state.Model.Provider == "unknown" || state.Model.ID == "unknown" {
+		return SessionDefaults{}, errors.New("pi has no authenticated model available")
 	}
 	return SessionDefaults{
 		ModelProvider: state.Model.Provider,

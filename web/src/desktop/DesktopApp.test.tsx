@@ -149,6 +149,8 @@ describe('desktop product shell', () => {
       'href',
       'https://build.example',
     );
+    expect(screen.getByText('Development Mac')).toBeInTheDocument();
+    expect(screen.getByText('Online')).toBeInTheDocument();
     expect(document.documentElement).toHaveClass('desktop-product');
     expect(document.body).toHaveClass('desktop-no-scroll');
 
@@ -228,6 +230,25 @@ describe('desktop product shell', () => {
 });
 
 describe('new task and session controls', () => {
+  it('blocks task creation and explains when this host has no authenticated model', async () => {
+    const { client } = createClient({
+      getSessionDefaults: vi.fn(async () => {
+        throw new Error('could not resolve session defaults');
+      }),
+      listModels: vi.fn(async () => ({ models: [] })),
+    });
+    render(<DesktopApp client={client} path="/" search="" />);
+
+    expect(screen.getByLabelText('Provider account')).toHaveValue('');
+    expect(screen.queryByText('openai-codex-secondary')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Project path'), { target: { value: '/work/new' } });
+
+    expect(
+      await screen.findByRole('alert', { name: 'Model provider unavailable' }),
+    ).toHaveTextContent('Open Pi on Development Mac and log in to a model provider');
+    expect(screen.getByRole('button', { name: 'Start task' })).toBeDisabled();
+  });
+
   it('creates a session with the explicit provider, model, and thinking selection', async () => {
     const createSession = vi.fn(async () => ({ ok: true, id: 'new task.jsonl' }));
     const { client } = createClient({ createSession });

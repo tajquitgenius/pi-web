@@ -278,6 +278,15 @@ body.desktop-no-scroll {
   font-weight: 600;
 }
 
+.desktop-host-online-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
 .desktop-sidebar-eyebrow,
 .desktop-card-eyebrow {
   color: var(--muted);
