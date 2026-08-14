@@ -1,19 +1,13 @@
 <script>
-  // The in-content session header card (#header-container). Reactive, live-safe
-  // (no SSE/fetch) → used by both the live app and the static export. Markup
-  // mirrors the old session-header-renderer.js so CSS + the toggle controller
-  // (which binds the data-action buttons) keep working. See
-  // docs/dev/svelte-migration-plan.md (Phase 2).
-  import { getSessionModel } from '../../session/session-context.js';
+  // Header card for the static conversation snapshot.
   import {
     computeSessionStats,
     summarizeSessionStats,
   } from '../../session/render/session-stats.js';
-  import { icon, ChevronDown, Download } from '../../shared/icons.js';
-  import { t } from '../../shared/i18n.js';
+  import { icon, Download } from '../../shared/icons.js';
   import { SvelteSet } from 'svelte/reactivity';
 
-  let { model = getSessionModel(), compact = false } = $props();
+  let { model } = $props();
 
   const SYSTEM_PROMPT_PREVIEW_LINES = 10;
 
@@ -29,7 +23,6 @@
   const tools = $derived(Array.isArray(model.tools) ? model.tools : []);
 
   let promptExpanded = $state(false);
-  let compactExpanded = $state(false);
   let expandedTools = new SvelteSet();
 
   function hasSelection() {
@@ -67,28 +60,7 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
-{#if compact}
-  <button
-    type="button"
-    class="session-details-summary"
-    aria-expanded={String(compactExpanded)}
-    onclick={() => (compactExpanded = !compactExpanded)}
-  >
-    <span class="session-details-summary-main">
-      <span>{t('session.details')}</span>
-      <span class="session-details-summary-stats">{stats.messagesText} · {stats.modelsText}</span>
-    </span>
-    <span class="session-details-summary-chevron" class:open={compactExpanded} aria-hidden="true"
-      >{@html icon(ChevronDown, { size: 15 })}</span
-    >
-  </button>
-{/if}
-
-<div
-  class="session-details-content"
-  class:session-details-content--compact={compact}
-  class:open={!compact || compactExpanded}
->
+<div class="session-details-content open">
   <div class="header">
     <h1>Session: {sessionIdText}</h1>
     <div class="help-bar">

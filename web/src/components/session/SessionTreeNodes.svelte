@@ -1,18 +1,11 @@
 <script>
-  // Renders the session tree node list + status line from the reactive
-  // SessionDataModel. Live-safe (no SSE/fetch) → usable by live and export.
-  // The {#each model.filteredNodes} block recomputes automatically whenever the
-  // model's entries / filter / active path change.
-  import { getSessionModel } from '../../session/session-context.js';
+  // Renders the static export's session outline and active branch.
   import { buildTreePrefix } from '../../session/tree/session-tree.js';
   import { getTreeNodeDisplayHtml, escapeHtml } from '../../session/render/session-format.js';
   import { extractContent } from '../../session/tree/session-filter.js';
   import TreeNode from './TreeNode.svelte';
 
-  // `model` falls back to context; tests/export inject it directly.
-  // `onNavigate(id)` lets the host route a node click through its own navigator
-  // (which renders content); when omitted we just move the model's view state.
-  let { model = getSessionModel(), onNavigate } = $props();
+  let { model, onNavigate } = $props();
 
   let containerEl = $state(null);
 

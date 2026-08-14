@@ -9,7 +9,7 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 | Layer | Technology |
 |-------|------------|
 | Backend | Go 1.25+ |
-| Frontend (live app) | Separate React desktop and mobile Vite builds selected per request; a Svelte 5 live build remains embedded during cutover |
+| Frontend (live app) | Separate React desktop and mobile Vite builds selected per request |
 | Shared live transport | Typed `PiWebClient` contracts for HTTP, host context, SSE, pairing, and browser bootstrap |
 | Static export | Independent Svelte IIFE rendered through Go `html/template`; self-contained and isolated from all live bundles |
 | Styling | Surface-owned live CSS plus the existing multi-theme shell variables |
@@ -17,7 +17,7 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 | Chat RPC | JSONL over stdin/stdout via `pi --mode rpc` |
 | Session Storage | JSONL files on disk; pi-web creates new session files and appends `session_info` for browser rename |
 | Local DB | SQLite (`~/.pi/agent/pi-web.sqlite`) for per-project scratchpads, per-session review annotations, project visibility prefs, server-backed user settings, and the btw scratch-chat registry |
-| Auth | Exact Host/Origin boundary; 90-day public device pairing; optional token cookie/query/header |
+| Auth | Exact Host/Origin boundary; 90-day public device pairing; optional token form/cookie/header (URL credentials rejected) |
 
 ## Component Diagram
 
@@ -35,7 +35,7 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 │          │                   │                              │              │
 │          └─────────┬─────────┘                              │              │
 │                    └────────────────────────────────────────┘              │
-│   Retained separately: Svelte live SPA · self-contained Svelte export     │
+│   Separate artifact: self-contained, read-only Svelte static export       │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ HTTP

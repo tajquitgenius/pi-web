@@ -1,9 +1,6 @@
 <script module>
-  // Click-to-expand tool output. Mirrors the former formatExpandableOutput():
-  // a preview of the first `maxLines`, click to reveal the full text. Code output
-  // (with a `lang`) renders <code class="hljs" data-highlight-pending> so the
-  // post-render highlight pass (live: applyLazyHighlighting; export: afterRender)
-  // colours it. Plain output renders one <div> per line.
+  // Click-to-expand static tool output. Code blocks are marked for the export
+  // runtime's post-render syntax-highlighting pass.
   export function toggleExpanded(e) {
     if (window.getSelection && window.getSelection().toString()) return;
     e.currentTarget.classList.toggle('expanded');

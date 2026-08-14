@@ -5,21 +5,15 @@ import (
 	"io/fs"
 )
 
-//go:embed all:dist all:dist-desktop all:dist-mobile
-var liveBuilds embed.FS
+//go:embed all:dist-desktop all:dist-mobile
+var productBuilds embed.FS
 
 func buildFS(directory string) fs.FS {
-	sub, err := fs.Sub(liveBuilds, directory)
+	sub, err := fs.Sub(productBuilds, directory)
 	if err != nil {
 		panic(err)
 	}
 	return sub
-}
-
-// DistFS returns the retained Svelte live build. It remains embedded during the
-// React cutover so the existing SPA can be restored without reconstructing it.
-func DistFS() fs.FS {
-	return buildFS("dist")
 }
 
 // DesktopDistFS returns the independently built React desktop surface.

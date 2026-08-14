@@ -1,10 +1,8 @@
 // Static export snapshot entry point.
 //
-// Renders a self-contained session snapshot (GitHub Gist) using the SAME
-// rendering modules as the live app (web/src/session/*). It deliberately omits
-// every live-only concern: no SSE/live-reload, no chat composer, no
-// artifacts/annotations, no fetch-backed features. Those DOM hosts are not
-// emitted by the server when IsLive is false, so the shared UI helpers no-op.
+// Renders a self-contained session snapshot (GitHub Gist) from the retained
+// export-only Svelte components. It has no server transport, React product
+// bootstrap, SSE, chat composer, or fetch-backed feature.
 //
 // marked and highlight.js are provided as window globals by the inlined vendor
 // <script> tags (see internal/ui/export.go); they are marked external in the
@@ -74,9 +72,7 @@ export function runExportApp({ target = window } = {}) {
     windowImpl: target,
     atobImpl: target.atob?.bind(target),
   });
-  // Reactive model that drives the Svelte <SessionTreeNodes> sidebar (same
-  // component the live app uses). The snapshot renders once — no live updates —
-  // so this just computes the tree/active-path derivations a single time.
+  // Reactive view state drives branch navigation and outline filtering.
   const treeModel = new SessionDataModel(dataModel);
 
   let filterMode = 'default';
@@ -124,7 +120,7 @@ export function runExportApp({ target = window } = {}) {
 
   // hljs is available synchronously (inlined vendor script). <SessionEntry>/
   // <ToolOutput> emit code with `data-highlight-pending`; this colours them in
-  // place after each render (the live app uses applyLazyHighlighting instead).
+  // place after each branch render.
   const highlightPending = (container) => {
     if (!hljs || !container) return;
     container.querySelectorAll('code[data-highlight-pending]').forEach((el) => {
@@ -182,9 +178,8 @@ export function runExportApp({ target = window } = {}) {
     },
   });
 
-  // Mount the reactive message pane into #messages (same component the live app
-  // uses). The snapshot renders once; renderEntry/hljs are synchronous here, so
-  // entries paint immediately. afterRender re-applies collapse/toggle state.
+  // Mount the snapshot message pane. afterRender reapplies toggle state and
+  // highlights code after branch navigation.
   const messagesEl = documentImpl.getElementById('messages');
   if (messagesEl) {
     mount(SessionContent, {

@@ -13,16 +13,9 @@ type appAssets struct {
 	styles []string
 }
 
-var legacyAppAssets = appAssets{script: "/static/assets/app.js"}
-
 var surfaceAppAssets = map[Surface]appAssets{
 	DesktopSurface: {script: "/static/desktop/assets/desktop.js"},
 	MobileSurface:  {script: "/static/mobile/assets/mobile.js"},
-}
-
-// SetAppScriptPath retains the Svelte live build's startup path during cutover.
-func SetAppScriptPath(path string) {
-	legacyAppAssets.script = path
 }
 
 // SetSurfaceAssets installs one React surface's hashed entrypoint and any CSS

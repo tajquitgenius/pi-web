@@ -1,169 +1,67 @@
-# End-to-End Testing (Playwright)
+# End-to-End Testing with Playwright
 
-The `e2e/` project drives a real browser against the **built** `pi-web` binary.
-It complements the Vitest unit tests (`web/`) and Go tests (`internal/`) by
-exercising whole flows — page rendering, SSE live-reload, settings persistence,
-and chat — across desktop, mobile, and iPad viewports.
+The `e2e/` project drives real browsers against an isolated, freshly built `pi-web` binary. It complements Vitest and Go tests with complete HTTP, browser, SSE, pairing, navigation, and chat flows.
 
-It is intentionally **not** part of `make test` / `make check`: it needs browser
-binaries and a running server, so it runs as its own target and CI job.
+E2E is separate from `make test` and `make check` because it requires installed browser binaries and starts its own temporary server.
 
 ## Quick start
 
 ```bash
-make e2e-setup           # one-time: install deps + Playwright browsers
-make e2e                 # build the binary, then run the whole suite
+make e2e-setup
+make e2e
 
-# or, from e2e/ directly (assumes ./pi-web is already built):
+# focused runs
 cd e2e
-npx playwright test                                  # all projects
-npx playwright test --project="Desktop Chrome"       # one project
-npx playwright test tests/chat.spec.ts               # one spec
-npx playwright test --ui                             # interactive debug UI
-npx playwright show-report                           # open last HTML report
-```
-
-`make e2e` runs `make build` first because the binary embeds the retained Svelte,
-React desktop, and React mobile outputs. E2E always runs against fresh assets.
-
-## Watching tests run (headed mode)
-
-Tests run headless by default. To watch a real browser and verify with your own
-eyes before trusting the headless run:
-
-```bash
-cd e2e
-
-# Open a visible browser. Pin to ONE project or every browser launches at once.
-npx playwright test --headed --project="Desktop Chrome"
-
-# One window at a time (don't stack 7 browsers), good for watching a full file.
+npx playwright test --project="Desktop Chrome"
+npx playwright test --project="Mobile Safari"
+npx playwright test tests/react-products.spec.ts
 npx playwright test --headed --project="Desktop Chrome" --workers=1
-
-# Step through interactively: pick tests, watch, re-run, inspect the DOM.
-npx playwright test --ui
-
-# Pause on the first action and drive it manually (Playwright Inspector).
-PWDEBUG=1 npx playwright test --project="Desktop Chrome" tests/chat.spec.ts
+npx playwright show-report
 ```
 
-Tips for eyeballing:
-- Always add `--project=...` in headed mode — otherwise all 7 browsers open together.
-- `--workers=1` runs tests one at a time so windows don't stack up.
-- `--ui` (the Playwright UI runner) is usually the nicest way to watch + re-run.
-- To slow actions, set `use: { launchOptions: { slowMo: 500 } }` temporarily in
-  `playwright.config.ts`, or use `PWDEBUG=1` to step manually.
-- Headed vs. headless is just a flag — the same specs run both ways, so once it
-  looks right headed, drop `--headed` to go back to fast/CI mode.
+`make e2e` runs `make build` first. The tested binary therefore embeds fresh React desktop, React mobile, and static-export artifacts.
 
-## Project matrix
+## Browser matrix
 
-Layout follows a **900px breakpoint**, not device type. Seven projects:
+`e2e/playwright.config.ts` defines:
 
-| Project | Engine | Viewport | Layout |
-|---|---|---|---|
-| Desktop Chrome | Chromium | 1440×900 | desktop |
-| Desktop Firefox | Firefox | 1280 | desktop |
-| Desktop Safari | WebKit | 1280 | desktop |
-| Mobile Chrome (Pixel 5) | Chromium | 393 | mobile |
-| Mobile Safari (iPhone 15 Pro) | WebKit | 393 | mobile |
-| iPad (gen 7) | WebKit | 810 portrait | mobile |
-| iPad landscape | WebKit | ~1080 | desktop |
+- Desktop Chrome at 1440×900
+- Desktop Firefox
+- Desktop Safari
+- Mobile Chrome
+- Mobile Safari using the iPhone 15 Pro profile
+- iPad
+- iPad landscape
 
-These are Playwright **device emulation** (real viewport/touch/UA/DPR, desktop
-engine binary), not real devices. `webkit` is the Safari *engine*, not literal
-Safari.app — good enough for layout/touch regressions and runs on Linux CI.
+Use Desktop Chrome and Mobile Safari for the cutover acceptance pass. Cross-browser runs remain available for broader qualification.
 
-Tests that depend on layout resolve it at runtime with `isMobileLayout(page)`
-(checks `matchMedia('(max-width: 900px)')` **after navigation** — about:blank
-does not reflect the project viewport) and `test.skip()` the half that doesn't
-apply. iPad portrait exercises mobile, iPad landscape exercises desktop.
+## Isolated harness
 
-### Expected skips
+Global setup creates temporary state and session directories, installs a stub `pi`, starts the built binary on an isolated port, and waits for `/api/health`. Global teardown stops that process. The harness does not reuse, restart, or modify an installed pi-web service.
 
-Some tests intentionally use `test.skip()` guards rather than running redundant
-or conflicting cases across every project:
+Shared fixtures in `e2e/lib/` provide session creation, chat interactions, and product-aware navigation. Tests should use user-visible roles, labels, and stable product selectors. Do not restore selectors that belonged to the removed live-Svelte application.
 
-- `mobile-layout.spec.ts` selects the mobile or desktop case for each project's
-  active breakpoint.
-- The server-side persistence case in `settings.spec.ts` runs only on Desktop
-  Chrome because all projects share one global settings store.
-- `session-sidebar.spec.ts` runs its active-session and running-status coverage
-  only on Desktop Chrome; those behaviors are viewport-agnostic, while mobile
-  drawer behavior is already covered by `mobile-layout.spec.ts`.
+## Product and security coverage
 
-Each intentional skip carries a reason string, visible with
-`npx playwright test --reporter=list`. Any failure remains unexpected.
+The suite keeps focused coverage for:
 
-## How the server runs (scripted launch)
+- desktop and mobile React acceptance
+- explicit desktop/mobile surface overrides and conservative automatic selection
+- peer navigation
+- public-device pairing and the complete production mux
+- chat worker reuse and live updates
+- static export/share behavior
+- absence of the removed live-Svelte asset namespace
+- rejection of credentials in query parameters
 
-`global-setup.ts` (see `e2e/lib/server.ts`):
-
-1. Ensures `./pi-web` exists (CI builds it first; locally `make build` if missing).
-2. Creates a temp `PI_CODING_AGENT_DIR` and copies `e2e/fixtures/sessions/` into it.
-3. Picks a free port and starts `pi-web -host 127.0.0.1`; auth is disabled on loopback.
-4. Prepends `e2e/lib/stub-pi/` to `PATH` so chat spawns the stub, never real pi.
-5. Writes `{ baseURL, sessionsDir, agentDir, pid }` to `e2e/.tmp/server.json`.
-
-The base fixture in `e2e/lib/test.ts` reads that file to set each test's
-`baseURL` and to expose `sessionsDir` to mutating specs. `global-teardown.ts`
-kills the server and removes the temp dir.
-
-## Fixtures (sanitized real sessions)
-
-Read-only specs assert against committed fixtures in `e2e/fixtures/sessions/`,
-derived from **real** pi sessions and scrubbed. Regenerate with:
+## Debugging
 
 ```bash
 cd e2e
-node scripts/sanitize-session.mjs <path-to-real-session.jsonl> \
-  --name demo.jsonl --cwd /home/user/demo-project
+PWDEBUG=1 npx playwright test --project="Desktop Chrome" tests/react-products.spec.ts
+npx playwright test --ui
 ```
 
-The script rewrites home paths/username, redacts secret-shaped strings and
-emails, and neutralizes the cwd + encoded directory name, while preserving entry
-structure so the viewer still renders faithfully. **Always eyeball the output
-before committing** — automated redaction is a safety net, not a guarantee.
+On failure, inspect `e2e/test-results/` and the HTML report. Traces, screenshots, and videos are test artifacts and are ignored by Git.
 
-Mutating specs don't touch the committed fixtures: live-reload and chat each
-create a uniquely-named session file (`e2e/lib/sessions.ts`) inside an
-already-watched subdir, so the 7 parallel projects never collide.
-
-## The stub `pi`
-
-Chat uses a `pi --mode rpc` worker (`internal/rpc`). CI has no real pi and no API
-keys, so `e2e/lib/stub-pi/pi` answers the line-delimited JSON protocol:
-
-- `--session <path>` → loads the session file and its initial model/thinking settings.
-- `get_state` / `set_model` / `set_thinking_level` / `abort` → acknowledge.
-- `prompt` → acks, then appends a user turn + a deterministic
-  `Stub reply: <prompt>` assistant turn to the session JSONL (like real pi owns
-  the file) and emits `message_update` / `message_end` / `turn_end` / `agent_end`.
-
-The browser surfaces the reply through the same fsnotify → SSE reload path as a
-real session. To extend chat coverage, add command handling in the stub mirroring
-the real protocol in `internal/rpc/client.go`.
-
-Note: chat is disabled ("View only") when a session's `cwd` doesn't exist on
-disk, so chat specs build sessions with a real temp `cwd` (`realWorkingDir()`).
-
-## CI
-
-The `e2e` job in `.github/workflows/ci.yml`: `npm ci` →
-`playwright install --with-deps chromium firefox webkit` → `make build` →
-`npx playwright test`. The HTML report + traces upload as artifacts on failure
-(`trace: on-first-retry`, `retries: 1` in CI).
-
-## Adding a test
-
-1. Put the spec in `e2e/tests/*.spec.ts` and import `{ test, expect }` from
-   `../lib/test` (not `@playwright/test` directly) so `baseURL`/`sessionsDir` are wired.
-2. For layout-specific assertions, gate on `isMobileLayout(page)` after navigating.
-3. On narrow viewports the scratchpad overlays the header/composer — call
-   `collapseScratchpad(page)` before `goto` (see chat/mobile specs).
-4. For anything that writes to a session, create a per-test file via
-   `e2e/lib/sessions.ts`; never mutate the committed fixtures.
-
-`react-products.spec.ts` is the decisive merged-product acceptance flow. It creates an explicit provider-account session against the stub Pi, verifies the persisted runtime settings and reply/cancel flow, checks the desktop and mobile layout constraints, and writes screenshots under `PI_WEB_E2E_OUTPUT_DIR` (or the operating system's temporary directory).
-
-Keep this doc in sync when specs, fixtures, or the project matrix change.
+For a visual acceptance checkpoint, capture fresh 1440×900 desktop and iPhone 15 Pro screenshots from the isolated harness, inspect them at full size, and store the review copies outside the repository.

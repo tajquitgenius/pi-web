@@ -40,16 +40,6 @@ describe('SessionInfoHeader', () => {
     expect(container.textContent).toContain('↑1.2k');
   });
 
-  it('collapses live session metadata behind a details disclosure', async () => {
-    const { container } = mount({}, { compact: true });
-    const summary = screen.getByRole('button', { name: /Session details/ });
-    expect(summary).toHaveAttribute('aria-expanded', 'false');
-    expect(container.querySelector('.session-details-content--compact')).not.toHaveClass('open');
-    await userEvent.click(summary);
-    expect(summary).toHaveAttribute('aria-expanded', 'true');
-    expect(container.querySelector('.session-details-content--compact')).toHaveClass('open');
-  });
-
   it('renders an expandable system prompt and toggles on click', async () => {
     const { container } = mount({
       systemPrompt: Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n'),

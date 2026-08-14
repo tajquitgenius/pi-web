@@ -108,7 +108,7 @@ Browser GET /api/session?id=<id>
            │
            ├──▶ sessions.ParseFile → Session struct when cache is stale
            │
-           └──▶ Write JSON response for SessionPage.svelte
+           └──▶ Write JSON response for the selected React product
 ```
 
 ## Data Flow: Chat Message

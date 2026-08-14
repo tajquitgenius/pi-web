@@ -52,8 +52,7 @@ export function setupSessionUi({
     storage,
     sessionId,
   });
-  // Registered so the message-pane afterRender hook (live content-runtime +
-  // export-entry) can re-apply persisted collapse/toggle state to new nodes.
+  // Registered so export-entry can reapply visibility state after a branch render.
   sessionRuntime.toggleState = toggleController;
 
   const attachHeaderHandlers = () => toggleController.attachHeaderHandlers();
@@ -75,12 +74,5 @@ export function setupSessionUi({
     closeSidebar,
     attachHeaderHandlers,
     toggleController,
-    // The right-sidebar chrome (scratchpad/resize/tabs) lives in <RightSidebar>,
-    // which registers its controls in sessionRuntime.rightSidebar. Read lazily so
-    // the calls resolve against the mounted component.
-    toggleRightSidebar: () => sessionRuntime.rightSidebar?.toggle(),
-    openRightSidebar: () => sessionRuntime.rightSidebar?.open(),
-    collapseRightSidebar: () => sessionRuntime.rightSidebar?.collapse(),
-    activateRightTab: (pane) => sessionRuntime.rightSidebar?.activateTab(pane),
   };
 }

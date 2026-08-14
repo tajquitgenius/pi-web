@@ -1,8 +1,5 @@
 <script>
-  // One row in the session tree sidebar. Pure presentational + live-safe (no
-  // SSE/fetch/live-only imports) so it can be used by BOTH the live app and the
-  // static export. Keeps the established tree-node markup so existing CSS and
-  // e2e selectors keep working:
+  // One presentational row in the static snapshot outline:
   //
   //   <div class="tree-node [in-path] [active]" data-id=…>
   //     <span class="tree-prefix">…</span>

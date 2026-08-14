@@ -70,15 +70,6 @@ func TestProductionMuxPairingBootstrapAndSecurityComposition(t *testing.T) {
 		apply       func(frontend.Script)
 	}{
 		{
-			fs:          web.DistFS(),
-			entry:       frontend.AppEntry,
-			assetBase:   "/static",
-			assetPrefix: "/static/assets/",
-			apply: func(script frontend.Script) {
-				ui.SetAppScriptPath(script.Path)
-			},
-		},
-		{
 			fs:          web.DesktopDistFS(),
 			entry:       frontend.DesktopEntry,
 			assetBase:   "/static/desktop",
@@ -187,6 +178,13 @@ func TestProductionMuxPairingBootstrapAndSecurityComposition(t *testing.T) {
 		if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), tt.contentType) {
 			t.Fatalf("GET %s = (%d, %q)", tt.path, response.Code, response.Header().Get("Content-Type"))
 		}
+	}
+
+	legacyAsset := request(http.MethodGet, "http://127.0.0.1:31415/static/assets/app.js", func(req *http.Request) {
+		req.Header.Set("X-Pi-Token", "extra-secret")
+	})
+	if legacyAsset.Code != http.StatusNotFound {
+		t.Fatalf("removed legacy asset namespace status = %d, want 404", legacyAsset.Code)
 	}
 
 	for _, tt := range []struct {

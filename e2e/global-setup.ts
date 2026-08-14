@@ -6,27 +6,14 @@ export default async function globalSetup() {
   mkdirSync(TMP_DIR, { recursive: true });
   const { baseURL, agentDir, sessionsDir, child } = await startServer();
 
-  // Disable the "cat" focus/bedtime gatekeeper globally. Its sleep overlay is
-  // time-of-day driven (default bedtime 23:00-07:00) and covers the UI,
-  // intercepting clicks — which silently breaks click-based tests on CI runners
-  // in that window (e.g. UTC night). Seed it off in the server-side store so
-  // every page hydrates with it disabled.
-  // Also disable auto-titling: with the stub model it appends a session_info
-  // line and broadcasts a "reload" at an unpredictable moment, re-rendering
-  // #messages and racing tests that assert on freshly-created DOM (e.g.
-  // annotation highlights). Deterministic test env > background titling.
+  // Disable auto-titling: the stub model would append session_info while
+  // product flows are asserting against newly created sessions.
   const res = await fetch(`${baseURL}/api/settings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    // Show all artifacts by default (empty include filter). The product default
-    // is "*.md, *.html", which would hide the .go writes and code snippets the
-    // artifacts behavior tests assert on. The dedicated filter tests opt into a
-    // filter explicitly; everything else runs unfiltered for determinism.
     body: JSON.stringify({
       settings: {
-        "pi-web:v1:cat:enabled": "false",
         "pi-web:v1:auto-title:enabled": "false",
-        "pi-web:v1:artifacts:include": "",
       },
     }),
   });

@@ -18,17 +18,17 @@ Browser ── GET /events?id=abc ──────▶ Server (SSE)
 
 ### 1. Browser Route Shell
 
-`GET /session?id=...` is handled by `handleSession`, which serves the single SPA shell (`internal/ui/embedded/app.html`) through `ui.RenderAppShell`. The shell loads the hashed Vite/Svelte SPA entrypoint from `web/dist/.vite/manifest.json`.
+`GET /session?id=...` is handled by `handleSession`, which serves `internal/ui/embedded/app.html` through `ui.RenderAppShell`. Surface selection loads either the hashed React desktop entry from `web/dist-desktop` or the React mobile entry from `web/dist-mobile`.
 
 ### 2. Session Route Data Fetch
 
-`web/src/routes/SessionPage.svelte` reads the `id` query parameter and fetches:
+The selected React product reads the `id` query parameter and fetches:
 
 ```txt
 GET /api/session?id=<session-id>
 ```
 
-The route then builds the session payload expected by the existing session rendering/runtime modules and mounts the session UI.
+The product maps the response through the shared `PiWebClient` contract and renders its session UI.
 
 ### 3. Session Resolution
 
@@ -65,7 +65,7 @@ Security: `filepath.Base(id) != id` prevents path traversal.
 
 ### 5. API Response
 
-`handleApiSession` returns JSON used by the Svelte route and live reload:
+`handleApiSession` returns JSON used by both React products and live reload:
 
 ```json
 {
@@ -81,7 +81,7 @@ Security: `filepath.Base(id) != id` prevents path traversal.
 }
 ```
 
-For large sessions, `from`/`count` pagination can return an entry window. The Svelte route and `load-earlier` UI use this to prepend older entries.
+For large sessions, `from`/`count` pagination can return an entry window for the React products to prepend older entries.
 
 ### 6. SSE Subscription
 

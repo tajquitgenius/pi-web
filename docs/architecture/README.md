@@ -9,7 +9,7 @@ This directory contains the architecture documentation for **pi-web**, a local w
 | [system-overview.md](./system-overview.md) | High-level system architecture, component diagram, and tech stack |
 | [backend.md](./backend.md) | Go backend: packages, responsibilities, and key types |
 | [device-pairing.md](./device-pairing.md) | Public device gate, credentials, local administration, and SQLite storage |
-| [frontend.md](./frontend.md) | Frontend architecture: React surfaces, typed client, retained Svelte app, and static export |
+| [frontend.md](./frontend.md) | Frontend architecture: React products, typed client, and isolated static export |
 | [data-flow.md](./data-flow.md) | Session file format, data model, and storage layout |
 
 ## Architecture at a Glance
@@ -17,11 +17,11 @@ This directory contains the architecture documentation for **pi-web**, a local w
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           Browser                                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────────┐  │
-│  │  / (index)  │  │ /session?id │  │      SSE /events            │  │
-│  │  vanilla JS │  │  Embedded   │  │   Live reload + status      │  │
-│  │   (Vite)    │  │   HTML/CSS  │  │        updates              │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────────┘  │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────────┐ │
+│  │ React desktop    │  │ React mobile     │  │ SSE /events       │ │
+│  │ / /session      │  │ / /session      │  │ reload + status   │ │
+│  │ /settings        │  │ /settings        │  │ updates           │ │
+│  └──────────────────┘  └──────────────────┘  └───────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼ HTTP
@@ -55,7 +55,6 @@ This directory contains the architecture documentation for **pi-web**, a local w
 
 4. **Separate live products and export**:
    - **Desktop and mobile**: Independent React/Vite outputs selected by cookie or conservative user-agent classification
-   - **Transition fallback**: The existing Svelte SPA remains built and embedded until final cutover
    - **Static export**: A separate self-contained Svelte bundle with no live-server dependency
 
 5. **Security**: Remote deployments keep pi-web on loopback behind an external HTTPS tunnel. `PI_WEB_PUBLIC_URL` declares the exact public origin and activates persistent device pairing there; `PI_WEB_TOKEN` remains optional defense in depth. Any direct non-loopback bind still requires the token.

@@ -7,14 +7,13 @@ function readState(): ServerState {
 }
 
 interface Fixtures {
-  /** Absolute path to the temp sessions dir the server watches (for mutating tests). */
+  /** Absolute path to the temp sessions dir the server watches. */
   sessionsDir: string;
   /** Absolute path to the isolated PI_CODING_AGENT_DIR. */
   agentDir: string;
 }
 
 export const test = base.extend<Fixtures>({
-  // Override baseURL from the running server discovered in global-setup.
   baseURL: async ({}, use) => {
     await use(readState().baseURL);
   },
@@ -24,61 +23,6 @@ export const test = base.extend<Fixtures>({
   agentDir: async ({}, use) => {
     await use(readState().agentDir);
   },
-  // Belt-and-suspenders for the cat gatekeeper: global-setup disables it
-  // server-side, but settings hydrate asynchronously, so also set localStorage
-  // before any page script runs to cover the synchronous pre-hydration read.
-  page: async ({ page }, use) => {
-    await page.addInitScript(() => {
-      try {
-        localStorage.setItem("pi-web:v1:cat:enabled", "false");
-        // Mirror the server-seeded "show all" artifact filter for the synchronous
-        // pre-hydration read. Filter tests override this with their own init script.
-        localStorage.setItem("pi-web:v1:artifacts:include", "");
-      } catch {
-        /* ignore */
-      }
-    });
-    await use(page);
-  },
 });
-
-/**
- * Resolve the active layout at runtime. Layout follows the 900px breakpoint,
- * not the device type — iPad portrait (810px) is mobile, landscape (~1080px)
- * is desktop — so callers must check this AFTER navigating to a real page
- * (matchMedia on about:blank does not reflect the project viewport).
- */
-export async function isMobileLayout(
-  page: import("@playwright/test").Page,
-): Promise<boolean> {
-  return page.evaluate(() => window.matchMedia("(max-width: 900px)").matches);
-}
-
-/**
- * Start with the scratchpad (right sidebar) collapsed. On narrow viewports it
- * otherwise overlays the header/composer and intercepts clicks. Must be called
- * before navigating (it installs an init script read by the page's bootstrap).
- */
-export async function collapseScratchpad(
-  page: import("@playwright/test").Page,
-): Promise<void> {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem("pi-web:v1:right-sidebar-collapsed", "true");
-    } catch {
-      /* ignore */
-    }
-  });
-}
-
-export async function openSessionOutline(
-  page: import("@playwright/test").Page,
-): Promise<void> {
-  const outlineTab = page.locator(
-    '[role="tab"][aria-controls="sidebar-outline-panel"]',
-  );
-  await outlineTab.dispatchEvent("click");
-  await expect(outlineTab).toHaveAttribute("aria-selected", "true");
-}
 
 export { expect };

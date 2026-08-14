@@ -83,22 +83,3 @@ func TestAppShellInjectsEscapedHostContextJSON(t *testing.T) {
 		t.Fatal("host context JSON contains a literal closing script tag")
 	}
 }
-
-func TestLegacySvelteAppShellRemainsRenderable(t *testing.T) {
-	old := legacyAppAssets
-	legacyAppAssets = appAssets{script: "/static/assets/app-legacy.js"}
-	defer func() { legacyAppAssets = old }()
-
-	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: LegacySvelteCookieName, Value: "1"})
-	var b strings.Builder
-	if err := RenderAppShell(&b, req, ""); err != nil {
-		t.Fatalf("RenderAppShell: %v", err)
-	}
-	html := b.String()
-	if !strings.Contains(html, `data-pi-web-surface="svelte"`) ||
-		!strings.Contains(html, `src="/static/assets/app-legacy.js"`) ||
-		!strings.Contains(html, ".pi-chat-shell") {
-		t.Fatalf("legacy Svelte shell is incomplete: %s", html)
-	}
-}

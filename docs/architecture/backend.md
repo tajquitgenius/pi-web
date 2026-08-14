@@ -7,7 +7,7 @@ pi-web/
 ├── cmd/pi-web/
 │   └── main.go                 # Tiny CLI entry point; passes build version to app.Main
 ├── web/
-│   └── assets_embed.go         # Embeds Svelte, React desktop, and React mobile outputs
+│   └── assets_embed.go         # Embeds React desktop and React mobile outputs
 ├── internal/
 │   ├── agentdir/
 │   │   └── agentdir.go         # Resolve ~/.pi/agent dir + the paths pi-web stores under it
@@ -315,8 +315,9 @@ PWA / static asset routes (registered outside `Server.Register`):
 
 | Route | Source |
 |-------|--------|
-| `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/icon-maskable.svg`, `/pi-logo.svg`, `/cat.webm`, `/theme.css`, `/index.css`, `/menu.css`, `/palette.css` | `internal/ui/pwa.go` (embedded assets) |
-| `/static/assets/app-*.js`, `/static/assets/...` | Embedded Vite SPA bundle and chunks (`internal/app/app.go` + `internal/frontend`) |
+| `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/icon-maskable.svg`, `/pi-logo.svg`, `/cat.webm` | `internal/ui/pwa.go` (embedded assets) |
+| `/static/desktop/assets/*` | Embedded React desktop entry, CSS, and chunks |
+| `/static/mobile/assets/*` | Embedded React mobile entry, CSS, and chunks |
 
 ## Auth Flow
 
@@ -339,7 +340,7 @@ Request ──▶ auth.Wrap(handler)
         │               │
         ▼               ▼
    extract token    pass through
-   (query → Authorization: Bearer → X-Pi-Token → cookie)
+   (Authorization: Bearer → X-Pi-Token → cookie)
         │
         ▼
    constant-time compare
@@ -351,6 +352,8 @@ Request ──▶ auth.Wrap(handler)
    ▼         ▼
  handler   401 Unauthorized
 ```
+
+A request containing a `token` query parameter is rejected with `400`; credentials are never accepted from URLs. Browser login submits a form and stores the accepted token in a host-only cookie.
 
 The origin check protects the default tokenless localhost server from blind
 cross-site browser mutations. `GET`, `HEAD`, and `OPTIONS` are unaffected.

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -41,10 +40,7 @@ func assertCSSCustomPropertiesDefined(t *testing.T, name, html string) {
 	for _, match := range definedRE.FindAllStringSubmatch(html, -1) {
 		defined[match[1]] = true
 	}
-	allowedRuntime := map[string]bool{
-		"pi-chat-composer-height": true,
-		"viewport-height":         true,
-	}
+	allowedRuntime := map[string]bool{}
 	for _, match := range usedRE.FindAllStringSubmatch(html, -1) {
 		if !defined[match[1]] && !allowedRuntime[match[1]] {
 			t.Fatalf("%s CSS uses undefined custom property --%s", name, match[1])
@@ -61,24 +57,13 @@ func TestExportBundleIsSelfContained(t *testing.T) {
 	if strings.TrimSpace(exportJs) == "" {
 		t.Fatal("embedded export.js is empty — run `npm run build:export` (or `make build`) first")
 	}
-	// Symbols that uniquely identify live-only machinery (SSE, live-reload, the
-	// chat composer, and the tier-3 sidebar panels). If any appears, a shared
-	// (tier-2) component imported a live-only module — fix the import, do not
-	// loosen this list. See docs/dev/svelte-migration-plan.md §6.
-	//
-	// NOTE: "fetch(" and "/api/" are NOT yet forbidden — a pre-existing dead
-	// (host-less) path still pulls them into the bundle. Add them here once the
-	// live-only modules are gone (migration Phase 3 cleanup).
+	// The static snapshot cannot depend on the server or either React product.
 	forbidden := []string{
-		"EventSource", "WebSocket",
+		"EventSource", "WebSocket", "fetch(", "/api/",
 		"runLiveReload", "live-reload-runner", "live-reload",
 		"chatComposerRunner", "ChatComposer",
 		"ArtifactPanel", "AnnotationLayer",
 	}
-	// NOTE: applyLiveUpdate is intentionally NOT forbidden — it is a pure
-	// state-replacement method on the SHARED SessionDataModel, which the export
-	// now bundles to render the Svelte tree. It touches no SSE/fetch/DOM, so it
-	// is not a live-only leak indicator.
 	for _, sym := range forbidden {
 		if strings.Contains(exportJs, sym) {
 			t.Fatalf("export bundle contains live-only symbol %q — a live module leaked into the static export graph", sym)
@@ -93,27 +78,7 @@ func TestStaticExportKeepsInlineSessionRenderer(t *testing.T) {
 	if !strings.Contains(html, "PiExport") {
 		t.Fatal("static export missing inlined self-contained renderer bundle")
 	}
-	if strings.Contains(html, `src="/static/assets/session`) {
-		t.Fatal("static export should not depend on external Vite session asset")
-	}
-}
-
-func TestIndexSourceReferencesAPINewSession(t *testing.T) {
-	data, err := os.ReadFile(repoPath("web/src/index/sessions.js"))
-	if err != nil {
-		t.Fatalf("read web/src/index/sessions.js: %v", err)
-	}
-	if !strings.Contains(string(data), "/api/new-session") {
-		t.Fatal("web/src/index/sessions.js missing /api/new-session reference")
-	}
-}
-
-func TestIndexSourceReferencesAPIRecentLocations(t *testing.T) {
-	data, err := os.ReadFile(repoPath("web/src/index/sessions.js"))
-	if err != nil {
-		t.Fatalf("read web/src/index/sessions.js: %v", err)
-	}
-	if !strings.Contains(string(data), "/api/recent-locations") {
-		t.Fatal("web/src/index/sessions.js missing /api/recent-locations reference")
+	if strings.Contains(html, `src="/static/`) {
+		t.Fatal("static export should not depend on a React product asset")
 	}
 }

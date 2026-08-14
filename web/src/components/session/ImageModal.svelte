@@ -1,12 +1,8 @@
 <script>
   import { onMount } from 'svelte';
 
-  // Click-to-zoom overlay for inline transcript images (.message-image) and
-  // composer image attachments (.pi-chat-attachment-preview). A document-level
-  // delegated listener catches clicks on those images wherever they render
-  // (message pane, composer); clicking the overlay or pressing Escape closes it.
-  // Shared (live + export) — no SSE/chat/fetch, safe in the static snapshot.
-  const ZOOMABLE_SELECTOR = '.message-image, .pi-chat-attachment-preview';
+  // Click-to-zoom overlay for transcript images in a static snapshot.
+  const ZOOMABLE_SELECTOR = '.message-image';
 
   let open = $state(false);
   // null (not '') so the bound <img> drops its src attribute when closed.

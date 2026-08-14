@@ -1,89 +1,80 @@
-# UI Rendering & Frontend Architecture (`internal/ui/` and `web/`)
+# UI Rendering Boundaries
 
-This document explains how the live Svelte SPA, Go-embedded shell, shared styles, and static export path fit together.
+Pi-web has one Go-owned live shell, two React live products, and one independent static-export shell.
 
-## Short Version
+## Ownership table
 
-| Layer / Directory | Purpose |
-|---|---|
-| `web/` | Client runtime source — Svelte + Vite modules compiled into `web/dist/` and served as `/static/assets/...` |
-| `internal/ui/embedded/app.html` | One Go-embedded live SPA shell for browser routes |
-| `internal/ui/embedded/share-session.html` | Static export/share shell only; rendered with `IsLive: false` by `internal/ui/export.go` |
-| `internal/ui/embedded/styles/` | Shared CSS tokens and page styles used by the SPA shell, PWA CSS routes, and export |
+| Layer | Owner | Purpose |
+|---|---|---|
+| `internal/ui/embedded/app.html` | Go | Minimal shell for every live browser route |
+| `web/src/desktop/` | React | Desktop product |
+| `web/src/mobile/` | React | Mobile product |
+| `web/src/live-shared/` | TypeScript | Shared HTTP, SSE, host, bootstrap, and surface contracts |
+| `internal/ui/embedded/share-session.html` | Go | Static conversation-export shell |
+| `web/src/export/export-entry.js` | Svelte export graph | Read-only, self-contained snapshot runtime |
+| `internal/ui/embedded/styles/theme.css` and `session.css` | Go embed | Styles retained for exported snapshots |
 
----
+## Live shell
 
-## Live App: One SPA Shell
-
-The live app no longer uses separate Go-rendered `index.html`, `settings.html`, or live `session.html` pages. Browser routes are served by `internal/ui/spa_page.go`, which renders:
+`internal/ui/spa_page.go` renders `embedded/app.html` for `/`, `/session`, and `/settings`. It selects one surface, injects host context and optional session bootstrap data, and references one hashed Vite entry:
 
 ```txt
-internal/ui/embedded/app.html
-└── web/src/main.js  (Vite entry)
-    └── web/src/App.svelte
-        ├── routes/SessionsPage.svelte  (/)
-        ├── routes/SessionPage.svelte   (/session?id=…)
-        ├── routes/SettingsPage.svelte  (/settings)
-        └── routes/LoginPage.svelte     (/login)
+request
+  → ui.SelectSurface
+  → desktop: /static/desktop/assets/desktop-*.js
+     mobile:  /static/mobile/assets/mobile-*.js
+  → <div id="spa-root">
+  → React mounts
 ```
 
-The Go shell intentionally preserves the current PWA-first boot path:
+The shell also supplies theme/font boot code and service-worker registration. React owns all live page markup after mounting. There is no server-rendered live page body and no live Svelte route.
 
-- no-zoom iPhone viewport metadata
-- theme boot before first paint
-- Window Controls Overlay boot
-- manifest/icons/mobile-web-app metadata
-- custom themes stylesheet
-- server-backed font variables
-- service worker registration
-- Vite hashed SPA asset from `web/dist/.vite/manifest.json`
+The asset map comes from the manifests embedded in `web/dist-desktop` and `web/dist-mobile`. Each build has its own namespace, so equally named chunks cannot collide.
 
-API, SSE, PWA, static asset, sound, and share routes remain server-handled.
+## Session bootstrap
 
----
+For `/session?id=…`, Go resolves the session and injects a base64 JSON payload in `#pi-session-bootstrap`. Both React products read it through `web/src/live-shared/browser.ts`. Subsequent updates and paged reads use the typed `PiWebClient` API.
 
-## Stylesheets
+The bootstrap is data, not HTML. Do not add product markup to the Go shell.
 
-The live SPA shell inlines the core CSS needed by all migrated routes:
+## Static export
 
-- `styles/theme.css`
-- `styles/index.css`
-- `styles/settings.css`
-- `styles/session.css`
-- `styles/menu.css`
-- `styles/palette.css`
+`internal/ui/export.go` renders `embedded/share-session.html` with `IsLive` behavior removed by construction. It inlines:
 
-Some CSS is also exposed as PWA/static routes by `internal/ui/pwa.go` (`/theme.css`, `/index.css`, `/menu.css`, `/palette.css`, `/settings.css`) for compatibility and install/offline behavior.
+- theme and session CSS
+- base64 session data
+- vendored `marked` and `highlight.js`
+- the IIFE built from `web/src/export/export-entry.js`
 
----
+The result has no server dependency and is suitable for a secret Gist. Its Svelte components are export-only. They must remain read-only and must not import the React client, fetch APIs, SSE, chat, pairing, or service-worker code.
 
-## Static / Share Export
+## Build order
 
-Export/share snapshots are still fully self-contained and must not depend on the live Go backend.
+Always use `make build`. The required order is:
 
-| | Live App | Static Export |
-|---|---|---|
-| Go renderer | `internal/ui/spa_page.go` | `internal/ui/export.go` |
-| HTML shell | `embedded/app.html` | `embedded/share-session.html` (`IsLive: false`) |
-| JS source | `web/src/main.js` | `web/src/export/export-entry.js` |
-| JS delivery | `/static/assets/app-*.js` | inline IIFE `internal/ui/embedded/export/export.js` |
-| Network required | Yes | No |
-| Chat/SSE | Yes | No |
+```txt
+npm --prefix web run build
+  → dist-desktop
+  → dist-mobile
+  → dist-export/export.js
+copy export.js → internal/ui/embedded/export/export.js
+go build ./cmd/pi-web
+```
 
-Do not import live-only modules (SSE, chat, worker status, service-worker live glue) from the export entry. `TestExportBundleIsSelfContained` guards this.
+Running `go build` alone can embed stale or missing generated frontend files.
 
----
+## Change checklist
 
-## Current Migration State
+When changing a live product:
 
-The SPA owns all live browser routes. The **session viewer is fully Svelte-orchestrated**: `SessionPage.svelte` creates the reactive `SessionDataModel` (`session/data/session-data.svelte.js`), provides it via context, and renders the session UI as Svelte components (`SessionTree`, `SessionContent`, `SessionInfoHeader`, `RightSidebar` + `ArtifactPanel`/`AnnotationLayer`, `ChatComposer`, `LiveReload`, `CommandMenu`, the modals, `BtwPopup`, `CatGatekeeper`, …). There is **no `session.js` orchestrator anymore** — its glue was distributed into:
+1. Keep product UI in its desktop or mobile directory.
+2. Put only wire-level sharing in `live-shared`.
+3. Add the user-facing string through the live product's localization mechanism.
+4. Test the affected product and the built binary.
 
-- `SessionPage.svelte`'s `onMount` (`startSessionPageRuntime()`): per-page bootstrap, `setupSessionUi`, content-runtime wiring, header handlers, initial `navigateTo`, annotation-layer init
-- `session/session-globals.js`: page-global glue (keyboard shortcuts, done-notifier, visual-viewport/scroll) — returns a disposer
-- `session/session-content-runtime.js`: the `afterRender` hook (toggle state + lazy highlight), the delegated copy/fork/label handler, and the download-JSONL action
-- `session/lazy-highlight.js`: deferred `highlight.js` pass
-- `SessionDataModel.reconcile()`: live-reload / load-earlier model reconciliation
+When changing export:
 
-The message pane itself is now Svelte components (`SessionContent` → `SessionEntry` → `ToolCall` → `ToolOutput`/`AskQuestion`), with `{@html}` used only for markdown + pre-rendered ANSI tool output. The former runner/renderer modules have been split between owning components and focused helpers: `ChatComposer.svelte` owns the composer runtime with live DOM helpers under `web/src/components/session/chat/`; `LiveReload.svelte` owns the live orchestration while `web/src/session/live/` owns connection/reconnect lifecycle, SSE/reload, follow-scroll, stats, and streaming-preview helpers; the entry renderer is the `<SessionEntry>` family. `web/src/session/chat/` holds pure/shared chat helpers (`chat-api`, `git-api`, `chat-selectors`, `done-notifier`). The static export reuses the same Svelte components via `web/src/export/export-entry.js`.
-
-Phase 4 is complete: the index and settings routes are also Svelte-orchestrated. `SessionsPage.svelte` owns the sessions list, project/new-session modals, layout state, and index-wide SSE updates; `web/src/index/` contains pure data/API helpers only. `SettingsPage.svelte` hydrates settings once and each `components/settings/*Settings.svelte` section owns its controls. Shared live chrome such as the session-list command palette and version modal lives in Svelte components (`CommandPalette.svelte`, `VersionController.svelte`).
+1. Start from `export-entry.js` and keep its import closure read-only.
+2. Preserve the self-contained Go render.
+3. Run the export boundary, component, and Go HTML tests.
+4. Confirm no live controls or network dependencies appear in the output.

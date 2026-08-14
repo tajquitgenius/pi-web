@@ -9,13 +9,14 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "build": "npm run build:live && npm run build:export",
-    "build:live": "vite build && vite build --config vite.config.desktop.js && vite build --config vite.config.mobile.js",
-    "build:export": "vite build --config vite.config.export.js && cp dist-export/export.js ../internal/ui/embedded/export/export.js",
-    "dev": "npm run build:live && npm run build:export && vite build --watch"
+    "clean:build": "node -e \"for (const path of ['dist', 'dist-desktop', 'dist-mobile', 'dist-export']) require('node:fs').rmSync(path, { recursive: true, force: true })\"",
+    "build": "npm run clean:build && npm run build:desktop && npm run build:mobile && npm run build:export",
+    "build:desktop": "vite build --config vite.config.desktop.js",
+    "build:mobile": "vite build --config vite.config.mobile.js",
+    "build:export": "vite build --config vite.config.export.js",
+    "dev": "npm run clean:build && node scripts/watch-builds.mjs"
   },
   "dependencies": {
-    "@pierre/diffs": "^1.2.10",
     "highlight.js": "latest",
     "lucide": "^1.17.0",
     "lucide-react": "^1.31.0",

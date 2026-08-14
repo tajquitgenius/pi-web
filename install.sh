@@ -372,17 +372,12 @@ setup_env() {
   touch "$env_file"
   chmod 600 "$env_file" 2>/dev/null || true
 
-  if [[ -z "${PI_WEB_TOKEN:-}" ]] && ! grep -q '^PI_WEB_TOKEN=' "$env_file"; then
-    local token
-    if command -v openssl &>/dev/null; then
-      token="$(openssl rand -hex 16)"
-    else
-      token="$(date +%s%N)-$RANDOM-$RANDOM"
-    fi
-
-    set_env_var "$env_file" "PI_WEB_TOKEN" "$token"
-    info "Generated PI_WEB_TOKEN in ${env_file}"
-    warn "Use this token when opening pi-web from another device: ${token}"
+  # Pairing is the default public-device gate. Keep PI_WEB_TOKEN optional: only
+  # persist a value that the operator explicitly supplied, and never print it.
+  # An existing value in the env file is left untouched when the process does
+  # not provide an override.
+  if [[ -n "${PI_WEB_TOKEN:-}" ]]; then
+    set_env_var "$env_file" "PI_WEB_TOKEN" "$PI_WEB_TOKEN"
   fi
 
   # Persist PI_CODING_AGENT_DIR so auto-started pi-web finds the right sessions.

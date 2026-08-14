@@ -15,12 +15,8 @@ import (
 )
 
 const (
-	AppEntry     = "src/main.js"
 	DesktopEntry = "src/desktop/bootstrap.tsx"
 	MobileEntry  = "src/mobile/bootstrap.tsx"
-
-	// Backward-compatible unexported alias used by package tests.
-	appEntry = AppEntry
 )
 
 // Script is one Vite-built JavaScript entrypoint ready to be served by Go.
@@ -30,8 +26,6 @@ type Script struct {
 	JS     string
 	Styles []string
 }
-
-type frontendScript = Script
 
 func loadManifest(distFS fs.FS) (render.Manifest, error) {
 	data, err := fs.ReadFile(distFS, ".vite/manifest.json")
@@ -62,24 +56,24 @@ func validateManifestEntry(manifest render.Manifest, entryName string) (render.M
 	return entry, nil
 }
 
-func loadFrontendScript(distFS fs.FS, manifest render.Manifest, assetBase, entryName string) (frontendScript, error) {
+func loadFrontendScript(distFS fs.FS, manifest render.Manifest, assetBase, entryName string) (Script, error) {
 	entry, err := validateManifestEntry(manifest, entryName)
 	if err != nil {
-		return frontendScript{}, err
+		return Script{}, err
 	}
 	content, err := fs.ReadFile(distFS, entry.File)
 	if err != nil {
-		return frontendScript{}, fmt.Errorf("read %s js: %w", entryName, err)
+		return Script{}, fmt.Errorf("read %s js: %w", entryName, err)
 	}
 	base := strings.TrimRight(assetBase, "/")
 	styles := make([]string, 0, len(entry.CSS))
 	for _, stylesheet := range entry.CSS {
 		if stylesheet == "" || strings.HasPrefix(stylesheet, "/") || strings.Contains(stylesheet, "..") {
-			return frontendScript{}, fmt.Errorf("invalid stylesheet path for %s: %s", entryName, stylesheet)
+			return Script{}, fmt.Errorf("invalid stylesheet path for %s: %s", entryName, stylesheet)
 		}
 		styles = append(styles, base+"/"+stylesheet)
 	}
-	return frontendScript{
+	return Script{
 		Entry:  entryName,
 		Path:   base + "/" + entry.File,
 		JS:     string(content),
@@ -87,22 +81,10 @@ func loadFrontendScript(distFS fs.FS, manifest render.Manifest, assetBase, entry
 	}, nil
 }
 
-func LoadScripts(distFS fs.FS, entryNames ...string) ([]Script, error) {
-	return loadFrontendScriptsAt(distFS, "/static", entryNames...)
-}
-
 func LoadScriptsAt(distFS fs.FS, assetBase string, entryNames ...string) ([]Script, error) {
 	if assetBase == "" || !strings.HasPrefix(assetBase, "/") || strings.Contains(assetBase, "..") {
 		return nil, fmt.Errorf("invalid asset base: %q", assetBase)
 	}
-	return loadFrontendScriptsAt(distFS, assetBase, entryNames...)
-}
-
-func loadFrontendScripts(distFS fs.FS, entryNames ...string) ([]Script, error) {
-	return loadFrontendScriptsAt(distFS, "/static", entryNames...)
-}
-
-func loadFrontendScriptsAt(distFS fs.FS, assetBase string, entryNames ...string) ([]Script, error) {
 	manifest, err := loadManifest(distFS)
 	if err != nil {
 		return nil, err
@@ -135,13 +117,9 @@ type staticAsset struct {
 	contentType string
 }
 
-func ServeStaticAssets(dfs fs.FS) http.HandlerFunc {
-	return ServeStaticAssetsAt(dfs, "/static/assets/")
-}
-
 // ServeStaticAssetsAt serves every Vite-generated file under assets/ from one
-// output-specific URL namespace. This keeps desktop, mobile, and legacy chunk
-// names independent even when two builds emit the same filename.
+// product-specific URL namespace. Desktop and mobile filenames remain
+// independent even when the builds emit the same basename.
 func ServeStaticAssetsAt(dfs fs.FS, requestPrefix string) http.HandlerFunc {
 	cache := make(map[string]staticAsset)
 	entries, _ := fs.ReadDir(dfs, "assets")

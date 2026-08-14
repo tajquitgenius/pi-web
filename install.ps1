@@ -198,14 +198,10 @@ function Initialize-EnvFile {
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
   if (-not (Test-Path $EnvFile)) { New-Item -ItemType File -Path $EnvFile | Out-Null }
 
-  $hasToken = Select-String -Path $EnvFile -Pattern '^PI_WEB_TOKEN=' -Quiet
-  if (-not $env:PI_WEB_TOKEN -and -not $hasToken) {
-    $bytes = New-Object byte[] 16
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
-    Set-EnvFileVar $EnvFile 'PI_WEB_TOKEN' $token
-    Info "Generated PI_WEB_TOKEN in $EnvFile"
-    Warn "Use this token when opening pi-web from another device: $token"
+  # Pairing is the default public-device gate. Preserve an existing optional
+  # token unless the operator explicitly supplies an override, and never print it.
+  if ($env:PI_WEB_TOKEN) {
+    Set-EnvFileVar $EnvFile 'PI_WEB_TOKEN' $env:PI_WEB_TOKEN
   }
 
   # Persist PI_CODING_AGENT_DIR so auto-started pi-web finds the right sessions.

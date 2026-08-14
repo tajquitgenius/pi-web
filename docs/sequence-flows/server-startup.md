@@ -38,11 +38,11 @@ This document traces the execution from `go run ./cmd/pi-web` to the first HTTP 
    │           │             │              │              │            │
    │           │─── srv.Register(mux) ─────▶│              │            │
    │           │             │              │              │            │
-   │           │─── loadIndexScript() ─────▶│              │            │
+   │           │─── load React manifests ──▶│              │            │
    │           │             │              │              │            │
    │           │                                                          │
    │           │             │              │              │            │
-   │           │─── mux.HandleFunc(/static/assets/…) ───────────────────▶│
+   │           │─── mux.HandleFunc(/static/{desktop,mobile}/assets/…) ──▶│
    │           │             │              │              │            │
    │           │─── writeStateFile() ────────▶│              │            │
    │           │             │              │              │            │
@@ -155,8 +155,7 @@ mux.HandleFunc("/api/chat", s.auth.Wrap(s.handleChat))
 ### 7. Static Asset Loading
 
 ```go
-builds := []liveBuild{
-    {web.DistFS(), frontend.AppEntry, "/static"},
+builds := []productBuild{
     {web.DesktopDistFS(), frontend.DesktopEntry, "/static/desktop"},
     {web.MobileDistFS(), frontend.MobileEntry, "/static/mobile"},
 }
@@ -166,7 +165,7 @@ for _, build := range builds {
 }
 ```
 
-Each Vite manifest resolves inside its own URL namespace, so desktop, mobile, and retained Svelte assets cannot collide.
+Each React Vite manifest resolves inside its own URL namespace, so desktop and mobile assets cannot collide.
 
 ### 8. State File
 
@@ -183,8 +182,7 @@ with the installed server on another port. Development mode disables
 autonomous scheduling, queue draining, auto-titling, and push delivery to avoid
 duplicate side effects. State files contain the development marker, PID, port,
 host, normalized `publicUrl`, and start time, and are cleaned up on graceful
-shutdown. Older state files with Tailscale fields remain readable by the extension. The regular path still migrates the old
-`~/.pi/agent/pi-web-state.json` location on first run.
+shutdown. The regular path still migrates the old `~/.pi/agent/pi-web-state.json` location on first run.
 
 ### 9. Model Cache Warming
 
