@@ -20,6 +20,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
+import { readSessionBootstrap } from '../live-shared';
 import type {
   ChatWorkerStatus,
   PiModel,
@@ -30,7 +31,6 @@ import type {
   StatusSnapshot,
   ThinkingLevel,
 } from '../live-shared';
-import { readSessionBootstrap } from '../routes/session-page-data.js';
 import { configureSessionMarkdown, safeMarkedParse } from '../session/render/markdown.js';
 import { escapeHtml, formatToolCall } from '../session/render/session-format.js';
 import { getPath, stitchOrphanRoots } from '../session/tree/session-tree.js';
@@ -87,11 +87,6 @@ interface MobileSessionEntry extends SessionEntry {
   customType?: string;
   content?: unknown;
   display?: boolean;
-}
-
-interface SessionBootstrap {
-  id?: string;
-  data?: SessionDetails;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -532,6 +527,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     setDetails(result);
     setRuntimeProvider(result.modelProvider || '');
     setRuntimeModel(result.model || '');
+    if (result.thinkingLevel) setRuntimeThinking(result.thinkingLevel);
     setPendingPrompt('');
   }, [client, sessionId]);
 
@@ -542,7 +538,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       return;
     }
     let active = true;
-    const bootstrap = readSessionBootstrap() as SessionBootstrap | null;
+    const bootstrap = readSessionBootstrap();
     const initial =
       bootstrap?.id === sessionId && bootstrap.data
         ? Promise.resolve(bootstrap.data)
@@ -553,6 +549,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         setDetails(result);
         setRuntimeProvider(result.modelProvider || '');
         setRuntimeModel(result.model || '');
+        if (result.thinkingLevel) setRuntimeThinking(result.thinkingLevel);
         document.title = `${result.name || sessionId} · ${host.instanceName} · pi-web`;
       })
       .catch((loadError) => {
@@ -584,7 +581,10 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         } else if (name === 'chat-preview') {
           const stream = payload as { content?: unknown; done?: unknown };
           setPreview(typeof stream.content === 'string' && !stream.done ? stream.content : '');
-          if (stream.done) void refreshSession().catch(() => {});
+          if (stream.done) {
+            setWorkerStatus((current) => ({ ...current, state: 'idle' }));
+            void refreshSession().catch(() => {});
+          }
         } else if (name === 'status-snapshot') {
           const snapshot = payload as StatusSnapshot;
           setWorkerStatus((current) => ({
@@ -731,8 +731,11 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       .split(/[\\/]/)
       .filter(Boolean)
       .at(-1) || host.instanceName;
-  const runtimeLabel =
+  const runtimeProviderLabel =
+    runtimeProvider || workerStatus.modelProvider || details?.modelProvider || 'Provider';
+  const runtimeModelLabel =
     runtimeModel || workerStatus.modelName || workerStatus.model || details?.model || 'Model';
+  const runtimeLabel = `${runtimeProviderLabel} · ${runtimeModelLabel} · ${runtimeThinking}`;
 
   if (loading) {
     return (
@@ -908,7 +911,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
               <button
                 type="button"
                 className="mobile-runtime-pill"
-                aria-label={`Model ${runtimeLabel}. Open model and thinking settings`}
+                aria-label={`Provider account, model, and thinking: ${runtimeLabel}. Open settings`}
                 onClick={() => setRuntimeOpen(true)}
               >
                 <span className={`mobile-status-dot is-${workerStatus.state}`} />

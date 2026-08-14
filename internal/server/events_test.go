@@ -117,6 +117,31 @@ func TestHandleEventsForwardsNamedDeltaEvents(t *testing.T) {
 	}
 }
 
+func TestHandleEventsClosesAtPairedDeviceExpiry(t *testing.T) {
+	now := time.Now().UTC()
+	s := &Server{
+		clients:   make([]*sseClient, 0),
+		lastKnown: make(map[string]struct{}),
+		now:       func() time.Time { return now },
+	}
+	req := httptest.NewRequest(http.MethodGet, "/events?id=__all__", nil)
+	identity := pairedDeviceIdentity{ID: "device-a", ExpiresAt: now.Add(40 * time.Millisecond)}
+	req = req.WithContext(context.WithValue(req.Context(), pairedDeviceContextKey{}, identity))
+	rec := newSyncRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.handleEvents(rec, req)
+		close(done)
+	}()
+	waitFor(t, rec, ":ok")
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("SSE stream remained open after paired-device expiry")
+	}
+}
+
 func TestRecordModTimeBroadcastsReloadForKnownZeroModTime(t *testing.T) {
 	s := &Server{
 		sessionsDir: t.TempDir(),

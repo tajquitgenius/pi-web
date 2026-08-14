@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +27,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
-	client := s.addClient(sessID)
+	device, _ := pairedDeviceFromContext(r.Context())
+	client := s.addClientForDevice(sessID, device)
 	defer s.removeClient(client)
 
 	fmt.Fprintf(w, ":ok\n\n")
@@ -35,6 +37,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if sessID == globalSessID {
 		s.writeStatusSnapshot(w)
 		flusher.Flush()
+	}
+
+	var expiry <-chan time.Time
+	var expiryTimer *time.Timer
+	if !client.deviceExpiresAt.IsZero() {
+		remaining := client.deviceExpiresAt.Sub(s.now())
+		if remaining <= 0 {
+			return
+		}
+		expiryTimer = time.NewTimer(remaining)
+		expiry = expiryTimer.C
+		defer expiryTimer.Stop()
 	}
 
 	for {
@@ -56,6 +70,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "data: %s\n\n", msg)
 			}
 			flusher.Flush()
+		case <-expiry:
+			return
 		case <-r.Context().Done():
 			return
 		}

@@ -3,42 +3,43 @@
 Use this setup to reach pi-web from another laptop or a phone without adding a VPN. Each computer makes an outbound connection to Cloudflare and continues to run pi-web only on loopback.
 
 ```text
-Browser → exact-host Access app → named tunnel → 127.0.0.1:31415 → one pi-web instance
+Browser → exact-host Google Access → device pairing → named tunnel → 127.0.0.1:31415 → one pi-web instance
 ```
 
 Cloudflare configuration and credentials remain outside pi-web. Pi-web neither stores tunnel credentials nor supervises `cloudflared`.
 
-> Remote pi-web access is equivalent to remote code execution as the operating-system user running Pi. Use an exact-user Access policy, keep the pi-web token as a second layer, and never expose port `31415` directly.
+> Remote pi-web access is equivalent to remote code execution as the operating-system user running Pi. Require the exact-user Google policy in Cloudflare Access and pi-web's per-device pairing. `PI_WEB_TOKEN` is an optional third gate. Never expose port `31415` directly.
 
 ## Keep every instance independent
 
-A personal, work, and cloud deployment must have separate boundaries:
+The canonical Main hub and every peer deployment must have separate boundaries:
 
 | Instance | Public hostname | Named tunnel | Local origin |
 |---|---|---|---|
+| Main hub (work-claw) | `pi.tajwar.org` | `pi-web-main` | `http://127.0.0.1:31415` |
 | Personal | `personal.pi.tajwar.org` | `pi-web-personal` | `http://127.0.0.1:31415` |
-| Work | `work.pi.tajwar.org` | `pi-web-work` | `http://127.0.0.1:31415` |
+| Work laptop | `work.pi.tajwar.org` | `pi-web-work` | `http://127.0.0.1:31415` |
 | Cloud | `cloud.pi.tajwar.org` | `pi-web-cloud` | `http://127.0.0.1:31415` |
 
-Each row represents a different computer or cloud user environment. Do not share a tunnel, Pi credentials, pi-web token, session directory, or state database. `PI_WEB_PEERS_JSON` creates ordinary browser links; it does not enable host-to-host API calls or share authentication.
+Each row represents a different computer or cloud user environment. Do not share a tunnel, Pi credentials, optional pi-web token, session directory, or state database. `PI_WEB_PEERS_JSON` creates ordinary browser links; it does not enable host-to-host API calls or share authentication. The Main hub shows its own work-claw sessions and links to the peers. It does not aggregate or copy their sessions.
 
-Do not change or remove an existing `pi.tajwar.org` Access application, DNS record, tunnel route, connector, or pi-web configuration while staging these hosts. One pi-web process accepts only the exact hostname in `PI_WEB_PUBLIC_URL`. If the existing deployment and `personal.pi.tajwar.org` would use the same process on port `31415`, they cannot run side by side. Leave the existing process unchanged until a separate target is ready or a deliberate cutover is approved.
+`pi.tajwar.org` remains a first-class pi-web host, never a redirect. Stage its move to the always-on work-claw server separately. Do not change the live Access application, DNS record, tunnel route, connector, or pi-web process until that target is ready and a cutover is approved. One pi-web process accepts only the exact hostname in `PI_WEB_PUBLIC_URL`.
 
-## Use three exact Access applications
+## Use four exact Access applications
 
-Create three self-hosted Access applications, one for each exact hostname. Do not use one `*.pi.tajwar.org` application.
+Create one self-hosted Access application for each exact hostname. Do not use one `*.pi.tajwar.org` application.
 
-A wildcard application would work, but it creates one security boundary for every matching first-level subdomain. Cloudflare assigns one audience (`aud`) tag to that application, so all three connectors would accept JWTs for the same audience. A future matching hostname could also inherit that boundary. Wildcard subdomains cannot receive Access's eager authorization cookies because Cloudflare does not know the concrete hostnames in advance.
+A wildcard application would work, but it creates one security boundary for every matching first-level subdomain. Cloudflare assigns one audience (`aud`) tag to that application, so all four connectors would accept JWTs for the same audience. A future matching hostname could also inherit that boundary. Wildcard subdomains cannot receive Access's eager authorization cookies because Cloudflare does not know the concrete hostnames in advance.
 
-Three exact applications are safer:
+Exact applications are safer:
 
 - Each hostname has its own application token, cookie, and audience tag.
 - **Protect with Access** on each tunnel route can validate only that host's audience.
-- A token issued for the personal app fails audience validation on the work or cloud connector.
+- A token issued for one app fails audience validation on every other connector.
 - A mistaken route or policy change has a smaller blast radius.
 - Each host can be revoked or tested without changing the other two.
 
-The three applications may reuse one exact-email policy. Reusing the policy centralizes the allowlist without merging the applications or JWT audiences.
+The four applications may reuse one exact-email policy. Reusing the policy centralizes the allowlist without merging the applications or JWT audiences.
 
 ## Before you begin
 
@@ -88,12 +89,13 @@ Use exact addresses, not email-domain rules. Cloudflare ORs the entries in an In
 
 Use Cloudflare's policy tester for all five allowed addresses and at least one address that must be denied.
 
-### 4. Create three exact self-hosted applications
+### 4. Create four exact self-hosted applications
 
 Create these self-hosted applications under **Access controls → Applications**:
 
 | Application name | Public hostname | Session duration | Policy |
 |---|---|---|---|
+| `pi-web main` | `pi.tajwar.org` | 30 days | `pi-web exact Google users` |
 | `pi-web personal` | `personal.pi.tajwar.org` | 30 days | `pi-web exact Google users` |
 | `pi-web work` | `work.pi.tajwar.org` | 30 days | `pi-web exact Google users` |
 | `pi-web cloud` | `cloud.pi.tajwar.org` | 30 days | `pi-web exact Google users` |
@@ -112,11 +114,12 @@ Cloudflare also has a global session duration. It controls how often the identit
 
 On each source host, copy the matching nonsecret template from [`deploy/cloudflare`](https://github.com/tajquitgenius/pi-web/tree/main/deploy/cloudflare):
 
+- [`main.pi-web.env.example`](https://github.com/tajquitgenius/pi-web/blob/main/deploy/cloudflare/main.pi-web.env.example)
 - [`personal.pi-web.env.example`](https://github.com/tajquitgenius/pi-web/blob/main/deploy/cloudflare/personal.pi-web.env.example)
 - [`work.pi-web.env.example`](https://github.com/tajquitgenius/pi-web/blob/main/deploy/cloudflare/work.pi-web.env.example)
 - [`cloud.pi-web.env.example`](https://github.com/tajquitgenius/pi-web/blob/main/deploy/cloudflare/cloud.pi-web.env.example)
 
-Save the result as `~/.config/pi-web/env`, replace the token placeholder with a value generated on that host, and never commit the resulting file:
+Save the result as `~/.config/pi-web/env` and never commit the resulting file. Cloudflare Access and device pairing are the required public gates. If you also choose to set `PI_WEB_TOKEN`, generate a different value on each host:
 
 ```bash
 openssl rand -hex 24
@@ -125,20 +128,25 @@ openssl rand -hex 24
 The reciprocal settings are:
 
 ```text
+# Main hub (always-on work-claw server)
+PI_WEB_INSTANCE_NAME='Main'
+PI_WEB_PUBLIC_URL=https://pi.tajwar.org
+PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work.pi.tajwar.org"},{"label":"Personal","url":"https://personal.pi.tajwar.org"},{"label":"Cloud","url":"https://cloud.pi.tajwar.org"}]'
+
 # Personal
 PI_WEB_INSTANCE_NAME='Personal'
 PI_WEB_PUBLIC_URL=https://personal.pi.tajwar.org
-PI_WEB_PEERS_JSON='[{"label":"Work","url":"https://work.pi.tajwar.org"},{"label":"Cloud","url":"https://cloud.pi.tajwar.org"}]'
+PI_WEB_PEERS_JSON='[{"label":"Main","url":"https://pi.tajwar.org"},{"label":"Work laptop","url":"https://work.pi.tajwar.org"},{"label":"Cloud","url":"https://cloud.pi.tajwar.org"}]'
 
-# Work
-PI_WEB_INSTANCE_NAME='Work'
+# Work laptop
+PI_WEB_INSTANCE_NAME='Work laptop'
 PI_WEB_PUBLIC_URL=https://work.pi.tajwar.org
-PI_WEB_PEERS_JSON='[{"label":"Personal","url":"https://personal.pi.tajwar.org"},{"label":"Cloud","url":"https://cloud.pi.tajwar.org"}]'
+PI_WEB_PEERS_JSON='[{"label":"Main","url":"https://pi.tajwar.org"},{"label":"Personal","url":"https://personal.pi.tajwar.org"},{"label":"Cloud","url":"https://cloud.pi.tajwar.org"}]'
 
 # Cloud
 PI_WEB_INSTANCE_NAME='Cloud'
 PI_WEB_PUBLIC_URL=https://cloud.pi.tajwar.org
-PI_WEB_PEERS_JSON='[{"label":"Personal","url":"https://personal.pi.tajwar.org"},{"label":"Work","url":"https://work.pi.tajwar.org"}]'
+PI_WEB_PEERS_JSON='[{"label":"Main","url":"https://pi.tajwar.org"},{"label":"Personal","url":"https://personal.pi.tajwar.org"},{"label":"Work laptop","url":"https://work.pi.tajwar.org"}]'
 ```
 
 Use straight single quotes around values containing spaces or JSON. The macOS, Linux, and Windows startup loaders remove one matching outer quote pair.
@@ -149,7 +157,9 @@ Restart pi-web only on the new target host:
 /pi-web restart
 ```
 
-Do not add `--host 0.0.0.0`. Pi-web deliberately refuses a public URL when it is not bound to a loopback address. Do not copy Pi provider credentials or the generated `PI_WEB_TOKEN` between hosts.
+Do not add `--host 0.0.0.0`. Pi-web deliberately refuses a public URL when it is not bound to a loopback address. Do not copy Pi provider credentials or an optional `PI_WEB_TOKEN` between hosts.
+
+From each host's local interface, create a one-time pairing code for every remote browser. The code expires after five minutes and can be used once. The resulting device credential lasts 90 days unless you revoke it sooner. Revocation closes that device's open event streams and removes its push subscriptions; other paired devices continue.
 
 ### 6. Create one named tunnel per host
 
@@ -158,6 +168,7 @@ In **Zero Trust → Networks → Connectors → Cloudflare Tunnels**, create the
 Add exactly one published application route to each tunnel:
 
 ```text
+pi.tajwar.org          → http://127.0.0.1:31415
 personal.pi.tajwar.org → http://127.0.0.1:31415
 work.pi.tajwar.org     → http://127.0.0.1:31415
 cloud.pi.tajwar.org    → http://127.0.0.1:31415
@@ -174,7 +185,7 @@ If Cloudflare created the DNS record as part of the published route, confirm tha
 
 ### 7. Force connector transport to HTTP/2
 
-Set the connector-to-Cloudflare transport to HTTP/2 on all three hosts. This uses outbound TCP and avoids VPNs that block QUIC over UDP. It is not the origin's **HTTP2 connection** option.
+Set the connector-to-Cloudflare transport to HTTP/2 on every host. This uses outbound TCP and avoids VPNs that block QUIC over UDP. It is not the origin's **HTTP2 connection** option.
 
 For a remotely managed tunnel, add `--protocol http2` to the installed `cloudflared tunnel ... run` service command before `run`, or set the documented `TUNNEL_TRANSPORT_PROTOCOL=http2` environment variable in the service. Do not expose or replace the existing connector credential while editing the service.
 
@@ -209,7 +220,10 @@ Verify each new host before treating it as deployed. A failure on a new host is 
 - [ ] With Wi-Fi disabled on a phone, open each hostname over cellular data in a signed-out private window. Cloudflare Access must appear before pi-web.
 - [ ] A Google account outside the allowlist is denied.
 - [ ] Cloudflare's policy tester allows all five listed addresses and denies an unlisted address.
-- [ ] After an allowed Google login, pi-web asks for that host's unique `PI_WEB_TOKEN`.
+- [ ] After an allowed Google login, pi-web requires a valid paired-device cookie before protected pages or APIs load.
+- [ ] If that host has the optional `PI_WEB_TOKEN`, pairing succeeds first and the token prompt appears as the additional gate.
+- [ ] Revoking device A closes A's existing SSE stream and suppresses its pushes while device B continues.
+- [ ] An expired device can neither open protected APIs nor keep an SSE or push channel.
 - [ ] The Access application and policy both show a 30-day session.
 
 ### JWT and connector validation
@@ -221,10 +235,11 @@ Verify each new host before treating it as deployed. A failure on a new host is 
 
 ### Independent-host behavior
 
-- [ ] Personal links only to Work and Cloud; Work links only to Personal and Cloud; Cloud links only to Personal and Work.
-- [ ] Following a peer link performs top-level navigation and passes through that host's own Access application.
-- [ ] Browser network tools show no host-to-host API calls, shared service tokens, or credentials in peer URLs.
-- [ ] Sessions, Pi credentials, pi-web tokens, and tunnel connector credentials differ between hosts.
+- [ ] Main prominently links to Work laptop, Personal, and Cloud; each peer links back to Main and to the other configured hosts.
+- [ ] `pi.tajwar.org` renders the Main hub and is not an HTTP or client-side redirect.
+- [ ] Following a peer link performs top-level navigation and passes through that host's own Access application and device pairing.
+- [ ] Browser network tools show no host-to-host API calls, copied sessions, shared service tokens, or credentials in peer URLs.
+- [ ] Sessions, Pi credentials, optional pi-web tokens, device credentials, and tunnel connector credentials remain independent between hosts.
 
 ### Work device and VPN
 

@@ -67,7 +67,7 @@ function createClient(overrides: Partial<PiWebClient> = {}) {
       thinkingLevel: 'high' as const,
     })),
     setModel: vi.fn(async () => ({ ok: true })),
-    setThinkingLevel: vi.fn(async () => ({ ok: true })),
+    setThinkingLevel: vi.fn(async (_sessionId, level) => ({ ok: true, thinkingLevel: level })),
     getHostContext: vi.fn(() => ({
       instanceName: 'Development Mac',
       currentUrl: 'http://localhost:31415',
@@ -78,6 +78,10 @@ function createClient(overrides: Partial<PiWebClient> = {}) {
       return { close: vi.fn() };
     }),
     getPairingStatus: vi.fn(async () => ({ paired: false, local: false })),
+    createPairingCode: vi.fn(async () => ({
+      code: 'ABCD2345',
+      expiresAt: '2026-01-01T00:05:00Z',
+    })),
     submitPairing: vi.fn(async () => ({
       paired: true,
       device: {
@@ -137,6 +141,14 @@ describe('desktop product shell', () => {
     expect(screen.getByRole('complementary', { name: 'Projects and threads' })).toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveAttribute('data-desktop-route', 'workspace');
     expect(screen.getByTestId('workspace-panes')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Development Mac' })).toHaveAttribute(
+      'href',
+      'http://localhost:31415',
+    );
+    expect(screen.getByRole('link', { name: 'Build host' })).toHaveAttribute(
+      'href',
+      'https://build.example',
+    );
     expect(document.documentElement).toHaveClass('desktop-product');
     expect(document.body).toHaveClass('desktop-no-scroll');
 
@@ -169,6 +181,20 @@ describe('desktop product shell', () => {
     expect(navigate).toHaveBeenCalledWith('/settings');
     expect(await screen.findByRole('main')).toHaveAttribute('data-desktop-route', 'settings');
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+  });
+
+  it('creates a one-time pairing code from local settings', async () => {
+    const { client } = createClient({
+      getPairingStatus: vi.fn(async () => ({ paired: true, local: true })),
+    });
+    render(<DesktopApp client={client} path="/settings" search="" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create pairing code' }));
+
+    await waitFor(() => expect(client.createPairingCode).toHaveBeenCalledOnce());
+    expect(screen.getByRole('status', { name: 'One-time pairing code' })).toHaveTextContent(
+      'ABCD2345',
+    );
   });
 
   it('loads the selected thread from the session route query', async () => {

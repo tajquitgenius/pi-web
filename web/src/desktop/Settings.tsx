@@ -1,6 +1,7 @@
 import {
   ExternalLink,
   HardDrive,
+  KeyRound,
   Laptop,
   LoaderCircle,
   Monitor,
@@ -11,8 +12,15 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { HostContext, PairedDevice, PiWebClient } from '../live-shared';
-import { currentSurfaceOverride } from './desktop-model';
+import {
+  readSurfaceOverride,
+  writeSurfaceOverride,
+  type HostContext,
+  type PairedDevice,
+  type PairingCode,
+  type PiWebClient,
+} from '../live-shared';
+import { t } from '../shared/i18n.js';
 
 interface SettingsPageProps {
   client: PiWebClient;
@@ -27,12 +35,15 @@ function formatDeviceDate(value: string): string {
 }
 
 export function SettingsPage({ client, host }: SettingsPageProps) {
-  const [surface, setSurface] = useState(() => currentSurfaceOverride(document.cookie));
+  const [surface, setSurface] = useState(() => readSurfaceOverride(document.cookie));
   const [surfaceSaved, setSurfaceSaved] = useState(false);
   const [devices, setDevices] = useState<PairedDevice[]>([]);
+  const [local, setLocal] = useState(false);
   const [devicesLoading, setDevicesLoading] = useState(true);
   const [devicesError, setDevicesError] = useState('');
   const [revoking, setRevoking] = useState('');
+  const [pairingCode, setPairingCode] = useState<PairingCode | null>(null);
+  const [creatingCode, setCreatingCode] = useState(false);
 
   const loadDevices = () => {
     setDevicesLoading(true);
@@ -50,11 +61,50 @@ export function SettingsPage({ client, host }: SettingsPageProps) {
       .finally(() => setDevicesLoading(false));
   };
 
-  useEffect(loadDevices, [client]);
+  useEffect(() => {
+    let active = true;
+    setDevicesLoading(true);
+    void client
+      .getPairingStatus()
+      .then(async (status) => {
+        if (!active) return;
+        setLocal(status.local);
+        if (!status.local) return;
+        const result = await client.listPairedDevices();
+        if (active) setDevices(result.devices);
+      })
+      .catch((reason: unknown) => {
+        if (active) {
+          setDevicesError(
+            reason instanceof Error
+              ? reason.message
+              : 'Paired devices can only be managed on the local host.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setDevicesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client]);
 
   const saveSurface = () => {
-    document.cookie = `pi-web-surface=${surface}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    writeSurfaceOverride(surface);
     setSurfaceSaved(true);
+  };
+
+  const createPairingCode = async () => {
+    setCreatingCode(true);
+    setDevicesError('');
+    try {
+      setPairingCode(await client.createPairingCode());
+    } catch (reason) {
+      setDevicesError(reason instanceof Error ? reason.message : t('settings.pairingCodeError'));
+    } finally {
+      setCreatingCode(false);
+    }
   };
 
   const revoke = async (deviceId: string) => {
@@ -202,12 +252,37 @@ export function SettingsPage({ client, host }: SettingsPageProps) {
               </div>
             </div>
             <div className="desktop-setting-card desktop-devices-card">
+              {local ? (
+                <div className="desktop-pairing-code">
+                  <button
+                    className="desktop-secondary-button"
+                    disabled={creatingCode}
+                    onClick={() => void createPairingCode()}
+                    type="button"
+                  >
+                    <KeyRound aria-hidden="true" size={13} />
+                    {creatingCode
+                      ? t('settings.creatingPairingCode')
+                      : t('settings.createPairingCode')}
+                  </button>
+                  {pairingCode ? (
+                    <div>
+                      <output aria-label={t('settings.pairingCodeLabel')}>
+                        {pairingCode.code}
+                      </output>
+                      <small>
+                        {t('settings.pairingCodeExpires')} {formatDeviceDate(pairingCode.expiresAt)}
+                      </small>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="desktop-device-toolbar">
                 <span>{devices.length} active devices</span>
                 <button
                   aria-label="Refresh paired devices"
                   className="desktop-icon-button"
-                  disabled={devicesLoading}
+                  disabled={devicesLoading || !local}
                   onClick={loadDevices}
                   type="button"
                 >

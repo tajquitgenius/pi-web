@@ -64,24 +64,18 @@ func (s *Server) resolveInitialSettings(ctx context.Context, sourceSessionID str
 		}
 		return s.sessionDefaults(ctx)
 	}
-	if s.chatSender == nil {
-		return sessions.InitialSettings{}, errors.New("source session state is unavailable")
-	}
-	if _, err := sessions.ResolveByID(s.sessionsDir, sourceSessionID); err != nil {
-		return sessions.InitialSettings{}, err
-	}
-	state, err := s.chatSender.GetState(ctx, sourceSessionID)
+	resolved, err := sessions.ResolveByID(s.sessionsDir, sourceSessionID)
 	if err != nil {
 		return sessions.InitialSettings{}, err
 	}
-	if state.ModelProvider == "" || state.Model == "" {
-		return sessions.InitialSettings{}, errors.New("source session returned incomplete model settings")
+	settings, err := sessions.ReadSessionSettings(resolved.Path)
+	if err != nil {
+		return sessions.InitialSettings{}, err
 	}
-	return sessions.InitialSettings{
-		ModelProvider: state.ModelProvider,
-		ModelID:       state.Model,
-		ThinkingLevel: state.ThinkingLevel,
-	}, nil
+	if settings.ModelProvider == "" || settings.ModelID == "" || settings.ThinkingLevel == "" {
+		return sessions.InitialSettings{}, errors.New("source session has incomplete persisted settings")
+	}
+	return settings, nil
 }
 
 func (s *Server) initializeNewSessionWorker(ctx context.Context, sessionID, sessionPath string, settings sessions.InitialSettings) {

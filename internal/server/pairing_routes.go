@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -12,6 +13,18 @@ import (
 )
 
 const deviceCredentialCookieName = "pi_device"
+
+type pairedDeviceContextKey struct{}
+
+type pairedDeviceIdentity struct {
+	ID        string
+	ExpiresAt time.Time
+}
+
+func pairedDeviceFromContext(ctx context.Context) (pairedDeviceIdentity, bool) {
+	device, ok := ctx.Value(pairedDeviceContextKey{}).(pairedDeviceIdentity)
+	return device, ok && device.ID != ""
+}
 
 func (s *Server) registerDevicePairingRoutes(mux *http.ServeMux) {
 	boundary := func(handler http.HandlerFunc) http.HandlerFunc {
@@ -39,13 +52,15 @@ func (s *Server) HTTPHandler(next http.Handler) http.Handler {
 			credential = cookie.Value
 		}
 		if credential != "" && s.pairing != nil {
-			paired, err := s.pairing.Authenticate(r.Context(), credential)
+			device, paired, err := s.pairing.AuthenticateDevice(r.Context(), credential)
 			if err != nil {
 				writeJSONError(w, http.StatusInternalServerError, "device authentication unavailable")
 				return
 			}
 			if paired {
-				next.ServeHTTP(w, r)
+				identity := pairedDeviceIdentity{ID: device.ID, ExpiresAt: device.ExpiresAt}
+				ctx := context.WithValue(r.Context(), pairedDeviceContextKey{}, identity)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 			s.clearDeviceCredential(w, r)
@@ -219,6 +234,10 @@ func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
 	if !revoked {
 		writeJSONError(w, http.StatusNotFound, "paired device not found")
 		return
+	}
+	s.closeDeviceClients(id)
+	if s.push != nil {
+		s.push.RemoveDevice(id)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

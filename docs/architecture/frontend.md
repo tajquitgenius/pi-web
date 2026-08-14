@@ -22,7 +22,7 @@ Each output has its own Vite manifest and asset namespace:
 
 `web/assets_embed.go` embeds all three directories. At startup, `internal/frontend/assets.go` reads each manifest, validates its entry and stylesheet paths, and registers the hashed JS, CSS, and lazy chunks from that build. A filename emitted by one build cannot collide with a filename from another.
 
-The React entries currently render route placeholders. They establish build, embedding, routing, and client boundaries without creating the desktop or mobile products.
+The React entries render the complete desktop and mobile products. The products keep separate layouts and styling while sharing the live transport and browser bootstrap boundary.
 
 ## Surface selection
 
@@ -61,12 +61,17 @@ React surface
 - session defaults and available models
 - the current host and peer links
 - global and per-session SSE topics
-- pairing status and code submission
+- pairing status, local code creation, and public code submission
 - paired-device listing and revocation
+- session bootstrap parsing and the surface-override cookie
 
-The client includes pairing request types and paths only. This foundation does not register pairing handlers, store pairing state, or change authentication.
+The Go server implements these contracts. New sessions persist explicit provider-account aliases, model IDs, and thinking levels before direct worker startup. Source-session defaults come from the persisted JSONL even when no worker is alive.
 
-The current Go backend does not yet expose `/api/session-defaults` or `/api/pairing/*`, and it does not yet consume the explicit model fields on `/api/new-session`. Product work must add those backend contracts before calling the corresponding client methods.
+Go sends `reload` and `new-session` as default-message data. It sends `chat-preview`, `status-snapshot`, `status-delta`, `annotations`, `queue`, and `btw-changed` as named events. The shared client maps each wire event once and exposes typed payloads to both products.
+
+## Desktop interaction attribution
+
+The desktop shell, server rail and thread sidebar, conversation/details panes, persistent runtime composer, and new-task workflow use interaction and layout patterns from T3 Code. The exact source revision, component mapping, and full upstream MIT license are recorded in [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
 
 ## Retained Svelte live SPA
 

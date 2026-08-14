@@ -56,7 +56,9 @@ function makeClient(overrides: Partial<PiWebClient> = {}): PiWebClient {
     cancelChat: vi.fn().mockResolvedValue({ ok: true, status: 'cancelled' }),
     getWorkerStatus: vi.fn().mockResolvedValue({ state: 'idle', thinkingLevel: 'high' }),
     setModel: vi.fn().mockResolvedValue({ ok: true }),
-    setThinkingLevel: vi.fn().mockResolvedValue({ ok: true }),
+    setThinkingLevel: vi
+      .fn()
+      .mockImplementation(async (_sessionId, level) => ({ ok: true, thinkingLevel: level })),
     getHostContext: vi.fn().mockReturnValue({
       instanceName: 'Work Mac',
       currentUrl: 'https://work.example',
@@ -64,6 +66,10 @@ function makeClient(overrides: Partial<PiWebClient> = {}): PiWebClient {
     }),
     subscribe: vi.fn().mockReturnValue({ close: vi.fn() }),
     getPairingStatus: vi.fn().mockResolvedValue({ paired: true, local: false }),
+    createPairingCode: vi.fn().mockResolvedValue({
+      code: 'ABCD2345',
+      expiresAt: '2026-08-14T12:05:00Z',
+    }),
     submitPairing: vi.fn().mockResolvedValue({ paired: true, device: pairedDevice }),
     listPairedDevices: vi.fn().mockResolvedValue({ devices: [pairedDevice] }),
     revokePairedDevice: vi.fn().mockResolvedValue(undefined),
@@ -298,7 +304,9 @@ describe('mobile conversation', () => {
     expect(screen.getByRole('button', { name: 'Attach images' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /Open model and thinking settings/ }),
+      screen.getByRole('button', {
+        name: /openai-codex-secondary · gpt-5\.6-sol · high.*Open settings/,
+      }),
     ).toBeInTheDocument();
   });
 });
@@ -315,6 +323,12 @@ describe('mobile settings', () => {
     render(<MobileApp client={client} path="/settings" search="" />);
 
     expect(await screen.findByText('Personal phone')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create pairing code' }));
+    await waitFor(() => expect(client.createPairingCode).toHaveBeenCalledOnce());
+    expect(screen.getByRole('status', { name: 'One-time pairing code' })).toHaveTextContent(
+      'ABCD2345',
+    );
+
     await user.click(screen.getByRole('button', { name: 'Revoke Personal phone' }));
 
     await waitFor(() => expect(revokePairedDevice).toHaveBeenCalledWith('device-one'));

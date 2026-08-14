@@ -1,10 +1,48 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPiWebClient } from './client';
+import { readEmbeddedSession, readSurfaceOverride, writeSurfaceOverride } from './browser';
+import { createPiWebClient, PiWebClientError } from './client';
+import type { PiWebSSEEventName } from './contracts';
 
-function jsonResponse(payload: unknown, status = 200): Response {
+class FakeEventSource {
+  static latest: FakeEventSource | undefined;
+
+  readonly listeners = new Map<string, EventListener[]>();
+  readonly url: string;
+  onerror: ((this: EventSource, event: Event) => unknown) | null = null;
+  onmessage: ((this: EventSource, event: MessageEvent) => unknown) | null = null;
+  close = vi.fn();
+
+  constructor(url: string | URL) {
+    this.url = String(url);
+    FakeEventSource.latest = this;
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
+    if (!listener) return;
+    const callback: EventListener =
+      typeof listener === 'function' ? listener : (event) => listener.handleEvent(event);
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]);
+  }
+
+  emitMessage(data: string): void {
+    this.onmessage?.call(this as unknown as EventSource, new MessageEvent('message', { data }));
+  }
+
+  emitNamed(name: string, data: string): void {
+    for (const listener of this.listeners.get(name) ?? []) {
+      listener(new MessageEvent(name, { data }));
+    }
+  }
+}
+
+function jsonResponse(
+  payload: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
@@ -108,15 +146,133 @@ describe('PiWebClient', () => {
     });
   });
 
+  it('maps plain reload and new-session messages exactly once', () => {
+    const events: Array<[PiWebSSEEventName, unknown]> = [];
+    const client = createPiWebClient({
+      EventSourceImpl: FakeEventSource as unknown as typeof EventSource,
+    });
+
+    client.subscribe('__all__', {
+      onEvent: (name, payload) => events.push([name, payload]),
+    });
+    const source = FakeEventSource.latest;
+    expect(source?.url).toBe('/events?id=__all__');
+    expect([...source!.listeners.keys()]).not.toContain('reload');
+    expect([...source!.listeners.keys()]).not.toContain('new-session');
+
+    source?.emitMessage('reload');
+    source?.emitMessage('new-session');
+    source?.emitMessage('{"not":"a server event"}');
+
+    expect(events).toEqual([
+      ['reload', undefined],
+      ['new-session', undefined],
+    ]);
+  });
+
+  it('maps every named server event once with parsed payloads', () => {
+    const events: Array<[PiWebSSEEventName, unknown]> = [];
+    const client = createPiWebClient({
+      EventSourceImpl: FakeEventSource as unknown as typeof EventSource,
+    });
+
+    client.subscribe('session.jsonl', {
+      onEvent: (name, payload) => events.push([name, payload]),
+    });
+    const source = FakeEventSource.latest!;
+    expect([...source.listeners.keys()]).toEqual([
+      'chat-preview',
+      'status-snapshot',
+      'status-delta',
+      'annotations',
+      'queue',
+      'btw-changed',
+    ]);
+
+    source.emitNamed('chat-preview', '{"content":"working","done":false}');
+    source.emitNamed(
+      'status-snapshot',
+      '{"running":["session.jsonl"],"statuses":{"session.jsonl":{"id":"session.jsonl","running":true}}}',
+    );
+    source.emitNamed('status-delta', '{"id":"session.jsonl","running":false}');
+    source.emitNamed('annotations', '{"type":"snapshot","annotations":[]}');
+    source.emitNamed('queue', '{"sessionId":"session.jsonl"}');
+    source.emitNamed('btw-changed', '{"sessionId":"scratch.jsonl"}');
+
+    expect(events).toEqual([
+      ['chat-preview', { content: 'working', done: false }],
+      [
+        'status-snapshot',
+        {
+          running: ['session.jsonl'],
+          statuses: { 'session.jsonl': { id: 'session.jsonl', running: true } },
+        },
+      ],
+      ['status-delta', { id: 'session.jsonl', running: false }],
+      ['annotations', { type: 'snapshot', annotations: [] }],
+      ['queue', { sessionId: 'session.jsonl' }],
+      ['btw-changed', { sessionId: 'scratch.jsonl' }],
+    ]);
+  });
+
   it('uses the device-pairing backend routes', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 'ABCD2345', expiresAt: '2026-01-01T00:05:00Z' }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     const client = createPiWebClient({ fetchImpl });
 
+    await client.createPairingCode();
     await client.revokePairedDevice('device/one');
 
-    expect(fetchImpl).toHaveBeenCalledWith(
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      '/api/pairing-codes',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
       '/api/devices/device%2Fone',
       expect.objectContaining({ method: 'DELETE' }),
     );
+  });
+
+  it('exposes Retry-After on API errors', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ error: 'too many pairing attempts' }, 429, { 'Retry-After': '60' }),
+      );
+    const client = createPiWebClient({ fetchImpl });
+
+    await expect(client.submitPairing({ code: 'ABCD2345', label: 'Phone' })).rejects.toMatchObject({
+      name: 'PiWebClientError',
+      status: 429,
+      retryAfter: '60',
+    } satisfies Partial<PiWebClientError>);
+  });
+
+  it('shares bootstrap parsing and surface-cookie helpers', () => {
+    const data = {
+      header: {},
+      entries: [],
+      name: 'Embedded',
+      total: 0,
+      from: 0,
+      chatAvailable: true,
+      chatDisabledReason: '',
+      model: 'gpt-5.6-sol',
+      modelProvider: 'openai-codex-secondary',
+    };
+    const encoded = btoa(JSON.stringify({ id: 'session.jsonl', data }));
+    const documentImpl = {
+      cookie: 'pi-web-surface=desktop',
+      getElementById: () => ({ textContent: encoded }),
+    } as unknown as Document;
+
+    expect(readEmbeddedSession('session.jsonl', { documentImpl })).toEqual(data);
+    expect(readSurfaceOverride(documentImpl.cookie)).toBe('desktop');
+    writeSurfaceOverride('mobile', documentImpl);
+    expect(documentImpl.cookie).toContain('pi-web-surface=mobile');
   });
 });

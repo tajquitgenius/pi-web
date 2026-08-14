@@ -1,10 +1,4 @@
-import type {
-  PiModel,
-  SessionDefaults,
-  SessionDetails,
-  SessionSummary,
-  ThinkingLevel,
-} from '../live-shared';
+import type { PiModel, SessionDefaults, SessionSummary, ThinkingLevel } from '../live-shared';
 
 export const DEFAULT_SESSION_SETTINGS: SessionDefaults = {
   modelProvider: 'openai-codex-secondary',
@@ -116,28 +110,4 @@ export function readStoredWidth(storage: Storage, fallback = 288): number {
   } catch {
     return fallback;
   }
-}
-
-export function readEmbeddedSession(
-  sessionId: string,
-  documentImpl: Pick<Document, 'getElementById'> = document,
-): SessionDetails | null {
-  const encoded = documentImpl.getElementById('pi-session-bootstrap')?.textContent?.trim();
-  if (!encoded) return null;
-  try {
-    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-    const payload = JSON.parse(new TextDecoder().decode(bytes)) as {
-      id?: unknown;
-      data?: unknown;
-    };
-    if (payload.id !== sessionId || !payload.data || typeof payload.data !== 'object') return null;
-    return payload.data as SessionDetails;
-  } catch {
-    return null;
-  }
-}
-
-export function currentSurfaceOverride(cookie: string): 'auto' | 'desktop' | 'mobile' {
-  const match = cookie.match(/(?:^|;\s*)pi-web-surface=(auto|desktop|mobile)(?:;|$)/);
-  return (match?.[1] as 'auto' | 'desktop' | 'mobile' | undefined) ?? 'auto';
 }

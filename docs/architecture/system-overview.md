@@ -10,14 +10,14 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 |-------|------------|
 | Backend | Go 1.25+ |
 | Frontend (live app) | Separate React desktop and mobile Vite builds selected per request; a Svelte 5 live build remains embedded during cutover |
-| Shared live transport | Typed `PiWebClient` contracts for HTTP, host context, SSE, and future pairing operations |
+| Shared live transport | Typed `PiWebClient` contracts for HTTP, host context, SSE, pairing, and browser bootstrap |
 | Static export | Independent Svelte IIFE rendered through Go `html/template`; self-contained and isolated from all live bundles |
 | Styling | Surface-owned live CSS plus the existing multi-theme shell variables |
 | Live Updates | Server-Sent Events (SSE) |
 | Chat RPC | JSONL over stdin/stdout via `pi --mode rpc` |
 | Session Storage | JSONL files on disk; pi-web creates new session files and appends `session_info` for browser rename |
 | Local DB | SQLite (`~/.pi/agent/pi-web.sqlite`) for per-project scratchpads, per-session review annotations, project visibility prefs, server-backed user settings, and the btw scratch-chat registry |
-| Auth | Token cookie/query/header (optional on localhost) |
+| Auth | Exact Host/Origin boundary; 90-day public device pairing; optional token cookie/query/header |
 
 ## Component Diagram
 
@@ -78,7 +78,7 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 │   PWA: /manifest.webmanifest, /sw.js, /icon.svg, /cat.webm, …           │
 │   GET  /static/{assets,desktop/assets,mobile/assets}/… → embedded builds │
 │                                                                           │
-│   All handlers wrapped with auth.Middleware (token check)                │
+│   Complete mux: exact Host/Origin → public pairing → optional token      │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
          ┌──────────────────────────┼──────────────────────────┐
@@ -126,7 +126,9 @@ The public URL must be an absolute HTTPS origin with no user information,
 non-root path, query, or fragment. Its hostname is added to the auth host
 allowlist and becomes the device-pairing boundary. Unpaired public requests can
 load only the pairing bootstrap and submit or check pairing; paired requests
-continue through the optional `PI_WEB_TOKEN` layer. Loopback Host values remain
+continue through the optional `PI_WEB_TOKEN` layer. SSE streams and push
+subscriptions remain bound to that paired-device identity until revocation or
+expiry. Loopback Host values remain
 locally trusted for code creation and device administration. Pi-web never uses
 tunnel-forwarded headers to decide which side of this boundary a request uses.
 See [Device Pairing Backend](device-pairing.md).

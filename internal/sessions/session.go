@@ -796,6 +796,79 @@ type InitialSettings struct {
 	ThinkingLevel string
 }
 
+// CurrentSettings returns the latest settings represented by a parsed session.
+func CurrentSettings(session Session) InitialSettings {
+	settings := InitialSettings{
+		ModelProvider: session.ModelProvider,
+		ModelID:       session.Model,
+	}
+	for i := len(session.Entries) - 1; i >= 0; i-- {
+		entry := session.Entries[i]
+		if entry["type"] != "thinking_level_change" {
+			continue
+		}
+		if level, _ := entry["thinkingLevel"].(string); level != "" {
+			settings.ThinkingLevel = level
+			break
+		}
+	}
+	return settings
+}
+
+// ReadSessionSettings returns the latest model account, model, and thinking
+// level persisted in a session JSONL file. It does not start a Pi worker, so it
+// is safe for copying defaults from dormant sessions.
+func ReadSessionSettings(path string) (InitialSettings, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return InitialSettings{}, err
+	}
+	defer f.Close()
+
+	var settings InitialSettings
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, scanInitialBufferBytes), maxScanLineBytes)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			Type          string `json:"type"`
+			Provider      string `json:"provider"`
+			ModelID       string `json:"modelId"`
+			ThinkingLevel string `json:"thinkingLevel"`
+			Message       *struct {
+				Provider string `json:"provider"`
+				Model    string `json:"model"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		switch entry.Type {
+		case "model_change":
+			if entry.Provider != "" && entry.ModelID != "" {
+				settings.ModelProvider = entry.Provider
+				settings.ModelID = entry.ModelID
+			}
+		case "thinking_level_change":
+			if entry.ThinkingLevel != "" {
+				settings.ThinkingLevel = entry.ThinkingLevel
+			}
+		case "message":
+			if entry.Message != nil && entry.Message.Provider != "" && entry.Message.Model != "" {
+				settings.ModelProvider = entry.Message.Provider
+				settings.ModelID = entry.Message.Model
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return InitialSettings{}, err
+	}
+	return settings, nil
+}
+
 func CreateSessionFileWithSettings(sessionsDir, path string, settings InitialSettings) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {

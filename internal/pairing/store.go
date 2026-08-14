@@ -73,6 +73,11 @@ type Device struct {
 	RevokedAt  *time.Time `json:"revokedAt"`
 }
 
+type AuthenticatedDevice struct {
+	ID        string
+	ExpiresAt time.Time
+}
+
 type Store struct {
 	db      *sql.DB
 	codeKey []byte
@@ -216,24 +221,47 @@ func (s *Store) Redeem(ctx context.Context, rawCode, rawLabel string) (string, D
 	}, nil
 }
 
-func (s *Store) Authenticate(ctx context.Context, credential string) (bool, error) {
+func (s *Store) AuthenticateDevice(ctx context.Context, credential string) (AuthenticatedDevice, bool, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(credential)
 	if err != nil || len(decoded) != CredentialBytes {
-		return false, nil
+		return AuthenticatedDevice{}, false, nil
 	}
 	digest := sha256.Sum256([]byte(credential))
 	now := s.now().UTC().Unix()
-	result, err := s.db.ExecContext(ctx, `UPDATE paired_devices
+	var device AuthenticatedDevice
+	var expiresAt int64
+	err = s.db.QueryRowContext(ctx, `UPDATE paired_devices
 		SET last_used_at = ?
-		WHERE credential_hash = ? AND revoked_at IS NULL AND expires_at > ?`, now, digest[:], now)
-	if err != nil {
-		return false, fmt.Errorf("authenticate paired device: %w", err)
+		WHERE credential_hash = ? AND revoked_at IS NULL AND expires_at > ?
+		RETURNING id, expires_at`, now, digest[:], now).Scan(&device.ID, &expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AuthenticatedDevice{}, false, nil
 	}
-	matched, err := result.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("read paired device authentication result: %w", err)
+		return AuthenticatedDevice{}, false, fmt.Errorf("authenticate paired device: %w", err)
 	}
-	return matched == 1, nil
+	device.ExpiresAt = time.Unix(expiresAt, 0).UTC()
+	return device, true, nil
+}
+
+func (s *Store) Authenticate(ctx context.Context, credential string) (bool, error) {
+	_, matched, err := s.AuthenticateDevice(ctx, credential)
+	return matched, err
+}
+
+func (s *Store) IsDeviceActive(ctx context.Context, id string) (bool, error) {
+	if id == "" {
+		return false, nil
+	}
+	var active bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM paired_devices
+		WHERE id = ? AND revoked_at IS NULL AND expires_at > ?
+	)`, id, s.now().UTC().Unix()).Scan(&active)
+	if err != nil {
+		return false, fmt.Errorf("check paired device: %w", err)
+	}
+	return active, nil
 }
 
 func (s *Store) ListDevices(ctx context.Context) ([]Device, error) {

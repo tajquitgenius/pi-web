@@ -395,6 +395,11 @@ export default {
   'settings.titleModelHint':
     'Built-in is a free, instant word heuristic (no AI). Pick a model for smarter titles — a small, fast one is ideal.',
   'settings.titleBuiltin': 'Built-in heuristic (no AI)',
+  'settings.createPairingCode': 'Create pairing code',
+  'settings.creatingPairingCode': 'Creating code…',
+  'settings.pairingCodeLabel': 'One-time pairing code',
+  'settings.pairingCodeExpires': 'Expires',
+  'settings.pairingCodeError': 'Could not create a pairing code.',
 
   'settings.sessionDisplay': 'Session Display',
   'settings.thinkingExpanded': 'Show thinking by default',

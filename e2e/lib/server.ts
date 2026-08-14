@@ -81,6 +81,12 @@ export async function startServer(): Promise<StartedServer> {
       PATH: `${STUB_PI_DIR}:${process.env.PATH ?? ""}`,
       // Ensure auth is off for tests regardless of the dev's shell env.
       PI_WEB_TOKEN: "",
+      PI_WEB_INSTANCE_NAME: "Main",
+      PI_WEB_PEERS_JSON: JSON.stringify([
+        { label: "Work laptop", url: "https://work.pi.test" },
+        { label: "Personal", url: "https://personal.pi.test" },
+        { label: "Cloud", url: "https://cloud.pi.test" },
+      ]),
       // Lower the large-session truncation thresholds so the load-earlier spec
       // can exercise pagination with a ~150-entry session instead of rendering
       // thousands of messages (which flaked under parallel CPU contention).

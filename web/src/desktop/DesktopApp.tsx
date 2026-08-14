@@ -102,7 +102,7 @@ function WorkspaceProduct({
             else next.delete(status.id);
             return next;
           });
-        } else if (name === 'new-session' || name === 'reload' || name === 'message') {
+        } else if (name === 'new-session' || name === 'reload') {
           void loadSessions();
         }
       },

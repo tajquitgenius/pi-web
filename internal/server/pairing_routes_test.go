@@ -10,10 +10,15 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	webpush "github.com/SherClockHolmes/webpush-go"
 
 	"pi-web/internal/auth"
 	"pi-web/internal/pairing"
@@ -40,8 +45,13 @@ func (c *serverPairingClock) Advance(d time.Duration) {
 
 func newPairingRouteTestServer(t *testing.T, publicURL string, clock *serverPairingClock) (*Server, http.Handler) {
 	t.Helper()
+	return newPairingRouteTestServerWithToken(t, publicURL, "", clock)
+}
+
+func newPairingRouteTestServerWithToken(t *testing.T, publicURL, token string, clock *serverPairingClock) (*Server, http.Handler) {
+	t.Helper()
 	dir := t.TempDir()
-	authMiddleware := auth.New("")
+	authMiddleware := auth.New(token)
 	authMiddleware.AllowHost("127.0.0.1:31415")
 	if publicURL != "" {
 		authMiddleware.AllowHost(publicURL)
@@ -171,6 +181,42 @@ func TestPublicDeviceGateExposesOnlyPairingSurface(t *testing.T) {
 	}
 }
 
+func TestSoundsRequirePairingThenOptionalToken(t *testing.T) {
+	s, handler := newPairingRouteTestServerWithToken(
+		t,
+		"https://pi.example",
+		"extra-secret",
+		newServerPairingClock(),
+	)
+	assetsDir := filepath.Join(s.agentDir, "pi-web", "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "tone.mp3"), []byte("sound"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	unpaired := pairingRequest(handler, http.MethodGet, "https://pi.example/sounds/tone.mp3", "", "")
+	if unpaired.Code != http.StatusFound || unpaired.Header().Get("Location") != "/pairing" {
+		t.Fatalf("unpaired sound = (%d, %q)", unpaired.Code, unpaired.Header().Get("Location"))
+	}
+	code := createPairingCode(t, handler)
+	cookie, _, _ := redeemPairingCode(t, handler, "https://pi.example/api/pair", code, "Phone")
+	pairedOnly := pairingRequest(handler, http.MethodGet, "https://pi.example/sounds/tone.mp3", "", "", cookie)
+	if pairedOnly.Code != http.StatusUnauthorized {
+		t.Fatalf("paired sound without optional token = %d, want 401", pairedOnly.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "https://pi.example/sounds/tone.mp3", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("X-Pi-Token", "extra-secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.String() != "sound" {
+		t.Fatalf("paired + token sound = (%d, %q), want sound", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPairingCookieSecurityAndSecretTransport(t *testing.T) {
 	clock := newServerPairingClock()
 	s, handler := newPairingRouteTestServer(t, "https://pi.example", clock)
@@ -267,6 +313,128 @@ func TestPairingCodeExpiryAndReuseThroughAPI(t *testing.T) {
 	})
 }
 
+func TestDeviceRevocationClosesOnlyThatDevicesSSEStreams(t *testing.T) {
+	s, handler := newPairingRouteTestServer(t, "https://pi.example", newServerPairingClock())
+	codeA := createPairingCode(t, handler)
+	cookieA, responseA, _ := redeemPairingCode(t, handler, "https://pi.example/api/pair", codeA, "Phone A")
+	codeB := createPairingCode(t, handler)
+	cookieB, _, _ := redeemPairingCode(t, handler, "https://pi.example/api/pair", codeB, "Phone B")
+
+	startStream := func(cookie *http.Cookie) (*syncRecorder, context.CancelFunc, <-chan struct{}) {
+		req := httptest.NewRequest(http.MethodGet, "https://pi.example/events?id=__all__", nil)
+		req.AddCookie(cookie)
+		ctx, cancel := context.WithCancel(req.Context())
+		req = req.WithContext(ctx)
+		rec := newSyncRecorder()
+		done := make(chan struct{})
+		go func() {
+			handler.ServeHTTP(rec, req)
+			close(done)
+		}()
+		waitFor(t, rec, ":ok")
+		return rec, cancel, done
+	}
+
+	_, cancelA, doneA := startStream(cookieA)
+	recB, cancelB, doneB := startStream(cookieB)
+	defer cancelA()
+	defer cancelB()
+
+	deviceA := responseA["device"].(map[string]any)
+	revoke := pairingRequest(
+		handler,
+		http.MethodDelete,
+		"http://127.0.0.1:31415/api/devices/"+deviceA["id"].(string),
+		"",
+		"",
+	)
+	if revoke.Code != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, want 204", revoke.Code)
+	}
+	select {
+	case <-doneA:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("revoked device SSE stream did not close promptly")
+	}
+	select {
+	case <-doneB:
+		t.Fatal("revoking device A closed device B SSE stream")
+	default:
+	}
+
+	s.broadcast(globalSessID, "new-session")
+	waitFor(t, recB, "data: new-session")
+	cancelB()
+	<-doneB
+}
+
+func TestPublicPushSubscriptionsAreBoundToPairedDevices(t *testing.T) {
+	clock := newServerPairingClock()
+	s, handler := newPairingRouteTestServer(t, "https://pi.example", clock)
+	codeA := createPairingCode(t, handler)
+	cookieA, responseA, _ := redeemPairingCode(t, handler, "https://pi.example/api/pair", codeA, "Phone A")
+	codeB := createPairingCode(t, handler)
+	cookieB, _, _ := redeemPairingCode(t, handler, "https://pi.example/api/pair", codeB, "Phone B")
+
+	var sent []string
+	s.push.sendNotification = func(_ []byte, subscription *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
+		sent = append(sent, subscription.Endpoint)
+		return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader(""))}, nil
+	}
+	subscribe := func(cookie *http.Cookie, endpoint string) {
+		body := `{"endpoint":"` + endpoint + `","keys":{"p256dh":"key","auth":"auth"}}`
+		rec := pairingRequest(
+			handler,
+			http.MethodPost,
+			"https://pi.example/api/push/subscribe",
+			body,
+			"https://pi.example",
+			cookie,
+		)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("subscribe %s = (%d, %s)", endpoint, rec.Code, rec.Body.String())
+		}
+	}
+	subscribe(cookieA, "https://push.example/a")
+	subscribe(cookieB, "https://push.example/b")
+
+	s.push.NotifyDone("session.jsonl")
+	sort.Strings(sent)
+	if got, want := strings.Join(sent, ","), "https://push.example/a,https://push.example/b"; got != want {
+		t.Fatalf("first push endpoints = %q, want %q", got, want)
+	}
+
+	deviceA := responseA["device"].(map[string]any)
+	revoke := pairingRequest(
+		handler,
+		http.MethodDelete,
+		"http://127.0.0.1:31415/api/devices/"+deviceA["id"].(string),
+		"",
+		"",
+	)
+	if revoke.Code != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, want 204", revoke.Code)
+	}
+	sent = nil
+	s.push.NotifyDone("session.jsonl")
+	if len(sent) != 1 || sent[0] != "https://push.example/b" {
+		t.Fatalf("push endpoints after revoking A = %#v, want only B", sent)
+	}
+
+	clock.Advance(pairing.CredentialLifetime)
+	sent = nil
+	s.push.NotifyDone("session.jsonl")
+	if len(sent) != 0 {
+		t.Fatalf("expired device received pushes: %#v", sent)
+	}
+	s.push.mu.Lock()
+	remaining := len(s.push.subs)
+	s.push.mu.Unlock()
+	if remaining != 0 {
+		t.Fatalf("stored subscriptions after revocation/expiry = %d, want 0", remaining)
+	}
+}
+
 func TestDeviceRevocationTakesEffectOnNextRequest(t *testing.T) {
 	_, handler := newPairingRouteTestServer(t, "https://pi.example", newServerPairingClock())
 	code := createPairingCode(t, handler)
@@ -302,6 +470,72 @@ func TestDeviceRevocationTakesEffectOnNextRequest(t *testing.T) {
 	}
 	if !cleared {
 		t.Fatal("revoked credential cookie was not cleared")
+	}
+}
+
+func TestRegisteredSessionRoutesCopyDormantSourceSettings(t *testing.T) {
+	s, handler := newPairingRouteTestServer(t, "", newServerPairingClock())
+	sourcePath := writeSessionFile(t, s.sessionsDir, "--tmp--source--", "source.jsonl")
+	f, err := os.OpenFile(sourcePath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(
+		`{"type":"model_change","provider":"openai-codex-secondary","modelId":"gpt-5.6-sol"}` + "\n" +
+			`{"type":"thinking_level_change","thinkingLevel":"high"}` + "\n",
+	)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defaults := pairingRequest(
+		handler,
+		http.MethodGet,
+		"http://127.0.0.1:31415/api/session-defaults?sourceSessionId=source.jsonl",
+		"",
+		"",
+	)
+	if defaults.Code != http.StatusOK ||
+		!strings.Contains(defaults.Body.String(), `"modelProvider":"openai-codex-secondary"`) ||
+		!strings.Contains(defaults.Body.String(), `"modelId":"gpt-5.6-sol"`) ||
+		!strings.Contains(defaults.Body.String(), `"thinkingLevel":"high"`) {
+		t.Fatalf("dormant source defaults = (%d, %s)", defaults.Code, defaults.Body.String())
+	}
+
+	projectPath := filepath.Join(s.sessionsDir, "copied-project")
+	body := `{"path":` + jsonString(projectPath) + `,"sourceSessionId":"source.jsonl"}`
+	created := pairingRequest(
+		handler,
+		http.MethodPost,
+		"http://127.0.0.1:31415/api/new-session",
+		body,
+		"http://127.0.0.1:31415",
+	)
+	if created.Code != http.StatusOK {
+		t.Fatalf("create from dormant source = (%d, %s)", created.Code, created.Body.String())
+	}
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(s.sessionsDir, sessions.EncodeProjectName(projectPath), result.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"provider":"openai-codex-secondary"`,
+		`"modelId":"gpt-5.6-sol"`,
+		`"thinkingLevel":"high"`,
+		`"implicit":true`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("created session missing %s: %s", want, data)
+		}
 	}
 }
 

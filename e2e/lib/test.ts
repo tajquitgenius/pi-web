@@ -9,6 +9,8 @@ function readState(): ServerState {
 interface Fixtures {
   /** Absolute path to the temp sessions dir the server watches (for mutating tests). */
   sessionsDir: string;
+  /** Absolute path to the isolated PI_CODING_AGENT_DIR. */
+  agentDir: string;
 }
 
 export const test = base.extend<Fixtures>({
@@ -18,6 +20,9 @@ export const test = base.extend<Fixtures>({
   },
   sessionsDir: async ({}, use) => {
     await use(readState().sessionsDir);
+  },
+  agentDir: async ({}, use) => {
+    await use(readState().agentDir);
   },
   // Belt-and-suspenders for the cat gatekeeper: global-setup disables it
   // server-side, but settings hydrate asynchronously, so also set localStorage
