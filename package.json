@@ -1,7 +1,8 @@
 {
-  "name": "@ygncode/pi-web",
+  "name": "@tajquitgenius/pi-web",
+  "private": true,
   "description": "Remote control your pi coding agent from any browser on your network",
-  "version": "0.0.1-beta.36",
+  "version": "0.1.0-beta.1",
   "keywords": [
     "pi-package"
   ],
@@ -27,7 +28,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ygncode/pi-web"
+    "url": "https://github.com/tajquitgenius/pi-web"
   },
   "license": "MIT",
   "devDependencies": {

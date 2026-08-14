@@ -42,10 +42,9 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 import {
-  isTailscaleHost,
+  detectHostPort,
   isSSH,
   normalizeCommandArgs,
-  withToken,
   readPiWebToken,
   writePiWebToken,
   cleanupPiWebNpmTemps,
@@ -90,28 +89,60 @@ describe('isSSH', () => {
   });
 });
 
-// ── isTailscaleHost ─────────────────────────────────────────────────
-describe('isTailscaleHost', () => {
-  it('detects Tailscale IPv4 CGNAT range', () => {
-    expect(isTailscaleHost('100.64.0.1')).toBe(true);
-    expect(isTailscaleHost('100.100.50.25')).toBe(true);
-    expect(isTailscaleHost('100.127.255.254')).toBe(true);
+// ── state discovery ─────────────────────────────────────────────────
+describe('detectHostPort', () => {
+  it('reads publicUrl and ignores legacy Tailscale fields', async () => {
+    const root = `${process.cwd()}/.tmp-test-state-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    mkdirSync(`${root}/pi-web`, { recursive: true });
+    process.env.PI_CODING_AGENT_DIR = root;
+    try {
+      writeFileSync(
+        `${root}/pi-web/pi-web-state.json`,
+        JSON.stringify({
+          pid: process.pid,
+          host: '127.0.0.1',
+          port: '31415',
+          publicUrl: 'https://pi.example',
+          tailscale: true,
+          tailscaleUrl: 'https://legacy.example',
+        }),
+      );
+      const pi = { exec: vi.fn() } as any;
+      await expect(detectHostPort(pi)).resolves.toEqual({
+        host: '127.0.0.1',
+        port: '31415',
+        publicUrl: 'https://pi.example',
+      });
+      expect(pi.exec).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.PI_CODING_AGENT_DIR;
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
-  it('rejects non-Tailscale IPv4 addresses', () => {
-    expect(isTailscaleHost('127.0.0.1')).toBe(false);
-    expect(isTailscaleHost('192.168.1.1')).toBe(false);
-    expect(isTailscaleHost('10.0.0.1')).toBe(false);
-    expect(isTailscaleHost('100.63.255.255')).toBe(false);
-    expect(isTailscaleHost('100.128.0.0')).toBe(false);
-  });
-
-  it('rejects IPv6 addresses (only checks first : segment)', () => {
-    // isTailscaleHost splits on ':' so IPv6 host:port strings like
-    // '[fd7a:115c:a1e0::1]:31415' would have the '[' bracket as ip.
-    // Pure IPv6 without brackets/port is not the expected input.
-    expect(isTailscaleHost('::1')).toBe(false);
-    expect(isTailscaleHost('fe80::1')).toBe(false);
+  it('uses old state for local discovery without inventing a public URL', async () => {
+    const root = `${process.cwd()}/.tmp-test-state-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    mkdirSync(`${root}/pi-web`, { recursive: true });
+    process.env.PI_CODING_AGENT_DIR = root;
+    try {
+      writeFileSync(
+        `${root}/pi-web/pi-web-state.json`,
+        JSON.stringify({
+          pid: process.pid,
+          host: '127.0.0.1',
+          port: '31415',
+          tailscale: true,
+          tailscaleUrl: 'https://legacy.example',
+        }),
+      );
+      await expect(detectHostPort({ exec: vi.fn() } as any)).resolves.toEqual({
+        host: '127.0.0.1',
+        port: '31415',
+      });
+    } finally {
+      delete process.env.PI_CODING_AGENT_DIR;
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -156,7 +187,7 @@ describe('normalizeCommandArgs', () => {
 describe('cleanupPiWebNpmTemps', () => {
   it('removes stale pi-web npm temp dirs only', () => {
     const root = `${process.cwd()}/.tmp-test-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const scope = `${root}/npm/node_modules/@ygncode`;
+    const scope = `${root}/npm/node_modules/@tajquitgenius`;
     const stale = `${scope}/.pi-web-F7YwHA7A`;
     const keep = `${scope}/pi-web`;
     mkdirSync(`${stale}/nested`, { recursive: true });
@@ -173,53 +204,12 @@ describe('cleanupPiWebNpmTemps', () => {
   });
 });
 
-// ── withToken / readPiWebToken ──────────────────────────────────────
+// ── readPiWebToken ──────────────────────────────────────────────────
 describe('token helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete (globalThis as any).__MOCK_PI_WEB_TOKEN__;
     delete (globalThis as any).__MOCK_PI_WEB_ENV_CONTENT__;
-  });
-
-  it('withToken appends token when available', () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = 'my-token';
-
-    expect(withToken('http://127.0.0.1:31415/session?id=abc')).toBe(
-      'http://127.0.0.1:31415/session?id=abc&token=my-token',
-    );
-  });
-
-  it('withToken adds token with ? when no existing query', () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = 'my-token';
-
-    expect(withToken('http://127.0.0.1:31415')).toBe(
-      'http://127.0.0.1:31415?token=my-token',
-    );
-  });
-
-  it('withToken returns URL unchanged when no token file', () => {
-    // No mock set → ENOENT → no token
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = undefined;
-
-    expect(withToken('http://127.0.0.1:31415/session?id=abc')).toBe(
-      'http://127.0.0.1:31415/session?id=abc',
-    );
-  });
-
-  it('withToken returns URL unchanged when env file has no token', () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = null; // file exists but no token line
-
-    expect(withToken('http://127.0.0.1:31415/session?id=abc')).toBe(
-      'http://127.0.0.1:31415/session?id=abc',
-    );
-  });
-
-  it('withToken URL-encodes the token value', () => {
-    (globalThis as any).__MOCK_PI_WEB_TOKEN__ = 'tok en=val&ue';
-
-    expect(withToken('http://127.0.0.1:31415')).toBe(
-      'http://127.0.0.1:31415?token=tok%20en%3Dval%26ue',
-    );
   });
 
   it('readPiWebToken reads token from env file', () => {

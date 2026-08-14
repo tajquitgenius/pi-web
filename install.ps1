@@ -1,10 +1,10 @@
 # pi-web installer for Windows — downloads the binary and sets up auto-start.
 #
 # Standalone (no pi required):
-#   irm https://raw.githubusercontent.com/ygncode/pi-web/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/tajquitgenius/pi-web/main/install.ps1 | iex
 #
 # Via pi package (also registers /web, /remote commands):
-#   pi install npm:@ygncode/pi-web@beta
+#   pi install git:github.com/tajquitgenius/pi-web
 #
 # Updates are handled by re-running the same command.
 #
@@ -18,7 +18,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$Repo = 'ygncode/pi-web'
+$Repo = 'tajquitgenius/pi-web'
 if ($env:PI_WEB_INSTALL_DIR) {
   $InstallDir = $env:PI_WEB_INSTALL_DIR
 } else {
@@ -37,6 +37,14 @@ $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 function Info($msg) { Write-Host "-> $msg" }
 function Warn($msg) { Write-Host "!  $msg" -ForegroundColor Yellow }
 
+function Assert-NoUpstreamInstall {
+  $settingsFile = Join-Path $HOME '.pi\agent\settings.json'
+  $hasUpstream = (Test-Path $settingsFile) -and (Select-String -Path $settingsFile -SimpleMatch 'npm:@ygncode/pi-web' -Quiet)
+  if ($env:npm_package_name -eq '@tajquitgenius/pi-web' -and $hasUpstream) {
+    throw 'The upstream npm package is still installed. Run: pi remove npm:@ygncode/pi-web && pi install git:github.com/tajquitgenius/pi-web'
+  }
+}
+
 function Get-Arch {
   $arch = "$env:PROCESSOR_ARCHITECTURE"
   # An x64 PowerShell on ARM64 reports AMD64; prefer the OS architecture.
@@ -51,21 +59,77 @@ function Get-Arch {
 function Get-PackageTag {
   # When running as an npm lifecycle script, install the binary that matches
   # the npm package version so pinned installs stay pinned (see install.sh).
-  if ($env:npm_package_name -eq '@ygncode/pi-web' -and $env:npm_package_version) {
+  if ($env:npm_package_name -eq '@tajquitgenius/pi-web' -and $env:npm_package_version) {
     return 'v' + $env:npm_package_version.TrimStart('v')
   }
   return $null
 }
 
+function Get-SemVerParts($tag) {
+  $value = "$tag".Trim().TrimStart('v')
+  $segments = $value -split '-', 2
+  $numbers = @($segments[0] -split '\.')
+  $core = @(0, 0, 0)
+  for ($i = 0; $i -lt 3 -and $i -lt $numbers.Count; $i++) {
+    $parsed = 0
+    if ([int]::TryParse($numbers[$i], [ref]$parsed)) { $core[$i] = $parsed }
+  }
+  $pre = ''
+  if ($segments.Count -gt 1) { $pre = $segments[1] }
+  return [pscustomobject]@{ Core = $core; Pre = $pre }
+}
+
+function Compare-Prerelease($left, $right) {
+  if (-not $left -and -not $right) { return 0 }
+  if (-not $left) { return 1 }
+  if (-not $right) { return -1 }
+
+  $leftParts = @($left -split '\.')
+  $rightParts = @($right -split '\.')
+  $count = [Math]::Max($leftParts.Count, $rightParts.Count)
+  for ($i = 0; $i -lt $count; $i++) {
+    if ($i -ge $leftParts.Count) { return -1 }
+    if ($i -ge $rightParts.Count) { return 1 }
+    $leftNumber = 0
+    $rightNumber = 0
+    $leftNumeric = [int]::TryParse($leftParts[$i], [ref]$leftNumber)
+    $rightNumeric = [int]::TryParse($rightParts[$i], [ref]$rightNumber)
+    if ($leftNumeric -and $rightNumeric) {
+      if ($leftNumber -lt $rightNumber) { return -1 }
+      if ($leftNumber -gt $rightNumber) { return 1 }
+    } elseif ($leftNumeric) {
+      return -1
+    } elseif ($rightNumeric) {
+      return 1
+    } else {
+      $comparison = [string]::CompareOrdinal($leftParts[$i], $rightParts[$i])
+      if ($comparison -lt 0) { return -1 }
+      if ($comparison -gt 0) { return 1 }
+    }
+  }
+  return 0
+}
+
+function Compare-SemVer($left, $right) {
+  $leftVersion = Get-SemVerParts $left
+  $rightVersion = Get-SemVerParts $right
+  for ($i = 0; $i -lt 3; $i++) {
+    if ($leftVersion.Core[$i] -lt $rightVersion.Core[$i]) { return -1 }
+    if ($leftVersion.Core[$i] -gt $rightVersion.Core[$i]) { return 1 }
+  }
+  return (Compare-Prerelease $leftVersion.Pre $rightVersion.Pre)
+}
+
 function Get-LatestTag {
-  try {
-    $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
-    if ($rel.tag_name) { return $rel.tag_name }
-  } catch {}
-  # /latest ignores prereleases. Fall back to the newest release of any type
-  # (GitHub orders by creation date; install.sh sorts by semver instead).
-  $rels = @(Invoke-RestMethod "https://api.github.com/repos/${Repo}/releases?per_page=1")
-  if ($rels.Count -gt 0 -and $rels[0].tag_name) { return $rels[0].tag_name }
+  # /latest excludes prereleases. Select the highest semantic version from all
+  # published releases so Windows follows the same channel as POSIX and the app.
+  $rels = @(Invoke-RestMethod "https://api.github.com/repos/${Repo}/releases?per_page=100")
+  $tag = $null
+  foreach ($rel in $rels) {
+    if ($rel.draft -or -not $rel.tag_name) { continue }
+    if (-not $tag -or (Compare-SemVer $rel.tag_name $tag) -gt 0) { $tag = $rel.tag_name }
+  }
+  if ($tag) { return $tag }
   throw "Could not determine latest release tag from $Repo."
 }
 
@@ -163,6 +227,10 @@ if (Test-Path `$envFile) {
   foreach (`$line in Get-Content `$envFile) {
     if (`$line -match '^\s*#' -or `$line -notmatch '=') { continue }
     `$name, `$value = `$line -split '=', 2
+    `$value = `$value.Trim()
+    if (`$value.Length -ge 2 -and ((`$value[0] -eq "'" -and `$value[`$value.Length - 1] -eq "'") -or (`$value[0] -eq '"' -and `$value[`$value.Length - 1] -eq '"'))) {
+      `$value = `$value.Substring(1, `$value.Length - 2)
+    }
     Set-Item -Path ('Env:' + `$name) -Value `$value
   }
 }
@@ -188,6 +256,7 @@ function Main {
   Info 'pi-web installer (Windows)'
   Write-Host ''
 
+  Assert-NoUpstreamInstall
   $arch = Get-Arch
 
   $tag = Get-PackageTag
@@ -220,11 +289,11 @@ function Main {
   Initialize-EnvFile
   Initialize-Autostart
 
-  Info 'pi-web will listen on localhost; if Tailscale is running, it will publish HTTPS with Tailscale Serve.'
+  Info 'pi-web will listen on localhost; configure PI_WEB_PUBLIC_URL with an external HTTPS tunnel for remote access.'
   Start-PiWeb
 
   Info "Done! pi-web $tag is ready."
   Write-Host ''
 }
 
-Main
+if ($env:PI_WEB_INSTALLER_TEST -ne '1') { Main }

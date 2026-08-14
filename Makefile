@@ -58,6 +58,8 @@ go-test: go-setup
 
 install-test:
 	bash tests/install/inplace_test.sh
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/install/service_env_test.py
+	@if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -File tests/install/install_ps1_test.ps1; else echo "SKIP: pwsh unavailable"; fi
 
 vet: go-setup
 	go vet ./...

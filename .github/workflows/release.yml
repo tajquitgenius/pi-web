@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   test:
@@ -31,6 +30,15 @@ jobs:
 
       - name: Install root dependencies
         run: npm ci --ignore-scripts
+
+      - name: Verify package version matches tag
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "package.json version ($package_version) does not match tag ($tag_version)"
+            exit 1
+          fi
 
       - name: Run checks
         run: make check
@@ -72,10 +80,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'web/package-lock.json'
 
-      - name: Build frontend
-        run: make frontend-build
-
-      - name: Build binary
+      - name: Build release asset
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -86,7 +91,7 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             output="${output}.exe"
           fi
-          go build -ldflags="-s -w -X main.version=${VERSION}" -o "${output}" ./cmd/pi-web
+          make build BINARY="${output}" VERSION="${VERSION}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -112,43 +117,3 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') || contains(github.ref, '-rc') }}
-
-  npm:
-    name: Publish npm package
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Verify package version matches tag
-        run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          package_version="$(node -p "require('./package.json').version")"
-          if [ "$package_version" != "$tag_version" ]; then
-            echo "package.json version ($package_version) does not match tag ($tag_version)"
-            exit 1
-          fi
-
-      - name: Publish to npm
-        run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [[ "${GITHUB_REF_NAME}" == *"-"* ]]; then
-            npm publish --access public --tag beta --provenance
-            # pi-web is currently beta-only. Keep unqualified installs
-            # (`pi install npm:@ygncode/pi-web`) on the newest beta too.
-            npm dist-tag add "@ygncode/pi-web@${tag_version}" latest
-          else
-            npm publish --access public --tag latest --provenance
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

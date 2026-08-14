@@ -82,18 +82,28 @@ func TestInfoDevNoUpdate(t *testing.T) {
 	}
 }
 
+func TestNewUsesForkGitHubAPI(t *testing.T) {
+	if got := New("1.0.0").githubAPI; got != "https://api.github.com/repos/tajquitgenius/pi-web" {
+		t.Fatalf("githubAPI = %q", got)
+	}
+}
+
 func TestCheckHasUpdate(t *testing.T) {
-	npm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"dist-tags":{"beta":"0.0.1-beta.25","latest":"0.0.1-beta.20"}}`))
-	}))
-	defer npm.Close()
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"body":"## v0.0.1-beta.25\n- fix things","html_url":"https://example/release"}`))
+		if r.URL.Path != "/releases" || r.URL.Query().Get("per_page") != "100" {
+			t.Errorf("unexpected GitHub request: %s", r.URL.String())
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Write([]byte(`[
+			{"tag_name":"v0.0.1-beta.26","draft":true},
+			{"tag_name":"v0.0.1-beta.24"},
+			{"tag_name":"v0.0.1-beta.25","body":"## v0.0.1-beta.25\n- fix things","html_url":"https://example/release"}
+		]`))
 	}))
 	defer gh.Close()
 
 	c := New("0.0.1-beta.24")
-	c.npmURL = npm.URL
 	c.githubAPI = gh.URL
 
 	info, err := c.Check(context.Background())
@@ -116,19 +126,12 @@ func TestCheckHasUpdate(t *testing.T) {
 }
 
 func TestCheckUpToDate(t *testing.T) {
-	npm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"dist-tags":{"beta":"0.0.1-beta.24"}}`))
-	}))
-	defer npm.Close()
-	// GitHub should not be needed when up to date; fail loudly if hit.
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("github should not be queried when up to date")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`[{"tag_name":"v0.0.1-beta.24"}]`))
 	}))
 	defer gh.Close()
 
 	c := New("0.0.1-beta.24")
-	c.npmURL = npm.URL
 	c.githubAPI = gh.URL
 
 	info, err := c.Check(context.Background())

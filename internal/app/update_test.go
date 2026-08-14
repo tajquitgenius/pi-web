@@ -13,7 +13,7 @@ import (
 func TestInstallCmdSignalsInPlaceUpdate(t *testing.T) {
 	cmd := installCmd(context.Background())
 
-	wantArgs := []string{"pi", "install", installPackage}
+	wantArgs := []string{"pi", "install", "git:github.com/tajquitgenius/pi-web"}
 	if !slices.Equal(cmd.Args, wantArgs) {
 		t.Fatalf("args = %v, want %v", cmd.Args, wantArgs)
 	}
@@ -32,7 +32,7 @@ func TestCleanupStaleNPMTemps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scopeDir := filepath.Join(home, ".pi", "agent", "npm", "node_modules", "@ygncode")
+	scopeDir := filepath.Join(home, ".pi", "agent", "npm", "node_modules", "@tajquitgenius")
 	staleDir := filepath.Join(scopeDir, ".pi-web-F7YwHA7A")
 	keepDir := filepath.Join(scopeDir, "pi-web")
 	if err := os.MkdirAll(filepath.Join(staleDir, "nested"), 0o755); err != nil {

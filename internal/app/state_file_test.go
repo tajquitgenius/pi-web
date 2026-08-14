@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,13 +27,13 @@ func TestStateFileName(t *testing.T) {
 
 func TestDevelopmentStateFileCanCoexistWithRegularServer(t *testing.T) {
 	tmp := t.TempDir()
-	primaryPath, primaryFile, err := writeStateFile(tmp, false, "127.0.0.1", "31415", false, "")
+	primaryPath, primaryFile, err := writeStateFile(tmp, false, "127.0.0.1", "31415", "https://pi.example")
 	if err != nil {
 		t.Fatalf("write regular state: %v", err)
 	}
 	defer primaryFile.Close()
 
-	devPath, devFile, err := writeStateFile(tmp, true, "127.0.0.1", "31416", false, "")
+	devPath, devFile, err := writeStateFile(tmp, true, "127.0.0.1", "31416", "")
 	if err != nil {
 		t.Fatalf("write dev state: %v", err)
 	}
@@ -41,9 +42,35 @@ func TestDevelopmentStateFileCanCoexistWithRegularServer(t *testing.T) {
 	if primaryPath == devPath {
 		t.Fatalf("regular and development state paths are both %q", primaryPath)
 	}
-	if _, duplicateFile, err := writeStateFile(tmp, true, "127.0.0.1", "31417", false, ""); err == nil {
+	if _, duplicateFile, err := writeStateFile(tmp, true, "127.0.0.1", "31417", ""); err == nil {
 		duplicateFile.Close()
 		t.Fatal("second dev instance should fail while the first dev lock is held")
+	}
+}
+
+func TestStateFileEmitsPublicURLWithoutLegacyTailscaleState(t *testing.T) {
+	tmp := t.TempDir()
+	path, file, err := writeStateFile(tmp, false, "127.0.0.1", "31415", "https://pi.example")
+	if err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	defer file.Close()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	if got := state["publicUrl"]; got != "https://pi.example" {
+		t.Fatalf("publicUrl = %v, want https://pi.example", got)
+	}
+	for _, legacy := range []string{"tailscale", "tailscaleUrl"} {
+		if _, ok := state[legacy]; ok {
+			t.Errorf("state contains legacy %q field", legacy)
+		}
 	}
 }
 
