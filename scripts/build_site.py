@@ -32,7 +32,7 @@ USER_DOCS = ROOT / "user-docs"
 ASSETS = USER_DOCS / "assets"
 LOCALES_JSON = SITE / ".vitepress" / "locales.generated.json"
 
-PACKAGE_URL = "https://pi.dev/packages/@ygncode/pi-web?name=pi-web"
+PACKAGE_URL = "https://github.com/tajquitgenius/pi-web"
 
 # Browser/SEO <title> for the home page (titleTemplate:false keeps it verbatim).
 HOME_TITLE = "pi-web - Web UI for Pi (Access pi via Remote, Mobile)"
@@ -42,6 +42,7 @@ DOC_ORDER = [
     "README",
     "why",
     "install",
+    "cloudflare-access",
     "personal-assistant",
     "keyboard-shortcuts",
     "llm-debug",
@@ -169,7 +170,10 @@ def main() -> None:
 
         sidebar = []
         for doc in DOC_ORDER:
-            text = transform((USER_DOCS / code / f"{doc}.md").read_text(), doc, code)
+            source = USER_DOCS / code / f"{doc}.md"
+            if not source.exists():
+                source = USER_DOCS / "en" / f"{doc}.md"
+            text = transform(source.read_text(), doc, code)
             name = "guide" if doc == "README" else doc
             (out_dir / f"{name}.md").write_text(text)
             sidebar.append({"text": page_title(text, doc), "link": slug(code, doc)})
@@ -177,7 +181,7 @@ def main() -> None:
         theme = {
             "nav": [
                 {"text": "Guide", "link": slug(code, "README")},
-                {"text": "pi.dev", "link": PACKAGE_URL},
+                {"text": "GitHub", "link": PACKAGE_URL},
             ],
             "sidebar": sidebar,
         }

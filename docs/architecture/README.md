@@ -56,4 +56,4 @@ This directory contains the architecture documentation for **pi-web**, a local w
    - **Index page** (`/`): Built with Vite + vanilla JS, served from embedded `web/dist`
    - **Session page** (`/session`): Server-rendered HTML shell with Vite-built session JS
 
-5. **Security**: Token-based auth (`PI_WEB_TOKEN`) is required when binding to non-loopback addresses (e.g., Tailscale).
+5. **Security**: Remote deployments keep pi-web on loopback behind an external HTTPS tunnel. `PI_WEB_PUBLIC_URL` declares the exact allowed public origin, and `PI_WEB_TOKEN` provides optional defense in depth. Any direct non-loopback bind still requires the token.

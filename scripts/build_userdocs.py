@@ -12,6 +12,7 @@ EN_DIR = DOCS_DIR / "en"
 DOCS = [
     "README",
     "install",
+    "cloudflare-access",
     "keyboard-shortcuts",
     "llm-debug",
     "personal-assistant",
@@ -73,7 +74,7 @@ Rules:
 - Preserve all Markdown structure exactly: headings, tables (keep the | column layout), blockquotes (>), lists, bold/italic, horizontal rules (---), HTML tags, and all emoji.
 - Do NOT translate or alter: fenced code blocks and their contents, inline code in backticks, URLs, file paths, link targets in parentheses, image paths, and anchor fragments (#...).
 - Translate visible prose, link text, table cell text, and image alt text.
-- Keep these terms in English / as-is: pi, pi-web, Tailscale, PWA, SSE, JSONL, fsnotify, launchd, systemd, macOS, Linux, Windows, npm, QR, RPC, MagicDNS, Claude, Cowork, OpenClaw, Hermes, Git, GitHub, Gist, Vim, pomodoro, beta, Termius, Chrome, Edge, Safari.
+- Keep these terms in English / as-is: pi, pi-web, Pi, Cloudflare, Cloudflare Access, Cloudflare Tunnel, PWA, SSE, JSONL, fsnotify, launchd, systemd, macOS, Linux, Windows, npm, HTTPS, Host, Origin, QR, RPC, Claude, Cowork, OpenClaw, Hermes, Git, GitHub, Gist, Vim, pomodoro, beta, Termius, Chrome, Edge, Safari.
 
 Here is the Markdown to translate (begin your output directly with the translated content):
 
@@ -124,7 +125,7 @@ HERO_PROMPT = """Translate the string VALUES of this JSON object into {target}.
 Rules:
 - Output ONLY valid JSON with the exact same keys. No preamble, no commentary, no code fence.
 - Translate every value into {target}.
-- Keep these terms in English / as-is: pi, pi-web, PWA, SSE, Tailscale, GitHub, Gist, macOS, Linux, Windows, npm, Claude, Cowork, Termius.
+- Keep these terms in English / as-is: pi, pi-web, Pi, Cloudflare, Cloudflare Access, Cloudflare Tunnel, PWA, SSE, GitHub, Gist, macOS, Linux, Windows, npm, Claude, Cowork, Termius.
 - Preserve emoji, punctuation, and the em dash (—).
 
 {payload}

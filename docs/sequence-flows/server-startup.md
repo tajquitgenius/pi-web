@@ -63,6 +63,7 @@ This document traces the execution from `go run ./cmd/pi-web` to the first HTTP 
 ```go
 port := flag.String("p", "31415", "port to listen on")
 hostOverride := flag.String("host", "", "host/IP to bind; defaults to 127.0.0.1")
+publicURL := flag.String("public-url", os.Getenv("PI_WEB_PUBLIC_URL"), "externally managed absolute HTTPS origin")
 open := flag.Bool("o", false, "auto-open browser")
 insecure := flag.Bool("insecure", false, "allow non-loopback bind without PI_WEB_TOKEN")
 developmentMode := os.Getenv("PI_WEB_DEV") == "1"
@@ -87,13 +88,14 @@ Priority:
 1. `--host` flag (explicit override)
 2. `127.0.0.1` (default)
 
-If no `--host` override is supplied and Tailscale is running, startup also runs:
+`PI_WEB_PUBLIC_URL` supplies the default for `--public-url`; the flag can
+override it. The value must be an absolute HTTPS origin with no user
+information, non-root path, query, or fragment. If configured, the bind host
+must be loopback even when `--insecure` is present.
 
-```bash
-tailscale serve --bg --https=<port> http://127.0.0.1:<port>
-```
-
-This gives the user a Tailscale HTTPS endpoint without making pi-web bind to a Tailscale interface or manage TLS certificates itself.
+pi-web records this origin but does not start an HTTPS tunnel or proxy. The
+external proxy must terminate TLS and preserve the public `Host` and `Origin`.
+pi-web does not trust proxy-specific headers.
 
 ### 4. Auth Enforcement
 
@@ -104,7 +106,7 @@ if token == "" && !isLoopbackHost(bindHost) && !*insecure {
 }
 ```
 
-Non-loopback binds **require** `PI_WEB_TOKEN` to prevent unauthorized access over the network.
+Non-loopback binds **require** `PI_WEB_TOKEN` to prevent unauthorized access over the network. Public HTTPS mode instead requires loopback and adds the public hostname to the auth allowlist. If optional token auth is also configured, login cookies created through the public hostname are marked `Secure`; local HTTP cookies are not.
 
 ### 5. Server Construction
 
@@ -167,7 +169,7 @@ Reads Vite manifest to discover the hashed filename of the SPA bundle.
 ### 8. State File
 
 ```go
-writeStateFile(agentDir, developmentMode, bindHost, port, tailscaleServe, tailscaleURL)
+writeStateFile(agentDir, developmentMode, bindHost, port, publicURL)
 // regular → ~/.pi/agent/pi-web/pi-web-state.json
 // PI_WEB_DEV=1 → ~/.pi/agent/pi-web/pi-web-state-dev.json
 ```
@@ -178,8 +180,8 @@ file and lock, allowing the source checkout to share sessions and SQLite data
 with the installed server on another port. Development mode disables
 autonomous scheduling, queue draining, auto-titling, and push delivery to avoid
 duplicate side effects. State files contain the development marker, PID, port,
-host, Tailscale Serve flag/URL, and start time, and are cleaned up on graceful
-shutdown. The regular path still migrates the old
+host, normalized `publicUrl`, and start time, and are cleaned up on graceful
+shutdown. Older state files with Tailscale fields remain readable by the extension. The regular path still migrates the old
 `~/.pi/agent/pi-web-state.json` location on first run.
 
 ### 9. Model Cache Warming

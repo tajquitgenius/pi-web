@@ -4,7 +4,7 @@
   "actions": [
     { "theme": "brand", "text": "Get Started", "to": "guide" },
     { "theme": "alt", "text": "Install", "to": "install" },
-    { "theme": "alt", "text": "View on GitHub", "link": "https://github.com/ygncode/pi-web" }
+    { "theme": "alt", "text": "View on GitHub", "link": "https://github.com/tajquitgenius/pi-web" }
   ],
   "features": [
     {
@@ -25,7 +25,7 @@
     {
       "icon": "🔒",
       "title": "Safe remote access",
-      "details": "Built-in token auth so you can expose it on your LAN or over Tailscale without worry."
+      "details": "Keep pi-web on loopback behind Cloudflare Access, with exact public-origin validation and optional token defense in depth."
     },
     {
       "icon": "📤",

@@ -6,11 +6,14 @@ This document details the core design system for `pi-web`. The design system is 
 
 ## 1. Core Principles
 
-1. **Monospace Typography:** Highly tailored to developer workflows, using a clean monospace typeface stack.
-2. **Obsidian Obsidian Dark by Default:** Provides a premium, high-contrast visual footprint that is comfortable for long hours of pairing.
+1. **Readable interface typography:** App chrome and rendered prose use the system sans stack at 14–15px by default. Code, commands, paths, and tool output remain monospace.
+2. **Obsidian Dark by Default:** A calm, high-contrast visual footprint that remains comfortable during long sessions.
 3. **Fully Semantic Visual Tokens:** No hardcoded hex values in CSS rules or component styles. Every color, border, padding, and layout attribute references semantic tokens. (Note: `<meta name="theme-color">` requires a literal color value and is the sole exception.)
 4. **Zero Compilation Overhead:** Themes are resolved purely at runtime by the browser, removing the need for server-side CSS precompilation.
 5. **Local Custom Themes:** Anyone can configure custom themes by adding a simple CSS stylesheet in their active configuration directory.
+6. **Conversation first:** The live session view keeps metadata and auxiliary panels collapsed until needed. Static exports remain fully expanded.
+7. **Remote context is explicit:** Every live page names the current computer, and multi-host switching uses ordinary top-level links rather than cross-origin API calls.
+8. **Accessible by default:** Focus rings are visible, browser zoom remains enabled, and primary mobile controls target at least 44×44px.
 
 ---
 
@@ -90,6 +93,8 @@ Every component (the index list cards, sidebar tree, chat bubbles, buttons, and 
 - `--dim`: Outer dividing rules and borders.
 - `--dim-2`: Inner subtle divisions.
 - `--accent`: Brand focus, highlight borders, and state changes.
+- `--focus-ring`: High-contrast keyboard focus treatment.
+- `--elevated-shadow`: Shared shadow for menus and temporary overlays.
 
 ### Syntax Highlighting & Diffs
 - `--syntaxKeyword`: Language keywords.

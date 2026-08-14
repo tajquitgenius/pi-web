@@ -115,13 +115,17 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
    Non-loopback →  PI_WEB_TOKEN required  (or --insecure)
    Loopback     →  Auth optional
 
-When no --host override is supplied and Tailscale is running, pi-web also
-configures Tailscale Serve:
+`PI_WEB_PUBLIC_URL` or `--public-url` records an externally managed HTTPS
+origin. When configured, pi-web must keep its bind host on loopback. The proxy
+terminates TLS and forwards to the local HTTP listener while preserving the
+public `Host` and `Origin`. pi-web neither runs the proxy nor trusts
+proxy-specific headers.
 
-    tailscale serve --bg --https=<port> http://127.0.0.1:<port>
-
-Tailscale owns HTTPS/certificates and exposes the app at the node's MagicDNS
-name, while pi-web itself continues listening only on localhost.
+The public URL must be an absolute HTTPS origin with no user information,
+non-root path, query, or fragment. Its hostname is added to the auth host
+allowlist. `PI_WEB_INSTANCE_NAME` and `PI_WEB_PEERS_JSON` supply the read-only
+multi-host context embedded in the SPA shell; peer URLs follow the same HTTPS
+origin rules.
 ```
 
 ## Session Directory Layout
@@ -170,17 +174,17 @@ across devices. See `internal/server/projects.go`.
 
 ## Startup Order
 
-1. Parse CLI flags (`-p`, `-host`, `-o`, `-insecure`, `-version`) and detect internal `PI_WEB_DEV=1` development mode
+1. Parse CLI flags (`-p`, `-host`, `-public-url`, `-o`, `-insecure`, `-version`) and detect internal `PI_WEB_DEV=1` development mode
 2. Validate sessions directory exists
-3. Determine bind host (flag → localhost)
-4. Enforce auth for explicit non-loopback binds
-5. Build `server.Deps` (renderers, cache, workers, auth)
-6. Create `Server` → starts file watcher + status watcher + sweeper
-7. Register routes on `http.ServeMux`
-8. Load Vite manifest and register static assets
-9. Optionally configure Tailscale Serve HTTPS for localhost
+3. Determine the bind host and validate the optional public HTTPS origin and host context
+4. Require loopback binding for a public origin; otherwise enforce auth for explicit non-loopback binds
+5. Add the bind and public hostnames to the auth allowlist
+6. Build `server.Deps` (renderers, cache, workers, auth)
+7. Create `Server` → starts file watcher + status watcher + sweeper
+8. Register routes on `http.ServeMux`
+9. Load Vite manifest and register static assets
 10. Write and lock the regular state file, or `pi-web-state-dev.json` in development mode
-11. Optionally open browser
+11. Optionally open the local URL in a browser
 12. Warm models cache (async)
 13. Start `http.Server` with timeouts; graceful shutdown on `SIGINT`/`SIGTERM`
 
