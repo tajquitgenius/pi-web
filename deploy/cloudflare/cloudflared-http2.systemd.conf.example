@@ -1,0 +1,4 @@
+# Install as a systemd override with: sudo systemctl edit cloudflared.service
+# This file contains no tunnel connector credential.
+[Service]
+Environment=TUNNEL_TRANSPORT_PROTOCOL=http2
