@@ -18,6 +18,7 @@
     "@pierre/diffs": "^1.2.10",
     "highlight.js": "latest",
     "lucide": "^1.17.0",
+    "lucide-react": "^1.31.0",
     "marked": "latest",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
@@ -26,6 +27,7 @@
     "@eslint/js": "10.0.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@testing-library/svelte": "^5.3.1",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.18",
