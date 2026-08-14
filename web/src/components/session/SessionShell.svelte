@@ -36,6 +36,7 @@
     sessionId = '',
     sessionUUID = '',
     title = 'Session',
+    host = { instanceName: 'This computer', currentUrl: '', peers: [] },
     scratchpad = '',
     cwd = '',
     chatAvailable = true,
@@ -144,7 +145,7 @@
   });
 </script>
 
-<SessionHeader {title} {cwd} {sessionId} {sessionUUID} />
+<SessionHeader {title} {host} {cwd} {sessionId} {sessionUUID} />
 
 <CommandMenu {sessionId} {runningSessionIds} />
 
@@ -157,7 +158,7 @@
   <SessionTree {cwd} {sessionId} {runningSessionIds} {runningSessionProjects} />
   <div id="content-container" class="content-container">
     <main id="content">
-      <div id="header-container"><SessionInfoHeader model={sessionModel} /></div>
+      <div id="header-container"><SessionInfoHeader model={sessionModel} compact /></div>
       <LoadEarlier model={sessionModel} {sessionId} navigateTo={runtime.navigateTo} />
       <div id="messages">
         <SessionContent model={sessionModel} afterRender={contentRuntime.afterRender} live />

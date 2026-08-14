@@ -17,7 +17,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 run_case() {
   local mode="$1"
   local package_version="${2:-}"
-  local expected_tag="v9.9.9"
+  local expected_tag="v10.0.0-beta.1"
   [[ -n "$package_version" ]] && expected_tag="v${package_version#v}"
   local workdir bindir shimdir calllog
   workdir="$(mktemp -d)"
@@ -39,14 +39,16 @@ for ((i = 0; i < ${#args[@]}; i++)); do
     http*) url="${args[i]}" ;;
   esac
 done
-if [[ "$url" == *api.github.com* ]]; then
-  echo '{"tag_name": "v9.9.9"}'
-elif [[ "$url" == *releases/download* ]]; then
+if [[ "$url" == "https://api.github.com/repos/tajquitgenius/pi-web/releases?per_page=100" ]]; then
+  echo '[{"tag_name":"v9.9.8"},{"tag_name":"v9.9.9-beta.1"},{"tag_name":"v9.9.9"},{"tag_name":"v10.0.0-beta.1"}]'
+elif [[ "$url" == https://github.com/tajquitgenius/pi-web/releases/download/* ]]; then
   tag="${url#*/releases/download/}"
   tag="${tag%%/*}"
   printf '#!/bin/sh\necho %s\n' "$tag" > "$out"
+else
+  echo "unexpected URL: $url" >&2
+  exit 1
 fi
-exit 0
 SHIM
 
   # Service managers / pkill / sudo: log the call so we can assert on it.
@@ -73,7 +75,7 @@ SHIM
   )
   [[ "$mode" == "inplace" ]] && env_vars+=("PI_WEB_INPLACE_UPDATE=1")
   if [[ -n "$package_version" ]]; then
-    env_vars+=("npm_package_name=@ygncode/pi-web" "npm_package_version=$package_version")
+    env_vars+=("npm_package_name=@tajquitgenius/pi-web" "npm_package_version=$package_version")
   fi
 
   env -i "${env_vars[@]}" bash "$INSTALL_SH" </dev/null > "$workdir/out.log" 2>&1 \
@@ -95,7 +97,27 @@ SHIM
   rm -rf "$workdir"
 }
 
+test_refuses_upstream_coinstall() {
+  local workdir
+  workdir="$(mktemp -d)"
+  mkdir -p "$workdir/.pi/agent"
+  printf '{"packages":["npm:@ygncode/pi-web@beta"]}\n' > "$workdir/.pi/agent/settings.json"
+  if env -i \
+    "HOME=$workdir" \
+    "PATH=/usr/bin:/bin" \
+    "npm_package_name=@tajquitgenius/pi-web" \
+    "npm_package_version=1.2.3" \
+    bash "$INSTALL_SH" > "$workdir/out.log" 2>&1; then
+    fail "[upstream conflict] install.sh should refuse a co-install"
+  fi
+  grep -q "cannot safely coexist" "$workdir/out.log" \
+    || fail "[upstream conflict] expected migration guidance"
+  rm -rf "$workdir"
+  echo "ok: upstream conflict refused"
+}
+
 run_case inplace
 run_case normal
 run_case normal 1.2.3-beta.4
+test_refuses_upstream_coinstall
 echo "PASS: install.sh in-place self-update"

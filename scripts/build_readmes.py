@@ -45,16 +45,15 @@ TRANSLATE_TARGET = {
 
 
 def extract_body(text: str) -> str:
-    marker = '<div align="center">\n\nDrive your [pi]'
+    marker = "> [!NOTE]"
     idx = text.index(marker)
     return text[idx:]
 
 
 def rewrite_paths(body: str) -> str:
-    body = body.replace("(user-docs/personal-assistant.md)", "(../personal-assistant.md)")
-    body = body.replace("(user-docs/README.md)", "(../README.md)")
-    body = body.replace('src="user-docs/assets/', 'src="../assets/')
-    body = body.replace("(user-docs/install.md)", "(../install.md)")
+    body = body.replace(
+        "(user-docs/en/cloudflare-access.md)", "(../en/cloudflare-access.md)"
+    )
     return body
 
 
@@ -71,15 +70,14 @@ def nav_line(current: str) -> str:
 
 
 def header(current: str) -> str:
-    return f"""<h1 align="center">pi-web (Remote Control Your Pi)</h1>
+    return f"""<h1 align="center">pi-web</h1>
+
+<p align="center">
+<a href="https://github.com/tajquitgenius/pi-web/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tajquitgenius/pi-web/actions/workflows/ci.yml/badge.svg"></a>
+<a href="../../LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-0f766e"></a>
+</p>
 
 <div align="center">
-
-[![GitHub stars](https://img.shields.io/github/stars/ygncode/pi-web?style=flat&logo=github&label=stars&cacheSeconds=86400)](https://github.com/ygncode/pi-web/stargazers)
-[![npm downloads](https://img.shields.io/npm/dt/@ygncode/pi-web?label=downloads&color=2ea043)](https://www.npmjs.com/package/@ygncode/pi-web)
-[![license MIT](https://img.shields.io/npm/l/@ygncode/pi-web?label=license&color=0a7bbb)](../../LICENSE)
-[![Telegram](https://img.shields.io/badge/Telegram-Join-26A5E4?logo=telegram&logoColor=white)](https://t.me/+NJvFOTTa0wNjNTc9)
-![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-555)
 
 {nav_line(current)}
 
@@ -95,7 +93,7 @@ Rules:
 - Preserve all Markdown structure exactly: headings (##), tables, blockquotes, line breaks, HTML tags (<div>, <img>, <em>, <br />).
 - Do NOT translate or alter: code blocks (the ``` fenced ASCII diagram and bash commands), URLs, file paths, link targets in parentheses, image src attributes, HTML attribute values.
 - Translate the visible link text and table cell text.
-- Keep these terms in English / as-is: pi, pi-web, Tailscale, PWA, SSE, JSONL, fsnotify, launchd, systemd, macOS, Linux, npm, QR, RPC, MagicDNS, Claude, Cowork, beta.
+- Keep these terms in English / as-is: pi, pi-web, Pi, Cloudflare, Cloudflare Access, Cloudflare Tunnel, PWA, SSE, JSONL, launchd, systemd, macOS, Linux, Windows, Git, GitHub, HTTPS, Host, Origin, QR, RPC, beta.
 - Keep the GitHub alert keywords literally as `> [!WARNING]` and `> [!TIP]` (do not translate WARNING/TIP), but translate the alert body text.
 
 Here is the Markdown to translate:

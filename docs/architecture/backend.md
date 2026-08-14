@@ -14,7 +14,7 @@ pi-web/
 │   ├── app/
 │   │   ├── app.go              # CLI flags, dependency wiring, HTTP mux setup
 │   │   ├── network.go          # Bind host / loopback helpers
-│   │   ├── tailscale.go        # Tailscale Serve detection/configuration
+│   │   ├── public_url.go       # Public HTTPS origin + host-context validation
 │   │   ├── models_cache.go     # Process-wide coalesced cache for model list
 │   │   ├── browser.go          # Open the default browser at startup
 │   │   ├── sounds.go           # Seed default notification sounds into the agent dir
@@ -343,10 +343,23 @@ cross-site browser mutations. `GET`, `HEAD`, and `OPTIONS` are unaffected.
 Origin-less clients such as local CLI scripts remain compatible; a browser
 request explicitly marked `Sec-Fetch-Site: cross-site` is rejected even if it
 omits `Origin`. Tokenless requests also require a recognized `Host`: loopback
-hosts are always accepted, and the configured bind host plus the exact
-Tailscale hostname discovered at startup are added to the allowlist. This prevents DNS rebinding from turning a
-same-origin attacker hostname into access to the local server. The explicitly
-dangerous `--insecure` mode preserves its documented any-host behavior.
+hosts are always accepted, and the configured bind host plus the hostname from
+`PI_WEB_PUBLIC_URL` are added to the allowlist. This lets an external HTTPS
+proxy preserve the public `Host` and `Origin` while preventing DNS rebinding
+from turning an attacker hostname into access to the local server. pi-web does
+not run or supervise the proxy and does not trust proxy-specific headers. The
+explicitly dangerous `--insecure` mode preserves its documented any-host
+behavior.
+
+When `PI_WEB_PUBLIC_URL` or `--public-url` is set, pi-web accepts only an
+absolute HTTPS origin: no user information, non-root path, query, or fragment.
+The bind host must remain loopback. The optional token still works. Cookies created through the public hostname
+are marked `Secure`; local HTTP login remains usable.
+
+The SPA shell includes a read-only `#pi-host-context` JSON element. It contains
+`instanceName`, `currentUrl`, and validated HTTPS `peers`. The instance name
+comes from `PI_WEB_INSTANCE_NAME` or the OS hostname; peers come from
+`PI_WEB_PEERS_JSON`. The JSON is escaped during server-side rendering.
 
 JSON handlers share `decodeJSONBody`, which caps request bodies at 2 MiB,
 rejects multiple JSON values, and rejects an explicit media type other than

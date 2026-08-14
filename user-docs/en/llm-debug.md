@@ -1,16 +1,30 @@
-User is installing pi-web via 
+# Troubleshooting brief for an AI assistant
 
-- pi install npm:@ygncode/pi-web@beta
+The user installed this fork with:
 
-Which it automatically run [install.sh](https://raw.githubusercontent.com/ygncode/pi-web/refs/heads/main/install.sh) and setup pi.
+```bash
+pi install git:github.com/tajquitgenius/pi-web
+```
 
-If user is having issue it might be the setup of install.sh is causing issue. You can review and check what's going on and provide user what exactly is causing problem. And ask if they want you to fix. Always confirm with user.
+The package runs [`install.sh`](https://raw.githubusercontent.com/tajquitgenius/pi-web/main/install.sh), or `install.ps1` on Windows. Diagnose the actual failure before proposing changes. Show the evidence and ask before modifying the user's machine.
 
-In order for user to be able to access the pi in their mobile or other network. The recommended way is to use tailscale and access it form tailscale network. And user will have to enable the HTTPs in their tailscale dashboard - https://login.tailscale.com/admin/dns
+Expected runtime paths:
 
-If they don't have tailscale install or don't want to use tailscale. They can run `pi-web status` and get the binary path, status of the binary and the local endpoint which they can access the application. But to note, they won't be able to get the push notification as it's in http.
+- Binary: `~/.pi/agent/bin/pi-web`
+- Environment: `~/.config/pi-web/env`
+- State: `~/.pi/agent/pi-web/pi-web-state.json`
+- macOS service: [`com.pi-web.plist`](https://github.com/tajquitgenius/pi-web/blob/main/init/com.pi-web.plist)
+- Linux user service: [`pi-web.service`](https://github.com/tajquitgenius/pi-web/blob/main/init/pi-web.service)
 
-In mac it's setup [com.pi-web.plist](https://raw.githubusercontent.com/ygncode/pi-web/refs/heads/main/init/com.pi-web.plist)
-In linux it setup [pi-web.service](https://github.com/ygncode/pi-web/blob/main/init/pi-web.service)
+Useful checks:
 
-In case if you need to debug futher and see what's going on.
+```bash
+~/.pi/agent/bin/pi-web --version
+curl -i http://127.0.0.1:31415/
+```
+
+On macOS, inspect `launchctl print gui/$(id -u)/com.pi-web` and `/tmp/pi-web.error.log`. On Linux, inspect `systemctl --user status pi-web.service` and `journalctl --user -u pi-web.service`.
+
+Remote access uses an externally managed HTTPS tunnel. `PI_WEB_PUBLIC_URL` declares its exact public origin but does not start the tunnel. Pi-web must remain bound to loopback. Check the separate `cloudflared` service, Cloudflare Access policy, DNS route, and `~/.config/pi-web/env`; do not add `--host 0.0.0.0` as a workaround.
+
+See [`cloudflare-access.md`](cloudflare-access.md) for the intended topology and verification steps.

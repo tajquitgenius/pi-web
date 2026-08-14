@@ -22,7 +22,7 @@ func TestWriteStateFile_SkipsMigrationWhenNewExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, stateFile, err := writeStateFile(tmp, false, "127.0.0.1", "31415", false, "")
+	path, stateFile, err := writeStateFile(tmp, false, "127.0.0.1", "31415", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestWriteStateFile_MigratesOldStateFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, stateFile, err := writeStateFile(tmp, false, "127.0.0.1", "31415", false, "")
+	path, stateFile, err := writeStateFile(tmp, false, "127.0.0.1", "31415", "")
 	if err != nil {
 		t.Fatal(err)
 	}

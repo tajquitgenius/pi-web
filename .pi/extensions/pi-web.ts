@@ -11,7 +11,7 @@ import {
   type KeybindingsManager,
   type TUI,
 } from "@earendil-works/pi-tui";
-import { basename, delimiter, dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   accessSync,
   chmodSync,
@@ -29,8 +29,7 @@ interface PiWebState {
   pid: number;
   port: string;
   host: string;
-  tailscale: boolean;
-  tailscaleUrl?: string;
+  publicUrl?: string;
   startedAt: string;
 }
 
@@ -40,13 +39,10 @@ function agentDir(): string {
   return `${homedir()}/.pi/agent`;
 }
 
-async function detectHostPort(
-  pi: ExtensionAPI,
-): Promise<{
+export async function detectHostPort(pi: ExtensionAPI): Promise<{
   host: string;
   port: string;
-  tailscale: boolean;
-  tailscaleUrl?: string;
+  publicUrl?: string;
 } | null> {
   // 1. Try pidfile (new path first, then old for migration compat)
   const candidates = [
@@ -68,8 +64,7 @@ async function detectHostPort(
       return {
         host: state.host,
         port: state.port,
-        tailscale: state.tailscale,
-        tailscaleUrl: state.tailscaleUrl,
+        publicUrl: state.publicUrl,
       };
     } catch {
       // try next candidate
@@ -96,7 +91,7 @@ async function detectHostPort(
             i++;
           }
         }
-        return { host, port, tailscale: isTailscaleHost(host) };
+        return { host, port };
       }
     } catch {
       // fall through
@@ -104,72 +99,7 @@ async function detectHostPort(
   }
 
   // 3. Default fallback
-  return { host: "127.0.0.1", port: "31415", tailscale: false };
-}
-
-export function isTailscaleHost(host: string): boolean {
-  const ip = host.split(":")[0];
-  const parts = ip.split(".").map(Number);
-  if (parts.length === 4) {
-    return parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
-  }
-  return ip.toLowerCase().startsWith("fd7a:115c:a1e0");
-}
-
-function isExecutable(path: string): boolean {
-  try {
-    accessSync(path, fsConstants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function pathTailscaleBin(): string | null {
-  const pathEnv = process.env["PATH"] || "";
-  for (const dir of pathEnv.split(delimiter)) {
-    if (!dir) continue;
-    const candidate = join(dir, "tailscale");
-    if (isExecutable(candidate)) return candidate;
-  }
-  return null;
-}
-
-function tailscaleBin(): string {
-  // Prefer PATH first so user-selected CLI installs override fallback locations.
-  const pathBin = pathTailscaleBin();
-  if (pathBin) return pathBin;
-
-  for (const p of [
-    // DMG install paths (not in default PATH)
-    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-    "/Applications/Tailscale.app/Contents/MacOS/tailscale",
-    // Homebrew / system paths
-    "/opt/homebrew/bin/tailscale",
-    "/usr/local/bin/tailscale",
-    "/usr/bin/tailscale",
-  ]) {
-    if (isExecutable(p)) return p;
-  }
-  return "tailscale"; // final fallback to PATH lookup
-}
-
-async function detectTailscaleHttpsUrl(
-  pi: ExtensionAPI,
-  port: string,
-): Promise<string | null> {
-  try {
-    const result = await pi.exec(tailscaleBin(), ["status", "--json"], {
-      timeout: 10_000,
-    });
-    const status = JSON.parse(result.stdout);
-    if (status.BackendState && status.BackendState !== "Running") return null;
-    const dnsName = String(status.Self?.DNSName || "").replace(/\.$/, "");
-    if (!dnsName) return null;
-    return `https://${dnsName}:${port}`;
-  } catch {
-    return null;
-  }
+  return { host: "127.0.0.1", port: "31415" };
 }
 
 export function isSSH(): boolean {
@@ -223,7 +153,7 @@ async function startPiWeb(pi: ExtensionAPI): Promise<void> {
     const launcher = windowsLauncher();
     if (!existsSync(launcher)) {
       throw new Error(
-        "pi-web launcher not found; reinstall with: pi install npm:@ygncode/pi-web@beta",
+        "pi-web launcher not found; reinstall with: pi install git:github.com/tajquitgenius/pi-web",
       );
     }
     await pi.exec("wscript.exe", [launcher]);
@@ -286,14 +216,6 @@ async function restartPiWeb(pi: ExtensionAPI): Promise<void> {
       "-lc",
       `plist="$HOME/Library/LaunchAgents/com.pi-web.plist"
 if [ ! -f "$plist" ]; then exit 127; fi
-env_file="$HOME/.config/pi-web/env"
-token="$(awk -F= '$1 == "PI_WEB_TOKEN" { sub(/^[^=]*=/, ""); print; exit }' "$env_file" 2>/dev/null || true)"
-if [ -n "$token" ]; then
-  /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$plist" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:PI_WEB_TOKEN $token" "$plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PI_WEB_TOKEN string $token" "$plist"
-  launchctl setenv PI_WEB_TOKEN "$token" 2>/dev/null || true
-fi
 launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || launchctl unload "$plist" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null || launchctl load "$plist"
 launchctl kickstart -k "gui/$(id -u)/com.pi-web" 2>/dev/null || launchctl start com.pi-web`,
@@ -374,15 +296,8 @@ export function writePiWebToken(token: string): void {
   chmodSync(path, 0o600);
 }
 
-export function withToken(url: string): string {
-  const token = readPiWebToken();
-  if (!token) return url;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}token=${encodeURIComponent(token)}`;
-}
-
 export function cleanupPiWebNpmTemps(agentRoot = agentDir()): number {
-  const scopeDir = join(agentRoot, "npm", "node_modules", "@ygncode");
+  const scopeDir = join(agentRoot, "npm", "node_modules", "@tajquitgenius");
   let removed = 0;
   try {
     for (const name of readdirSync(scopeDir)) {
@@ -680,7 +595,7 @@ async function showRemoteAccess(
     return;
   }
 
-  const { host, port, tailscale, tailscaleUrl } = detected;
+  const { host, port, publicUrl } = detected;
   if (!(await ensurePiWebRunning(pi, host, port))) {
     ctx.ui.notify(
       `pi-web not responding on ${host}:${port}. Start it with: pi-web -o`,
@@ -689,21 +604,16 @@ async function showRemoteAccess(
     return;
   }
 
-  const detectedTailscaleUrl =
-    tailscaleUrl || (await detectTailscaleHttpsUrl(pi, port));
-  if (!tailscale && !detectedTailscaleUrl) {
+  if (!publicUrl) {
     ctx.ui.notify(
-      "Tailscale HTTPS is not available. Install/sign in to Tailscale and restart pi-web so it can run `tailscale serve`.",
+      "Remote HTTPS is not configured. Set PI_WEB_PUBLIC_URL and restart pi-web.",
       "error",
     );
     return;
   }
 
   const sessionId = basename(sessionFile);
-  const baseUrl = detectedTailscaleUrl || `http://${host}:${port}`;
-  const url = withToken(
-    `${baseUrl}/session?id=${encodeURIComponent(sessionId)}`,
-  );
+  const url = `${publicUrl}/session?id=${encodeURIComponent(sessionId)}`;
 
   const hasQr = await ensureQrCode(pi, ctx);
 
@@ -714,15 +624,12 @@ async function showRemoteAccess(
       const qrLines = qrText.split("\n").filter((line) => line.length > 0);
       await showUrlOverlay(
         ctx,
-        "Remote access via Tailscale",
-        "Make sure your device is connected to Tailscale, then scan this QR code or open the URL:",
+        "Remote access",
+        "Scan this QR code or open the public HTTPS URL:",
         url,
         qrLines,
       );
-      ctx.ui.notify(
-        "QR code shown. Make sure your device is connected to Tailscale.",
-        "info",
-      );
+      ctx.ui.notify("Remote access QR code shown.", "info");
     } catch (qrErr) {
       ctx.ui.notify(
         `Failed to generate QR code: ${qrErr}. Open manually: ${url}`,
@@ -730,20 +637,20 @@ async function showRemoteAccess(
       );
       await showUrlOverlay(
         ctx,
-        "Remote access via Tailscale",
-        "QR code generation failed. Make sure your device is connected to Tailscale, then open this URL:",
+        "Remote access",
+        "QR code generation failed. Open the public HTTPS URL:",
         url,
       );
     }
   } else {
     await showUrlOverlay(
       ctx,
-      "Remote access via Tailscale",
-      "QR code unavailable. Make sure your device is connected to Tailscale, then open this URL:",
+      "Remote access",
+      "QR code unavailable. Open the public HTTPS URL:",
       url,
     );
     ctx.ui.notify(
-      `QR code unavailable. Make sure your device is connected to Tailscale, then open this URL: ${url}`,
+      `QR code unavailable. Open the public HTTPS URL: ${url}`,
       "warning",
     );
   }
@@ -755,7 +662,7 @@ export default function (pi: ExtensionAPI) {
   // registers a title tool or input handler.
 
   // Start pi-web opportunistically when the extension loads so /remote works on a
-  // fresh shell after `pi install npm:@ygncode/pi-web@beta`.
+  // fresh shell after `pi install git:github.com/tajquitgenius/pi-web`.
   void detectHostPort(pi)
     .then((detected) => {
       if (!detected) return;
@@ -767,7 +674,8 @@ export default function (pi: ExtensionAPI) {
 
   // ── /pi-web ───────────────────────────────────────────────────────
   pi.registerCommand("pi-web", {
-    description: "Manage pi-web: status, token, start, stop, restart, remote, update",
+    description:
+      "Manage pi-web: status, token, start, stop, restart, remote, update",
 
     handler: async (args, ctx: ExtensionCommandContext) => {
       const [subcommand = "status"] = normalizeCommandArgs(args);
@@ -776,9 +684,7 @@ export default function (pi: ExtensionAPI) {
       const host = detected?.host || "127.0.0.1";
       const port = detected?.port || "31415";
       const running = await healthCheck(host, port);
-      const tailscaleUrl =
-        detected?.tailscaleUrl ||
-        (running ? await detectTailscaleHttpsUrl(pi, port) : null);
+      const publicUrl = detected?.publicUrl;
 
       if (
         subcommand === "help" ||
@@ -794,9 +700,7 @@ export default function (pi: ExtensionAPI) {
 
       if (subcommand === "path") {
         ctx.ui.notify(
-          bin
-            ? `pi-web binary: ${bin}`
-            : "pi-web binary not found in PATH",
+          bin ? `pi-web binary: ${bin}` : "pi-web binary not found in PATH",
           bin ? "info" : "warning",
         );
         return;
@@ -819,8 +723,8 @@ export default function (pi: ExtensionAPI) {
 
       if (subcommand === "start") {
         if (running) {
-          const lines = [`pi-web already running at ${withToken(`http://${host}:${port}`)}`];
-          if (tailscaleUrl) lines.push(`remote: ${withToken(tailscaleUrl)}`);
+          const lines = [`pi-web already running at http://${host}:${port}`];
+          if (publicUrl) lines.push(`remote: ${publicUrl}`);
           ctx.ui.notify(lines.join("\n"), "info");
           return;
         }
@@ -834,13 +738,14 @@ export default function (pi: ExtensionAPI) {
               break;
             }
           }
-          const remoteURL = await detectTailscaleHttpsUrl(pi, port);
+          const refreshed = await detectHostPort(pi);
           const lines = [
             started
-              ? `Started pi-web at ${withToken(`http://${host}:${port}`)}`
+              ? `Started pi-web at http://${host}:${port}`
               : "Started pi-web; still waiting for health check.",
           ];
-          if (remoteURL) lines.push(`remote: ${withToken(remoteURL)}`);
+          if (refreshed?.publicUrl)
+            lines.push(`remote: ${refreshed.publicUrl}`);
           ctx.ui.notify(lines.join("\n"), started ? "success" : "warning");
         } catch (err) {
           ctx.ui.notify(`Failed to start pi-web: ${err}`, "error");
@@ -869,13 +774,14 @@ export default function (pi: ExtensionAPI) {
               break;
             }
           }
-          const remoteURL = await detectTailscaleHttpsUrl(pi, port);
+          const refreshed = await detectHostPort(pi);
           const lines = [
             restarted
-              ? `Restarted pi-web at ${withToken(`http://${host}:${port}`)}`
+              ? `Restarted pi-web at http://${host}:${port}`
               : "Restarted pi-web; still waiting for health check.",
           ];
-          if (remoteURL) lines.push(`remote: ${withToken(remoteURL)}`);
+          if (refreshed?.publicUrl)
+            lines.push(`remote: ${refreshed.publicUrl}`);
           ctx.ui.notify(lines.join("\n"), restarted ? "success" : "warning");
         } catch (err) {
           ctx.ui.notify(`Failed to restart pi-web: ${err}`, "error");
@@ -899,10 +805,7 @@ export default function (pi: ExtensionAPI) {
       if (subcommand === "set-token") {
         const [, newToken] = normalizeCommandArgs(args);
         if (!newToken) {
-          ctx.ui.notify(
-            "Usage: /pi-web set-token <token>",
-            "warning",
-          );
+          ctx.ui.notify("Usage: /pi-web set-token <token>", "warning");
           return;
         }
         writePiWebToken(newToken);
@@ -927,7 +830,7 @@ export default function (pi: ExtensionAPI) {
               : "Updating pi-web package...",
             "info",
           );
-          await pi.exec("pi", ["install", "npm:@ygncode/pi-web@beta"]);
+          await pi.exec("pi", ["install", "git:github.com/tajquitgenius/pi-web"]);
           try {
             await restartPiWeb(pi);
           } catch {
@@ -941,7 +844,7 @@ export default function (pi: ExtensionAPI) {
           return;
         } catch (err) {
           ctx.ui.notify(
-            `Failed to update pi-web: ${err}\nTry: rm -rf ~/.pi/agent/npm/node_modules/@ygncode/.pi-web-* && pi install npm:@ygncode/pi-web@beta`,
+            `Failed to update pi-web: ${err}\nTry: pi install git:github.com/tajquitgenius/pi-web`,
             "error",
           );
         }
@@ -959,11 +862,9 @@ export default function (pi: ExtensionAPI) {
       const lines = [
         `binary: ${bin || "not found (~/.pi/agent/bin/pi-web, /usr/local/bin/pi-web)"}`,
         `status: ${running ? "running" : "not responding"}`,
-        `local: ${withToken(`http://${host}:${port}`)}`,
+        `local: http://${host}:${port}`,
       ];
-      if (tailscaleUrl) lines.push(`remote: ${withToken(tailscaleUrl)}`);
-      if (detected?.tailscaleUrl && detected.tailscaleUrl !== tailscaleUrl)
-        lines.push(`state remote: ${withToken(detected.tailscaleUrl)}`);
+      if (publicUrl) lines.push(`remote: ${publicUrl}`);
       ctx.ui.notify(lines.join("\n"), running ? "info" : "warning");
     },
   });
@@ -987,7 +888,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      let { host, port, tailscaleUrl } = detected;
+      let { host, port } = detected;
       if (!(await ensurePiWebRunning(pi, host, port))) {
         ctx.ui.notify(
           `pi-web not responding on ${host}:${port}. Start it with: pi-web -o`,
@@ -996,29 +897,18 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Re-read state after startup — auto-start may have changed host/port
-      // or tailscale serve may now be available.
+      // Re-read state after startup — auto-start may have changed host/port.
       const refreshed = await detectHostPort(pi);
       if (refreshed) {
         host = refreshed.host;
         port = refreshed.port;
-        tailscaleUrl = refreshed.tailscaleUrl || tailscaleUrl;
-      }
-      if (!tailscaleUrl) {
-        tailscaleUrl = await detectTailscaleHttpsUrl(pi, port) || undefined;
       }
 
       const sessionId = basename(sessionFile);
-      const baseUrl = tailscaleUrl || `http://${host}:${port}`;
-      const url = withToken(
-        `${baseUrl}/session?id=${encodeURIComponent(sessionId)}`,
-      );
+      const url = `http://${host}:${port}/session?id=${encodeURIComponent(sessionId)}`;
 
       const inSSH = isSSH();
-      ctx.ui.notify(
-        `Session URL: ${url}`,
-        "info",
-      );
+      ctx.ui.notify(`Session URL: ${url}`, "info");
 
       if (inSSH) {
         ctx.ui.notify(
@@ -1041,7 +931,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── /remote ───────────────────────────────────────────────────────
   pi.registerCommand("remote", {
-    description: "Show QR code for remote Tailscale access",
+    description: "Show QR code for configured remote HTTPS access",
     handler: async (_args, ctx: ExtensionCommandContext) => {
       await showRemoteAccess(pi, ctx);
     },

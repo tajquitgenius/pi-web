@@ -27,6 +27,9 @@ import (
 
 const defaultPort = "31415"
 const tokenEnvVar = "PI_WEB_TOKEN"
+const publicURLEnvVar = "PI_WEB_PUBLIC_URL"
+const instanceNameEnvVar = "PI_WEB_INSTANCE_NAME"
+const peersJSONEnvVar = "PI_WEB_PEERS_JSON"
 const developmentEnvVar = "PI_WEB_DEV"
 
 // Main runs the pi-web application. version is supplied by cmd/pi-web so
@@ -34,6 +37,7 @@ const developmentEnvVar = "PI_WEB_DEV"
 func Main(version string) {
 	port := flag.String("p", defaultPort, "port to listen on")
 	hostOverride := flag.String("host", "", "host/IP to bind; defaults to 127.0.0.1")
+	publicURLFlag := flag.String("public-url", os.Getenv(publicURLEnvVar), "externally managed absolute HTTPS origin")
 	open := flag.Bool("o", false, "auto-open browser")
 	insecure := flag.Bool("insecure", false, "allow non-loopback bind without "+tokenEnvVar+" (DANGEROUS)")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -56,6 +60,20 @@ func Main(version string) {
 	}
 
 	bindHost := chooseBindHost(*hostOverride)
+	publicURL, err := validatePublicURL(*publicURLFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid public URL: %v\n", err)
+		os.Exit(1)
+	}
+	if err := validatePublicBind(publicURL, bindHost); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	hostContext, err := buildHostContext(os.Getenv(instanceNameEnvVar), publicURL, os.Getenv(peersJSONEnvVar))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid host context: %v\n", err)
+		os.Exit(1)
+	}
 	token := os.Getenv(tokenEnvVar)
 	tokenRequired := token == "" && !isLoopbackHost(bindHost) && !*insecure
 	if tokenRequired {
@@ -66,7 +84,11 @@ func Main(version string) {
 		os.Exit(1)
 	}
 	authMiddleware := auth.New(token)
-	authMiddleware.AllowHost(bindHost)
+	authMiddleware.AllowHost(net.JoinHostPort(bindHost, *port))
+	if publicURL != "" {
+		authMiddleware.AllowHost(publicURL)
+		authMiddleware.UseSecureCookiesForHost(publicURL)
+	}
 	if *insecure {
 		authMiddleware.AllowAnyHost()
 	}
@@ -105,6 +127,7 @@ func Main(version string) {
 
 	ui.SetThemeProvider(srv.ThemeSetting)
 	ui.SetFontProvider(srv.FontStyles)
+	ui.SetHostContextProvider(func() ui.HostContext { return hostContext })
 
 	mux := http.NewServeMux()
 	srv.Register(mux)
@@ -125,27 +148,9 @@ func Main(version string) {
 
 	addr := net.JoinHostPort(bindHost, *port)
 	url := fmt.Sprintf("http://%s", net.JoinHostPort(bindHost, *port))
-	var tailscaleURL string
-	var tailscaleServe bool
-	if *hostOverride == "" {
-		tsCtx, tsCancel := context.WithTimeout(context.Background(), tailscaleConfigureTimeout)
-		tsURL, tsOk, tsErr := configureTailscaleServe(tsCtx, *port)
-		tsCancel()
-		if tsErr == nil && tsOk {
-			tailscaleURL = tsURL
-			tailscaleServe = true
-			authMiddleware.AllowHost(tsURL)
-		} else if tsErr != nil {
-			if tsCtx.Err() == context.DeadlineExceeded {
-				fmt.Fprintf(os.Stderr, "Tailscale Serve timed out after %s; continuing without it\n", tailscaleConfigureTimeout)
-			} else {
-				fmt.Fprintf(os.Stderr, "Tailscale Serve unavailable: %v\n", tsErr)
-			}
-		}
-	}
 	fmt.Printf("Pi Sessions Viewer -> %s\n", url)
-	if tailscaleURL != "" {
-		fmt.Printf("Tailscale HTTPS -> %s\n", tailscaleURL)
+	if publicURL != "" {
+		fmt.Printf("Public HTTPS -> %s\n", publicURL)
 	}
 	fmt.Printf("Serving from: %s\n", sessionsDir)
 	if developmentMode {
@@ -157,7 +162,7 @@ func Main(version string) {
 		fmt.Printf("Auth: disabled — set %s to require a token for access.\n", tokenEnvVar)
 	}
 
-	stateFilePath, stateFile, err := writeStateFile(agentDir, developmentMode, bindHost, *port, tailscaleServe, tailscaleURL)
+	stateFilePath, stateFile, err := writeStateFile(agentDir, developmentMode, bindHost, *port, publicURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)

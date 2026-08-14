@@ -30,6 +30,14 @@ async function openSection(page: import("@playwright/test").Page, id: string) {
   await page.locator(`[data-settings-nav="${id}"]`).click();
 }
 
+async function openSessionDetails(page: import("@playwright/test").Page) {
+  const summary = page.locator(".session-details-summary");
+  await expect(summary).toBeVisible();
+  if ((await summary.getAttribute("aria-expanded")) !== "true") {
+    await summary.click();
+  }
+}
+
 test.describe("settings page", () => {
   test("loads with controls", async ({ page }) => {
     await page.goto("/settings");
@@ -279,8 +287,7 @@ test.describe("settings page", () => {
       // off and assert the change is POSTed.
       const saved = page.waitForResponse(
         (r) =>
-          r.url().includes("/api/settings") &&
-          r.request().method() === "POST",
+          r.url().includes("/api/settings") && r.request().method() === "POST",
       );
       await page.locator(thinkingLabel).click();
       await saved;
@@ -333,6 +340,7 @@ test.describe("settings page", () => {
       await expect(
         page.locator('[data-action="toggle-thinking"]'),
       ).toHaveAttribute("aria-pressed", "true");
+      await openSessionDetails(page);
       await page.locator('[data-action="toggle-thinking"]').click();
       await expect(
         page.locator('[data-action="toggle-thinking"]'),
@@ -442,10 +450,9 @@ test.describe("settings page", () => {
         .locator(".session-card", { hasText: "add deepseek-v4-pro" })
         .click();
       await expect(page).toHaveURL(/\/session\?id=/);
-      const toolOutputBtn = page.locator(
-        '[data-action="toggle-tool-output"]',
-      );
+      const toolOutputBtn = page.locator('[data-action="toggle-tool-output"]');
       await expect(toolOutputBtn).toBeEnabled();
+      await openSessionDetails(page);
       await page.locator('[data-action="toggle-tools"]').click();
       await expect(toolOutputBtn).toBeDisabled();
       await page.locator('[data-action="toggle-tools"]').click();
@@ -466,8 +473,7 @@ test.describe("settings page", () => {
       await expect(toolOutputsInput).toBeEnabled();
       const offSaved = page.waitForResponse(
         (r) =>
-          r.url().includes("/api/settings") &&
-          r.request().method() === "POST",
+          r.url().includes("/api/settings") && r.request().method() === "POST",
       );
       await page.locator(toolsLabel).click();
       await offSaved;
@@ -495,6 +501,7 @@ test.describe("settings page", () => {
       await expect(placeholders.first()).toBeHidden();
       await expect(page.locator(".tool-execution").first()).toBeVisible();
 
+      await openSessionDetails(page);
       // Toggle tools off and assert the swap — placeholder becomes visible,
       // tool-execution is hidden.
       await page.locator('[data-action="toggle-tools"]').click();

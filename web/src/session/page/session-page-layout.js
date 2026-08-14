@@ -32,7 +32,7 @@ export function applyStoredSessionLayout({
   try {
     const collapsed = storage.getItem('pi-web:v1:right-sidebar-collapsed');
     const mobile = isMobileLayout({ windowImpl });
-    if (collapsed === 'true' || mobile) {
+    if (collapsed !== 'false' || mobile) {
       documentImpl.body.classList.add('right-sidebar-collapsed');
     }
   } catch {}

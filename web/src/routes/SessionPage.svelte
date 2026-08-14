@@ -18,12 +18,14 @@
   import { resetSessionRuntime } from '../session/session-runtime.js';
   import { resetSessionRuntimeContext } from '../session/session-runtime-context.js';
   import { t } from '../shared/i18n.js';
+  import { readHostContext } from '../shared/host-context.js';
 
   // The reactive session model (docs/dev/svelte-migration-plan.md): created once
   // and provided via context so descendant components read from it. Hydrated
   // from the session payload below; the live runtime (startSessionPageRuntime in
   // onMount) mutates it on reload.
   const sessionModel = setSessionModel(new SessionDataModel());
+  const host = readHostContext();
 
   // Post-render hook for the message pane: <SessionContent> renders
   // model.activePath as <SessionEntry> components and runs afterRender after each
@@ -72,7 +74,7 @@
         sessionId = state.sessionId;
         sessionUUID = state.sessionUUID;
         title = state.title;
-        document.title = title;
+        document.title = `${title} · ${host.instanceName} · pi-web`;
         cwd = state.cwd;
         scratchpad = state.scratchpad;
         payloadBase64 = state.payloadBase64;
@@ -140,6 +142,7 @@
     {sessionId}
     {sessionUUID}
     {title}
+    {host}
     {scratchpad}
     {cwd}
     {chatAvailable}

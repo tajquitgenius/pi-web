@@ -9,7 +9,9 @@
 - In-browser model switching and thinking-level selector, per session
 - Per-session worker status (idle / running / error) with auto-recovery on crash
 - Multiple sessions run in parallel — kick off work in one, watch another stream
-- `PI_WEB_TOKEN` for safe LAN exposure — required by default for any explicit non-loopback bind
+- Loopback-only remote access through an externally managed HTTPS tunnel
+- Exact public Host and Origin validation with optional `PI_WEB_TOKEN` defense in depth
+- Persistent computer identity and navigation links between independent installations
 
 ### Reading sessions
 
@@ -32,81 +34,73 @@
 
 ### Pi package (recommended)
 
+If `@ygncode/pi-web` is already installed, remove it first. The fork intentionally keeps the same commands, binary, service, and data paths, so the two packages cannot coexist safely.
+
 ```bash
-pi install npm:@ygncode/pi-web@beta
+# Run this first only when migrating from upstream:
+pi remove npm:@ygncode/pi-web
+
+pi install git:github.com/tajquitgenius/pi-web
 ```
 
-This single command:
-- Installs the npm pi package under pi's package directory
+The install command:
+- Installs the current, unpinned fork from GitHub
 - Runs the package `postinstall` script (`install.sh`, or `install.ps1` on Windows)
-- Downloads the matching pi-web binary for your package version and platform from GitHub Releases
+- Downloads the matching pi-web binary for the checked-out package version and platform from this fork's GitHub Releases
 - Installs it to `~/.pi/agent/bin/pi-web` (`pi-web.exe` on Windows)
 - Sets up auto-start on login (launchd on macOS, systemd on Linux, a Run-key launcher on Windows)
 - Registers the `/web`, `/remote`, `/refresh`, `/pi-web token`, and `/pi-web set-token` pi commands
 
 Session auto-titling is built into pi-web (not the extension) and configured on the `/settings` page. It's on by default: pi-web names sessions automatically using a free built-in word heuristic (no AI), re-titling on every new message. You can switch to titling once per session, and/or pick a model to write smarter titles instead of the heuristic.
 
-On Linux, auto-start is configured as a user systemd service at `~/.config/systemd/user/pi-web.service`. The installer rewrites its `ExecStart` to the actual installed binary path. If Tailscale is available at runtime, pi-web publishes the localhost server with Tailscale Serve HTTPS. If user systemd is unavailable, run it manually with `~/.pi/agent/bin/pi-web -o`.
+On Linux, auto-start is configured as a user systemd service at `~/.config/systemd/user/pi-web.service`. The installer rewrites its `ExecStart` to the actual installed binary path. If user systemd is unavailable, run it manually with `~/.pi/agent/bin/pi-web -o`.
 
-To install only for a specific project (shared with your team via `.pi/settings.json`):
-
-```bash
-pi install -l npm:@ygncode/pi-web@beta
-```
-
-Then restart pi (or run `/reload`), and use `/web`, `/pi-web`, `/remote`, `/refresh`. Manage your access token with `/pi-web token` and `/pi-web set-token`.
-
-If npm aborts with `ENOTEMPTY` while renaming `@ygncode/pi-web`, remove npm's stale hidden backup directories and reinstall the beta channel:
-
-```bash
-rm -rf ~/.pi/agent/npm/node_modules/@ygncode/.pi-web-*
-pi install npm:@ygncode/pi-web@beta
-```
+Then restart Pi or run `/reload`. Use `/web` for local access and `/remote` after configuring `PI_WEB_PUBLIC_URL`. Manage the optional second-layer token with `/pi-web token` and `/pi-web set-token`.
 
 ### Quick install (no build tools needed)
 
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ygncode/pi-web/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tajquitgenius/pi-web/main/install.sh | bash
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/ygncode/pi-web/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/tajquitgenius/pi-web/main/install.ps1 | iex
 ```
 
 This downloads the latest pi-web binary, installs it to `/usr/local/bin` (`~/.pi/agent/bin` on Windows), and sets up auto-start on login. No Go, Node, or pi required.
 
 ### Download binary
 
-Pre-built binaries are attached to each [GitHub Release](https://github.com/ygncode/pi-web/releases).
+Pre-built binaries are attached to each [GitHub Release](https://github.com/tajquitgenius/pi-web/releases).
 
 ```bash
 # macOS (Apple Silicon)
-curl -L -o pi-web https://github.com/ygncode/pi-web/releases/latest/download/pi-web-darwin-arm64
+curl -L -o pi-web https://github.com/tajquitgenius/pi-web/releases/latest/download/pi-web-darwin-arm64
 chmod +x pi-web
 
 # macOS (Intel)
-curl -L -o pi-web https://github.com/ygncode/pi-web/releases/latest/download/pi-web-darwin-amd64
+curl -L -o pi-web https://github.com/tajquitgenius/pi-web/releases/latest/download/pi-web-darwin-amd64
 chmod +x pi-web
 
 # Linux (amd64)
-curl -L -o pi-web https://github.com/ygncode/pi-web/releases/latest/download/pi-web-linux-amd64
+curl -L -o pi-web https://github.com/tajquitgenius/pi-web/releases/latest/download/pi-web-linux-amd64
 chmod +x pi-web
 
 # Linux (arm64)
-curl -L -o pi-web https://github.com/ygncode/pi-web/releases/latest/download/pi-web-linux-arm64
+curl -L -o pi-web https://github.com/tajquitgenius/pi-web/releases/latest/download/pi-web-linux-arm64
 chmod +x pi-web
 ```
 
 ```powershell
 # Windows (x64)
-irm -OutFile pi-web.exe https://github.com/ygncode/pi-web/releases/latest/download/pi-web-windows-amd64.exe
+irm -OutFile pi-web.exe https://github.com/tajquitgenius/pi-web/releases/latest/download/pi-web-windows-amd64.exe
 
 # Windows (ARM64)
-irm -OutFile pi-web.exe https://github.com/ygncode/pi-web/releases/latest/download/pi-web-windows-arm64.exe
+irm -OutFile pi-web.exe https://github.com/tajquitgenius/pi-web/releases/latest/download/pi-web-windows-arm64.exe
 ```
 
 Then move it to your PATH:
@@ -120,7 +114,7 @@ sudo cp pi-web /usr/local/bin/
 ### Build from source
 
 ```bash
-git clone https://github.com/ygncode/pi-web.git
+git clone https://github.com/tajquitgenius/pi-web.git
 cd pi-web
 make build   # builds the Vite bundle, then embeds it into the Go binary
 
@@ -166,7 +160,7 @@ multi-instance mode.
 ## Uninstall
 
 ```bash
-pi remove npm:@ygncode/pi-web@beta
+pi remove git:github.com/tajquitgenius/pi-web
 ```
 
 This runs the package `preuninstall` script (`uninstall.sh`, or `uninstall.ps1`
@@ -201,31 +195,30 @@ pi-web --host 127.0.0.1
 PI_WEB_TOKEN=$(openssl rand -hex 16) pi-web --host 192.168.1.50
 ```
 
-By default, pi-web binds to `127.0.0.1`. If Tailscale is running with MagicDNS, pi-web also runs `tailscale serve --bg --https=<port> http://127.0.0.1:<port>` and prints the HTTPS tailnet URL. Any explicit non-loopback bind requires `PI_WEB_TOKEN` to be set; pass `--insecure` to override for local testing.
+By default, pi-web binds to `127.0.0.1`. An explicit non-loopback bind requires `PI_WEB_TOKEN`; `--insecure` exists only for temporary local testing.
 
 ## Remote Access
 
-Leave pi-web listening locally, then use the printed Tailscale HTTPS URL from your phone or laptop on the tailnet.
-
-On macOS, install and open Tailscale interactively, approve the administrator prompt, and sign in. Then run `/pi-web restart`, followed by `/remote`.
-
-On Linux, allow your user to manage Tailscale before installing/running pi-web, otherwise `tailscale serve` may require sudo and auto-start can fail:
+Keep pi-web on loopback and publish it through an externally managed HTTPS tunnel. Declare the exact browser origin with `PI_WEB_PUBLIC_URL`:
 
 ```bash
-sudo tailscale set --operator=$USER
+cat > ~/.config/pi-web/env <<'EOF'
+PI_WEB_INSTANCE_NAME='Personal laptop'
+PI_WEB_PUBLIC_URL=https://personal-pi.example.com
+PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work-pi.example.com"}]'
+PI_WEB_TOKEN=replace-with-a-random-token
+EOF
 ```
 
-```bash
-# 1. Start pi-web
-pi-web
+Use straight single quotes around values containing spaces or JSON. The startup loaders remove one matching outer quote pair.
 
-# 2. From any other Tailscale-connected device, open the printed
-#    "Tailscale HTTPS" URL.
-```
+Restart pi-web, then use `/remote` to show the public URL and QR code. The command never places the token in the URL.
 
-> By default, pi-web refuses to bind to a non-loopback address unless `PI_WEB_TOKEN` is set — anyone who can reach the bound address could otherwise view sessions and send instructions to pi. To override this guard for local-network testing, pass `--insecure`. **Don't use `--insecure` on Tailscale or any address reachable from outside your machine.**
->
-> Clients can pass the token via the `Authorization: Bearer <token>` header, the `X-Pi-Token` header, or once via `?token=<token>` (which sets a `pi_token` cookie for subsequent requests). Tokens passed via `?token=` end up in browser history, server access logs, and `Referer` headers from any links on the page — prefer the header form for anything beyond the initial bookmark.
+`PI_WEB_PUBLIC_URL` must be an origin-only HTTPS URL: no path, query, fragment, credentials, or wildcard. When set, pi-web refuses a non-loopback bind and accepts browser traffic only for that hostname. It marks the token cookie Secure on the public host.
+
+See [Remote access with Cloudflare Access](cloudflare-access.md) for the recommended tunnel and identity configuration.
+
+> Remote pi-web access is equivalent to remote code execution as your operating-system user. Require an exact-user identity policy at the tunnel edge, keep the application token for defense in depth, and never publish port `31415` directly.
 
 ## Browser Chat
 
@@ -282,8 +275,7 @@ systemctl --user status pi-web.service
 journalctl --user -u pi-web.service -f
 ```
 
-> For the service to start at boot (before login), use a system service instead:
-> copy `init/pi-web.service` to `/etc/systemd/system/` and use `sudo systemctl`.
+> To keep the user service running after logout and start it at boot, enable lingering for that user with `sudo loginctl enable-linger "$USER"`. Do not copy this user unit into `/etc/systemd/system`; a system-wide service needs an explicit user and home-directory configuration.
 
 ### Windows
 

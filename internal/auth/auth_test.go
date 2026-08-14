@@ -77,6 +77,35 @@ func TestAuthAcceptsQueryAndRedirects(t *testing.T) {
 }
 
 // Query-based token with other params preserves them in redirect.
+func TestAuthSetsSecureCookieOnlyForPublicHTTPSHost(t *testing.T) {
+	a := New("secret")
+	a.UseSecureCookiesForHost("https://pi.example")
+
+	for _, tt := range []struct {
+		name       string
+		requestURL string
+		secure     bool
+	}{
+		{name: "public host", requestURL: "https://pi.example/?token=secret", secure: true},
+		{name: "local host", requestURL: "http://127.0.0.1:31415/?token=secret"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, tt.requestURL, nil)
+			a.Wrap(okHandler)(rec, req)
+			for _, cookie := range rec.Result().Cookies() {
+				if cookie.Name == TokenCookieName {
+					if cookie.Secure != tt.secure {
+						t.Fatalf("Secure = %v, want %v", cookie.Secure, tt.secure)
+					}
+					return
+				}
+			}
+			t.Fatalf("expected %s cookie", TokenCookieName)
+		})
+	}
+}
+
 func TestAuthAcceptsQueryPreservesOtherParams(t *testing.T) {
 	a := New("secret")
 	rec := httptest.NewRecorder()
@@ -370,13 +399,97 @@ func TestAuthRejectsUnknownHostWhenTokenDisabled(t *testing.T) {
 
 func TestAuthAllowsConfiguredHostWhenTokenDisabled(t *testing.T) {
 	a := New("")
-	a.AllowHost("https://pi-host.tailnet.example")
+	a.AllowHost("https://pi.example")
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "https://pi-host.tailnet.example/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "https://pi.example/api/sessions", nil)
 	a.Wrap(okHandler)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestAuthRejectsUnknownHostWhenTokenEnabledAndAllowlistConfigured(t *testing.T) {
+	a := New("secret")
+	a.AllowHost("https://pi.example")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://attacker.example/api/sessions", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	a.Wrap(okHandler)(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestAuthAllowsConfiguredHostWhenTokenEnabled(t *testing.T) {
+	a := New("secret")
+	a.AllowHost("https://pi.example")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://pi.example/api/sessions", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	a.Wrap(okHandler)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestAuthRequiresConfiguredNonDefaultPort(t *testing.T) {
+	a := New("secret")
+	a.AllowHost("https://pi.example:8443")
+
+	for _, tt := range []struct {
+		requestURL string
+		want       int
+	}{
+		{requestURL: "https://pi.example:8443/api/sessions", want: http.StatusOK},
+		{requestURL: "https://pi.example:9443/api/sessions", want: http.StatusForbidden},
+		{requestURL: "https://pi.example/api/sessions", want: http.StatusForbidden},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, tt.requestURL, nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		a.Wrap(okHandler)(rec, req)
+		if rec.Code != tt.want {
+			t.Errorf("%s: status = %d, want %d", tt.requestURL, rec.Code, tt.want)
+		}
+	}
+}
+
+func TestAuthTreatsExplicitDefaultHTTPSPortAsDefaultAuthority(t *testing.T) {
+	a := New("secret")
+	a.AllowHost("https://pi.example:443")
+	for _, requestURL := range []string{
+		"https://pi.example/api/sessions",
+		"https://pi.example:443/api/sessions",
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, requestURL, nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		a.Wrap(okHandler)(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200", requestURL, rec.Code)
+		}
+	}
+}
+
+func TestAuthRequiresConfiguredLoopbackPort(t *testing.T) {
+	a := New("")
+	a.AllowHost("127.0.0.1:31415")
+	for _, tt := range []struct {
+		requestURL string
+		want       int
+	}{
+		{requestURL: "http://127.0.0.1:31415/api/sessions", want: http.StatusOK},
+		{requestURL: "http://127.0.0.1:41415/api/sessions", want: http.StatusForbidden},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, tt.requestURL, nil)
+		a.Wrap(okHandler)(rec, req)
+		if rec.Code != tt.want {
+			t.Errorf("%s: status = %d, want %d", tt.requestURL, rec.Code, tt.want)
+		}
 	}
 }
 

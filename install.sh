@@ -4,14 +4,14 @@ set -euo pipefail
 # pi-web installer — downloads the binary and sets up auto-start
 #
 # Standalone (no pi required):
-#   curl -fsSL https://raw.githubusercontent.com/ygncode/pi-web/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tajquitgenius/pi-web/main/install.sh | bash
 #
 # Via pi package (also registers /remote, /refresh commands):
-#   pi install npm:@ygncode/pi-web@beta
+#   pi install git:github.com/tajquitgenius/pi-web
 #
 # Updates are handled by re-running the same command.
 
-REPO="ygncode/pi-web"
+REPO="tajquitgenius/pi-web"
 if [[ -n "${PI_WEB_INSTALL_DIR:-}" ]]; then
   INSTALL_DIR="$PI_WEB_INSTALL_DIR"
 elif [[ -n "${npm_package_name:-}" ]]; then
@@ -33,6 +33,17 @@ NC='\033[0m'
 info()  { echo -e "${GREEN}→${NC} $*" >&2; }
 warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; }
 err()   { echo -e "${RED}✗${NC} $*" >&2; }
+
+refuse_upstream_coinstall() {
+  local settings_file="${HOME}/.pi/agent/settings.json"
+  if [[ "${npm_package_name:-}" == "@tajquitgenius/pi-web" && -f "$settings_file" ]] && grep -q 'npm:@ygncode/pi-web' "$settings_file"; then
+    err "The upstream npm package is still installed. pi-web forks cannot safely coexist."
+    err "Run: pi remove npm:@ygncode/pi-web && pi install git:github.com/tajquitgenius/pi-web"
+    exit 1
+  fi
+}
+
+refuse_upstream_coinstall
 
 # ── Detect platform ─────────────────────────────────────────────────
 detect_platform() {
@@ -62,31 +73,43 @@ detect_platform() {
 package_tag() {
   # When install.sh runs as an npm lifecycle script, install the binary that
   # matches the npm package version. This keeps pinned installs such as
-  # `pi install npm:@ygncode/pi-web@0.0.1-beta.25` pinned for both the extension
-  # package and the downloaded pi-web binary.
-  if [[ "${npm_package_name:-}" == "@ygncode/pi-web" && -n "${npm_package_version:-}" ]]; then
+  # `pi install git:github.com/tajquitgenius/pi-web@v0.0.1-beta.25` pinned for
+  # both the extension package and the downloaded pi-web binary.
+  if [[ "${npm_package_name:-}" == "@tajquitgenius/pi-web" && -n "${npm_package_version:-}" ]]; then
     echo "v${npm_package_version#v}"
   fi
 }
 
 # ── Check latest release tag ────────────────────────────────────────
+semver_max_tag() {
+  awk '
+    {
+      tag = $0
+      version = tag
+      sub(/^v/, "", version)
+      split(version, parts, "-")
+      core = parts[1]
+      if (index(version, "-") == 0) {
+        key = core "-1"
+      } else {
+        prerelease = substr(version, length(core) + 2)
+        key = core "-0-" prerelease
+      }
+      print key "|" tag
+    }
+  ' | sort -t '|' -k1,1V | tail -1 | cut -d '|' -f2-
+}
+
 latest_tag() {
-  local latest_url="https://api.github.com/repos/${REPO}/releases/latest"
   local releases_url="https://api.github.com/repos/${REPO}/releases?per_page=100"
   local tag=""
 
+  # GitHub's /latest endpoint excludes prereleases. Select the highest semantic
+  # version from the release list so beta and stable channels behave consistently.
   if command -v curl &>/dev/null; then
-    tag="$(curl -fsS "$latest_url" 2>/dev/null | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' || true)"
-    if [[ -z "$tag" ]]; then
-      # /latest ignores prereleases. Fall back to the highest semver release of any type.
-      tag="$(curl -fsS "$releases_url" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' | sort -V | tail -1 || true)"
-    fi
+    tag="$(curl -fsS "$releases_url" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' | semver_max_tag || true)"
   elif command -v wget &>/dev/null; then
-    tag="$(wget -qO- "$latest_url" 2>/dev/null | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' || true)"
-    if [[ -z "$tag" ]]; then
-      # /latest ignores prereleases. Fall back to the highest semver release of any type.
-      tag="$(wget -qO- "$releases_url" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' | sort -V | tail -1 || true)"
-    fi
+    tag="$(wget -qO- "$releases_url" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' | semver_max_tag || true)"
   else
     err "Neither curl nor wget found."
     exit 1
@@ -251,27 +274,8 @@ setup_macos() {
     rm -f "$raw"
   fi
 
-  info "pi-web will listen on localhost; if Tailscale is running, it will publish HTTPS with Tailscale Serve."
-
-  # Pass the generated environment to launchd. This includes PI_WEB_TOKEN and
-  # PATH so pi-web can find `pi` when serving browser chat requests.
-  local env_file="${HOME}/.config/pi-web/env"
-  if [[ -f "$env_file" ]]; then
-    local env_xml=""
-    while IFS='=' read -r key value; do
-      [[ -z "$key" || "$key" == \#* ]] && continue
-      case "$key" in
-        PI_WEB_TOKEN|PI_CODING_AGENT_DIR|PATH) ;;
-        *) continue ;;
-      esac
-      value="$(printf '%s' "$value" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')"
-      env_xml="${env_xml}        <key>${key}</key>\n        <string>${value}</string>\n"
-    done < "$env_file"
-
-    if [[ -n "$env_xml" ]]; then
-      perl -0pi -e "s|</dict>\s*</plist>|    <key>EnvironmentVariables</key>\n    <dict>\n${env_xml}    </dict>\n</dict>\n</plist>|" "$generated"
-    fi
-  fi
+  # The launchd job reads ~/.config/pi-web/env each time it starts, so edits
+  # to token and public-host settings take effect on the next restart.
 
   # Check if plist changed
   if [[ -f "$plist_dst" ]]; then
@@ -316,7 +320,7 @@ setup_linux() {
   local generated_service
   generated_service="$(mktemp)"
   sed "s|/usr/local/bin/pi-web|${BINARY}|g" "$service_src" > "$generated_service"
-  info "pi-web will listen on localhost; if Tailscale is running, it will publish HTTPS with Tailscale Serve."
+  info "pi-web will listen on localhost; configure PI_WEB_PUBLIC_URL with an external HTTPS tunnel for remote access."
 
   # Check if service file changed
   if [[ -f "$service_dst" ]]; then

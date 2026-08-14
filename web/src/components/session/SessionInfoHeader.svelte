@@ -9,10 +9,11 @@
     computeSessionStats,
     summarizeSessionStats,
   } from '../../session/render/session-stats.js';
-  import { icon, Download } from '../../shared/icons.js';
+  import { icon, ChevronDown, Download } from '../../shared/icons.js';
+  import { t } from '../../shared/i18n.js';
   import { SvelteSet } from 'svelte/reactivity';
 
-  let { model = getSessionModel() } = $props();
+  let { model = getSessionModel(), compact = false } = $props();
 
   const SYSTEM_PROMPT_PREVIEW_LINES = 10;
 
@@ -28,6 +29,7 @@
   const tools = $derived(Array.isArray(model.tools) ? model.tools : []);
 
   let promptExpanded = $state(false);
+  let compactExpanded = $state(false);
   let expandedTools = new SvelteSet();
 
   function hasSelection() {
@@ -65,124 +67,148 @@
 
 <!-- eslint-disable svelte/no-at-html-tags -- trusted: Lucide icon SVG and rendered session markdown -->
 
-<div class="header">
-  <h1>Session: {sessionIdText}</h1>
-  <div class="help-bar">
-    <span class="help-hint"
-      >T show/hide thinking · O show/hide tools · P expand/collapse tool output</span
+{#if compact}
+  <button
+    type="button"
+    class="session-details-summary"
+    aria-expanded={String(compactExpanded)}
+    onclick={() => (compactExpanded = !compactExpanded)}
+  >
+    <span class="session-details-summary-main">
+      <span>{t('session.details')}</span>
+      <span class="session-details-summary-stats">{stats.messagesText} · {stats.modelsText}</span>
+    </span>
+    <span class="session-details-summary-chevron" class:open={compactExpanded} aria-hidden="true"
+      >{@html icon(ChevronDown, { size: 15 })}</span
     >
-    <div class="help-actions">
-      <button
-        type="button"
-        class="header-toggle-btn"
-        data-action="toggle-thinking"
-        title="Show/hide thinking (T)">Thinking</button
-      >
-      <button
-        type="button"
-        class="header-toggle-btn"
-        data-action="toggle-tools"
-        title="Show/hide tools (O)">Tools</button
-      >
-      <button
-        type="button"
-        class="header-toggle-btn"
-        data-action="toggle-tool-output"
-        title="Expand/collapse tool output (P)">Tool output</button
-      >
-      <button
-        type="button"
-        class="download-json-btn"
-        onclick={downloadJson}
-        title="Download session as JSONL">{@html icon(Download, { size: 13 })} JSONL</button
-      >
-    </div>
-  </div>
-  <div class="header-info">
-    <div class="info-item">
-      <span class="info-label">Date:</span><span class="info-value">{dateText}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">Models:</span><span class="info-value">{stats.modelsText}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">Messages:</span><span class="info-value">{stats.messagesText}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">Tool Calls:</span><span class="info-value">{stats.toolCalls}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">Tokens:</span><span class="info-value">{stats.tokensText}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">Cost:</span><span class="info-value">{stats.costText}</span>
-    </div>
-  </div>
-</div>
+  </button>
+{/if}
 
-{#if systemPrompt}
-  {#if promptIsLong}
-    <div
-      class="system-prompt expandable"
-      class:expanded={promptExpanded}
-      onclick={togglePrompt}
-      role="button"
-      tabindex="0"
-      onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && togglePrompt()}
-    >
-      <div class="system-prompt-header">System Prompt</div>
-      <div class="system-prompt-preview">{promptPreview}</div>
-      <div class="system-prompt-expand-hint">
-        ... ({promptLines.length - SYSTEM_PROMPT_PREVIEW_LINES} more lines, click to expand)
+<div
+  class="session-details-content"
+  class:session-details-content--compact={compact}
+  class:open={!compact || compactExpanded}
+>
+  <div class="header">
+    <h1>Session: {sessionIdText}</h1>
+    <div class="help-bar">
+      <span class="help-hint"
+        >T show/hide thinking · O show/hide tools · P expand/collapse tool output</span
+      >
+      <div class="help-actions">
+        <button
+          type="button"
+          class="header-toggle-btn"
+          data-action="toggle-thinking"
+          title="Show/hide thinking (T)">Thinking</button
+        >
+        <button
+          type="button"
+          class="header-toggle-btn"
+          data-action="toggle-tools"
+          title="Show/hide tools (O)">Tools</button
+        >
+        <button
+          type="button"
+          class="header-toggle-btn"
+          data-action="toggle-tool-output"
+          title="Expand/collapse tool output (P)">Tool output</button
+        >
+        <button
+          type="button"
+          class="download-json-btn"
+          onclick={downloadJson}
+          title="Download session as JSONL">{@html icon(Download, { size: 13 })} JSONL</button
+        >
       </div>
-      <div class="system-prompt-full">{systemPrompt}</div>
     </div>
-  {:else}
-    <div class="system-prompt">
-      <div class="system-prompt-header">System Prompt</div>
-      <div class="system-prompt-full" style="display: block">{systemPrompt}</div>
+    <div class="header-info">
+      <div class="info-item">
+        <span class="info-label">Date:</span><span class="info-value">{dateText}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Models:</span><span class="info-value">{stats.modelsText}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Messages:</span><span class="info-value">{stats.messagesText}</span
+        >
+      </div>
+      <div class="info-item">
+        <span class="info-label">Tool Calls:</span><span class="info-value">{stats.toolCalls}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Tokens:</span><span class="info-value">{stats.tokensText}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Cost:</span><span class="info-value">{stats.costText}</span>
+      </div>
+    </div>
+  </div>
+
+  {#if systemPrompt}
+    {#if promptIsLong}
+      <div
+        class="system-prompt expandable"
+        class:expanded={promptExpanded}
+        onclick={togglePrompt}
+        role="button"
+        tabindex="0"
+        onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && togglePrompt()}
+      >
+        <div class="system-prompt-header">System Prompt</div>
+        <div class="system-prompt-preview">{promptPreview}</div>
+        <div class="system-prompt-expand-hint">
+          ... ({promptLines.length - SYSTEM_PROMPT_PREVIEW_LINES} more lines, click to expand)
+        </div>
+        <div class="system-prompt-full">{systemPrompt}</div>
+      </div>
+    {:else}
+      <div class="system-prompt">
+        <div class="system-prompt-header">System Prompt</div>
+        <div class="system-prompt-full" style="display: block">{systemPrompt}</div>
+      </div>
+    {/if}
+  {/if}
+
+  {#if tools.length > 0}
+    <div class="tools-list">
+      <div class="tools-header">Available Tools</div>
+      <div class="tools-content">
+        {#each tools as tool, i (tool.name)}
+          {@const params = toolParams(tool)}
+          {#if !params}
+            <div class="tool-item">
+              <span class="tool-item-name">{tool.name}</span> -
+              <span class="tool-item-desc">{tool.description}</span>
+            </div>
+          {:else}
+            <div
+              class="tool-item"
+              class:params-expanded={expandedTools.has(i)}
+              onclick={() => toggleTool(i)}
+              role="button"
+              tabindex="0"
+              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleTool(i)}
+            >
+              <span class="tool-item-name">{tool.name}</span> -
+              <span class="tool-item-desc">{tool.description}</span>
+              <span class="tool-params-hint"></span>
+              <div class="tool-params-content">
+                {#each params as p (p.name)}
+                  <div class="tool-param">
+                    <span class="tool-param-name">{p.name}</span>
+                    <span class="tool-param-type">{p.type}</span>
+                    {#if p.required}<span class="tool-param-required">required</span>{:else}<span
+                        class="tool-param-optional">optional</span
+                      >{/if}
+                    {#if p.description}<div class="tool-param-desc">{p.description}</div>{/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/each}
+      </div>
     </div>
   {/if}
-{/if}
-
-{#if tools.length > 0}
-  <div class="tools-list">
-    <div class="tools-header">Available Tools</div>
-    <div class="tools-content">
-      {#each tools as tool, i (tool.name)}
-        {@const params = toolParams(tool)}
-        {#if !params}
-          <div class="tool-item">
-            <span class="tool-item-name">{tool.name}</span> -
-            <span class="tool-item-desc">{tool.description}</span>
-          </div>
-        {:else}
-          <div
-            class="tool-item"
-            class:params-expanded={expandedTools.has(i)}
-            onclick={() => toggleTool(i)}
-            role="button"
-            tabindex="0"
-            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleTool(i)}
-          >
-            <span class="tool-item-name">{tool.name}</span> -
-            <span class="tool-item-desc">{tool.description}</span>
-            <span class="tool-params-hint"></span>
-            <div class="tool-params-content">
-              {#each params as p (p.name)}
-                <div class="tool-param">
-                  <span class="tool-param-name">{p.name}</span>
-                  <span class="tool-param-type">{p.type}</span>
-                  {#if p.required}<span class="tool-param-required">required</span>{:else}<span
-                      class="tool-param-optional">optional</span
-                    >{/if}
-                  {#if p.description}<div class="tool-param-desc">{p.description}</div>{/if}
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
-      {/each}
-    </div>
-  </div>
-{/if}
+</div>

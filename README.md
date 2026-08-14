@@ -1,120 +1,121 @@
-<h1 align="center">pi-web (Remote Control Your Pi)</h1>
+<h1 align="center">pi-web</h1>
 
-<div align="center">
+<p align="center">
+A browser control surface for Pi sessions running on your laptops and cloud hosts.
+</p>
 
-[![GitHub stars](https://img.shields.io/github/stars/ygncode/pi-web?style=flat&logo=github&label=stars&cacheSeconds=86400)](https://github.com/ygncode/pi-web/stargazers)
-[![npm downloads](https://img.shields.io/npm/dw/@ygncode/pi-web?label=downloads/wk&color=2ea043&cacheSeconds=86400)](https://www.npmjs.com/package/@ygncode/pi-web)
-[![license MIT](https://img.shields.io/npm/l/@ygncode/pi-web?label=license&color=0a7bbb&cacheSeconds=86400)](LICENSE)
-[![Telegram](https://img.shields.io/badge/Telegram-Join-26A5E4?logo=telegram&logoColor=white)](https://t.me/+NJvFOTTa0wNjNTc9)
-![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-555)
+<p align="center">
+<a href="https://github.com/tajquitgenius/pi-web/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tajquitgenius/pi-web/actions/workflows/ci.yml/badge.svg"></a>
+<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-0f766e"></a>
+</p>
 
-**English** · [Español](user-docs/readme/README.es.md) · [Français](user-docs/readme/README.fr.md) · [Deutsch](user-docs/readme/README.de.md) · [中文](user-docs/readme/README.zh.md) · [日本語](user-docs/readme/README.ja.md) · [Bahasa Indonesia](user-docs/readme/README.id.md) · [Bahasa Melayu](user-docs/readme/README.ms.md) · [Tiếng Việt](user-docs/readme/README.vi.md) · [ไทย](user-docs/readme/README.th.md) · [Filipino](user-docs/readme/README.fil.md) · [မြန်မာ](user-docs/readme/README.my.md) · [ភាសាខ្មែរ](user-docs/readme/README.km.md) · [ລາວ](user-docs/readme/README.lo.md)
+> [!NOTE]
+> This is a focused fork of [ygncode/pi-web](https://github.com/ygncode/pi-web). It keeps the same runtime and data paths, so install it as a replacement rather than alongside upstream.
 
-</div>
+pi-web reads Pi's local session files and uses `pi --mode rpc` when you continue a conversation from the browser. Each installation owns only the sessions on that computer.
 
-<div align="center">
+## What this fork adds
 
-Drive your [pi](https://pi.dev) coding agent from your phone, tablet, or laptop — anywhere on your network, or remotely over Tailscale.
+- Persistent computer identity on every session and workspace screen
+- Two-click switching between personal, work, and cloud installations
+- An active-first dashboard that separates running work from session history
+- A conversation-first session view with collapsed metadata and context panels
+- Larger, accessible mobile controls and readable system typography
+- Generic HTTPS public-origin support for Cloudflare Tunnel or another trusted reverse proxy
+- Loopback-only remote topology with exact Host and Origin validation
+- GitHub-owned releases and updates that cannot silently reinstall upstream
 
-It's a full PWA, so you can install it and use it like a native app on any device. Think of it as your own personal AI workspace — like Claude's Cowork, but with different models — chat across models, code from your phone, or turn it into a [personal assistant](user-docs/en/personal-assistant.md) that lives on your machine.
+## Architecture
 
-Make it yours: switch themes and fonts, and use it in your own language — pi-web ships with multiple languages and you can add your own. More features are on the way, but it won't get bloated: anything you don't need can be turned off in settings.
-
-</div>
-
-> [!WARNING]
-> pi-web is currently in **beta**. Things will change and break!
-
-> [!TIP]
-> New here? **[Read the user guide →](user-docs/en/README.md)** for a full tour of features, install steps, and tips. ([Other languages →](user-docs/README.md))
-
-## Screenshots
-
-<div align="center">
-  <img src="user-docs/assets/pi-web-desktop-screenshot.png" alt="Desktop" width="90%" /><br />
-  <em>Desktop</em>
-  <br /><br />
-  <img src="user-docs/assets/pi-web-mobile-screenshot.png" alt="Mobile" width="90%" /><br />
-  <em>Mobile</em>
-</div>
-
-## How It Fits Together
-
-```
- pi (terminal)                 Browser (phone / tablet / laptop)
-      │                                │
-      │  writes JSONL                  │  HTTP + SSE
-      ▼                                ▼
- ~/.pi/agent/sessions/  ←───  pi-web (Go HTTP server)
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    │                 │                 │
-              pi --mode rpc      fsnotify         tailscale serve
-            (per‑session       (live reload)      (remote HTTPS
-             chat worker)                           via MagicDNS)
+```text
+Phone / personal laptop / work laptop
+                 │
+          ordinary HTTPS
+                 │
+       Cloudflare Access
+                 │
+       Cloudflare Tunnel
+                 │
+       127.0.0.1:31415
+              pi-web
+                 │
+  local session files + Pi RPC workers
 ```
 
-- **pi** writes conversation JSONL to `~/.pi/agent/sessions/` as it works.
-- **pi-web** is a Go server that reads those files, renders them in the browser, and streams live updates via SSE.
-- **pi --mode rpc** workers handle browser-initiated chat — one per session, reaped after 10 min idle.
-- **fsnotify** watches the sessions directory so the browser reloads within milliseconds of new output.
-- **Tailscale Serve** publishes the localhost server as an HTTPS endpoint on your tailnet.
+Run one independent installation per computer. The host switcher contains ordinary links to the other installations; it never sends cross-origin API requests or shares credentials.
 
 ## Install
 
+Install the current fork from Git. Pi remains an unpinned peer dependency. If upstream pi-web is already installed, remove it first; the two packages register the same commands and service and cannot coexist safely.
+
 ```bash
-pi install npm:@ygncode/pi-web@beta
+# Run this first only when migrating from upstream:
+pi remove npm:@ygncode/pi-web
+
+pi install git:github.com/tajquitgenius/pi-web
 ```
 
-That's it — it downloads the matching binary, sets up auto‑start, and registers the `/web`, `/pi-web`, `/remote`, and `/refresh` commands.
+The package downloads the matching binary from this fork's GitHub release, configures startup, and registers `/web`, `/remote`, `/refresh`, and `/pi-web`.
 
-Once installed, open `http://127.0.0.1:31415` in your browser. From pi, use `/web` to open the current session in your browser instantly. If Tailscale is running on your machine, pi-web automatically publishes an HTTPS endpoint on your tailnet — use `/remote` from pi to get a QR code and URL for any device on your tailnet.
+Open the local interface at:
 
-> **macOS remote access:** Install and open Tailscale interactively, approve the administrator prompt, and sign in. Then run `/pi-web restart`, followed by `/remote`.
-
-For manual installs, binary downloads, or building from source, see [user-docs/install.md](user-docs/en/install.md).
-
-## Pi Integration
-
-After `pi install npm:@ygncode/pi-web@beta`, you get:
-
-| Command | What it does |
-|---------|--------------|
-| `/web` | Open the current session in your browser (SSH-aware: skips browser and shows URL only) |
-| `/pi-web` | Show status, version, start/stop/restart the server, or update |
-| `/remote` | Show a QR code and URL for remote access over Tailscale |
-| `/refresh` | Pull new messages written from remote browsers back into the terminal session |
-
-Session **auto-titling** is built into pi-web itself and configured on the `/settings` page. It's **on by default** and names sessions automatically. You can choose:
-
-- **When to title** — once per session, or on every new message (the default).
-- **Title model** — a free, instant **built-in word heuristic (no AI)** by default, or pick a model (e.g. a small/fast one) for smarter, model-written titles.
-
-The package also installs the pi-web binary to `~/.pi/agent/bin/pi-web` and sets up auto-start on login.
-
-## Auto-Start on Login
-
-The `pi install npm:@ygncode/pi-web@beta` command sets this up automatically:
-
-| OS | Mechanism |
-|----|-----------|
-| macOS | launchd plist at `~/Library/LaunchAgents/com.pi-web.plist` |
-| Linux | systemd user service at `~/.config/systemd/user/pi-web.service` |
-| Windows | `HKCU` Run-key entry launching a hidden starter in `~/.config/pi-web/` |
-
-To set a token for remote access, create `~/.config/pi-web/env`:
-
-```
-PI_WEB_TOKEN=your-token-here
+```text
+http://127.0.0.1:31415
 ```
 
-For more details (manual setup, custom ports, non-loopback binds), see [user-docs/install.md](user-docs/en/install.md).
+## Configure an instance
+
+Create or edit `~/.config/pi-web/env` on each computer:
+
+```bash
+PI_WEB_INSTANCE_NAME='Personal laptop'
+PI_WEB_PUBLIC_URL=https://personal-pi.example.com
+PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work-pi.example.com"},{"label":"Cloud runner","url":"https://cloud-pi.example.com"}]'
+PI_WEB_TOKEN=replace-with-a-random-token
+```
+
+Use straight single quotes around values containing spaces or JSON. The macOS, Linux, and Windows startup loaders remove one matching outer quote pair.
+
+Generate the optional second-layer token with:
+
+```bash
+openssl rand -hex 24
+```
+
+Restart pi-web after changing the file:
+
+```text
+/pi-web restart
+```
+
+`PI_WEB_PUBLIC_URL` does not create or manage a tunnel. It declares the exact HTTPS origin that your external tunnel serves, allowing pi-web to validate browser Host and Origin headers. Pi-web continues listening only on loopback.
+
+See [Cloudflare Access setup](user-docs/en/cloudflare-access.md) for the recommended remote configuration.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `/web` | Open the current session on this computer |
+| `/remote` | Show the configured public URL and QR code |
+| `/refresh` | Pull browser-written messages into the terminal session |
+| `/pi-web status` | Show local and public addresses |
+| `/pi-web restart` | Reload service and environment configuration |
+| `/pi-web update` | Update from this fork's unpinned Git source |
+
+## Security boundary
+
+A remote user can execute commands and modify files available to the operating-system user running Pi. Keep pi-web on `127.0.0.1`, require an exact-user Cloudflare Access policy, and keep `PI_WEB_TOKEN` enabled for defense in depth. Never publish port `31415` directly or use `--insecure` for remote access.
+
+Cloudflare credentials do not belong in pi-web. Install and supervise `cloudflared` separately with Cloudflare's official service.
 
 ## Development
 
 ```bash
-make setup   # install frontend deps and download Go modules
-make check   # frontend test/build + Go test/vet
-make build   # setup if needed, build frontend, then build ./pi-web
+make setup
+make test
+make build
+make check
 ```
 
+Always use `make build`; the Go binary embeds the Vite frontend and static export bundle.

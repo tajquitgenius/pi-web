@@ -20,6 +20,15 @@ export default {
   'common.copied': 'Copied',
   'common.copyFailed': 'Copy failed',
 
+  // ── Host context ──
+  'host.thisComputer': 'this computer',
+  'host.current': 'Current computer: {host}',
+  'host.switch': 'Current computer: {host}. Switch computer',
+  'host.menu': 'Switch computer',
+  'host.currentComputer': 'Current computer',
+  'host.otherComputers': 'Other computers',
+  'host.newSession': 'New session on {host}',
+
   // ── Sessions index ──
   'index.title': 'Sessions',
   'index.searchSessions': 'Search sessions...',
@@ -27,6 +36,13 @@ export default {
   'index.sessionCountOne': '1 session',
   'index.activeCount': '({count} active)',
   'index.active': 'active',
+  'index.running': 'running',
+  'index.liveWork': 'Live work',
+  'index.runningNow': 'Running now',
+  'index.history': 'History',
+  'index.recentSessions': 'Recent sessions',
+  'index.untitledSession': 'Untitled session',
+  'index.unknownProject': 'Unknown project',
   'index.layoutTimeline': 'Timeline',
   'index.layoutProjects': 'Projects',
   'index.dateToday': 'Today',
@@ -155,6 +171,7 @@ export default {
   'session.shortcuts': 'Show keyboard shortcuts',
   'session.toggleScratchpad': 'Toggle scratchpad',
   'session.actions': 'Session actions',
+  'session.details': 'Session details',
   'session.loading': 'Loading session…',
   'session.notFound': 'Session not found',
   'session.loadFailed': 'Failed to load session',

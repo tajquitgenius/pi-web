@@ -34,8 +34,10 @@
   let collapsed = $state({});
 
   const isTimeline = $derived(layout === 'timeline');
+  const runningSessions = $derived(sessions.filter((session) => runningSessionIds.has(session.id)));
+  const recentSessions = $derived(sessions.filter((session) => !runningSessionIds.has(session.id)));
   const groups = $derived(
-    isTimeline ? groupSessionsByDate(sessions, now) : groupSessionsByProject(sessions),
+    isTimeline ? groupSessionsByDate(recentSessions, now) : groupSessionsByProject(recentSessions),
   );
 
   function readCollapsed() {
@@ -97,6 +99,32 @@
       <p>{t('index.noSessionsYetHint')}</p>
     </div>
   {:else}
+    {#if runningSessions.length > 0}
+      <section class="active-sessions" aria-labelledby="active-sessions-heading">
+        <div class="section-heading-row">
+          <div>
+            <span class="section-eyebrow">{t('index.liveWork')}</span>
+            <h2 id="active-sessions-heading">{t('index.runningNow')}</h2>
+          </div>
+          <span class="section-count">{runningSessions.length}</span>
+        </div>
+        <div class="session-grid session-grid--active">
+          {#each runningSessions as session (session.id)}
+            <SessionCard {session} running runningStatus={runningStatuses.get(session.id)} {now} />
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if recentSessions.length > 0}
+      <div class="section-heading-row section-heading-row--recent">
+        <div>
+          <span class="section-eyebrow">{t('index.history')}</span>
+          <h2>{t('index.recentSessions')}</h2>
+        </div>
+      </div>
+    {/if}
+
     {#if isTimeline}
       {#each groups as group (group.bucket)}
         {@const runningCount = runningCountFor(group)}

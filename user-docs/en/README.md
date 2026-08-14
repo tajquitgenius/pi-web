@@ -24,7 +24,7 @@ You're already deep in the flow with pi in your terminal. pi-web keeps that mome
 - **Resume from anywhere** — continue a session from your phone, tablet, or another computer. No SSH, no Termius — just open your browser.
 - **Multi-session dashboard** — kick off work in one session while watching another stream. Search across projects, filter by branch, find what you need fast.
 - **Open-source foundation** — pi is fully open source and provider-agnostic. You're not locked into a single model or vendor. pi-web is open source too.
-- **Safe remote access** — built-in token auth so you can expose it on your LAN or Tailscale without worry.
+- **Safe remote access** — keep pi-web on loopback behind Cloudflare Access, with exact public-origin validation and optional token defense in depth.
 - **Share your work** — export sessions as static snapshots or secret GitHub Gists in one click.
 
 > Curious about the backstory? [Read why we built it →](why.md)
@@ -76,6 +76,7 @@ Want more than coding? Turn it into a dedicated [personal assistant](personal-as
 | If you're looking for… | Read |
 |---|---|
 | How to install, configure, and use pi-web | [install.md](install.md) |
+| Reach pi-web through Cloudflare Access | [cloudflare-access.md](cloudflare-access.md) |
 | Use pi-web as a personal assistant | [personal-assistant.md](personal-assistant.md) |
 | Keyboard shortcuts reference | [keyboard-shortcuts.md](keyboard-shortcuts.md) |
 | Why pi-web exists | [why.md](why.md) |
@@ -84,17 +85,9 @@ Want more than coding? Turn it into a dedicated [personal assistant](personal-as
 
 ---
 
-## Screenshots
+## 💛 Support the upstream project
 
-| Desktop | Mobile |
-|---|---|
-| ![Desktop](../assets/pi-web-desktop-screenshot.png) | ![Mobile](../assets/pi-web-mobile-screenshot.png) |
-
----
-
-## 💛 Sponsor
-
-pi-web is built with love and a lot of late nights. I pay for coding plans (Claude Code, OpenCode, etc.) out of pocket to keep this project moving forward. If pi-web has been useful to you, your support would mean the world.
+This fork builds on substantial work by the original pi-web maintainers. If pi-web has been useful to you, consider supporting that work.
 
 **Ways to help:**
 

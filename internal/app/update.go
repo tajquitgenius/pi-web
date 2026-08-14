@@ -11,9 +11,8 @@ import (
 	"time"
 )
 
-// installChannel matches the dist-tag pi-web is published under and the
-// updater queries (see internal/updater).
-const installPackage = "npm:@ygncode/pi-web@beta"
+// installPackage is the unpinned fork source used by the in-app updater.
+const installPackage = "git:github.com/tajquitgenius/pi-web"
 
 // inPlaceUpdateEnv signals install.sh (the package postinstall) that pi-web is
 // updating itself in place. install.sh then skips the service stop/restart:
@@ -42,7 +41,7 @@ func cleanupStaleNPMTemps() {
 		agentRoot = filepath.Join(home, ".pi", "agent")
 	}
 
-	pattern := filepath.Join(agentRoot, "npm", "node_modules", "@ygncode", ".pi-web-*")
+	pattern := filepath.Join(agentRoot, "npm", "node_modules", "@tajquitgenius", ".pi-web-*")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return

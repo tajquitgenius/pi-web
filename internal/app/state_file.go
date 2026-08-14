@@ -18,7 +18,7 @@ func stateFileName(development bool) string {
 
 // writeStateFile returns an open file handle that the caller must retain for
 // the process lifetime. Closing it releases the instance lock.
-func writeStateFile(agentDir string, development bool, host, port string, tailscale bool, tailscaleURL string) (string, *os.File, error) {
+func writeStateFile(agentDir string, development bool, host, port, publicURL string) (string, *os.File, error) {
 	webDir := agentdir.WebDir(agentDir)
 	if err := os.MkdirAll(webDir, 0755); err != nil {
 		return "", nil, err
@@ -45,13 +45,12 @@ func writeStateFile(agentDir string, development bool, host, port string, tailsc
 		return "", nil, err
 	}
 	data, err := json.Marshal(map[string]any{
-		"pid":          os.Getpid(),
-		"port":         port,
-		"host":         host,
-		"development":  development,
-		"tailscale":    tailscale,
-		"tailscaleUrl": tailscaleURL,
-		"startedAt":    time.Now().UTC().Format(time.RFC3339),
+		"pid":         os.Getpid(),
+		"port":        port,
+		"host":        host,
+		"development": development,
+		"publicUrl":   publicURL,
+		"startedAt":   time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		_ = f.Close()

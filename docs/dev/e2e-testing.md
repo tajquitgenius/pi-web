@@ -101,8 +101,7 @@ Each intentional skip carries a reason string, visible with
 
 1. Ensures `./pi-web` exists (CI builds it first; locally `make build` if missing).
 2. Creates a temp `PI_CODING_AGENT_DIR` and copies `e2e/fixtures/sessions/` into it.
-3. Picks a free port and starts `pi-web -host 127.0.0.1` (the `-host` flag skips
-   Tailscale auto-serve; auth is disabled).
+3. Picks a free port and starts `pi-web -host 127.0.0.1`; auth is disabled on loopback.
 4. Prepends `e2e/lib/stub-pi/` to `PATH` so chat spawns the stub, never real pi.
 5. Writes `{ baseURL, sessionsDir, agentDir, pid }` to `e2e/.tmp/server.json`.
 

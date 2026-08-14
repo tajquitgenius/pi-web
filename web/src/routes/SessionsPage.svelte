@@ -17,6 +17,7 @@
   } from '../shared/settings-store.js';
   import { navigate } from '../shared/navigation.js';
   import { t } from '../shared/i18n.js';
+  import { readHostContext } from '../shared/host-context.js';
   import { SvelteSet, SvelteMap } from 'svelte/reactivity';
   import {
     defaultCreateSession,
@@ -29,6 +30,7 @@
   } from '../index/sessions.js';
 
   const PAGE_SIZE = 100;
+  const host = readHostContext();
 
   let sessions = $state([]);
   let total = $state(0);
@@ -225,7 +227,7 @@
 
   onMount(() => {
     const previousTitle = document.title;
-    document.title = 'Pi Sessions';
+    document.title = `${host.instanceName} · pi-web`;
     configureSettingsSync({ fetchImpl: window.fetch.bind(window) });
     setupKeyboardNav({ windowImpl: window, documentImpl: document });
 
@@ -293,8 +295,11 @@
   {totalSessionsLabel}
   {runningCount}
   runningVisible={runningCount > 0}
+  {host}
+  {menuOpen}
   onSearch={openPalette}
   onToggleMenu={toggleMenu}
+  onNewSession={openNewSessionModal}
   onLayoutChange={setLayout}
   onSchedules={() => navigate('/schedules')}
 />
@@ -305,16 +310,6 @@
   onNewSession={openNewSessionModal}
   onManageProjects={openProjectsModal}
 />
-
-<button
-  class="new-session-btn new-session-btn-mobile"
-  id="newSessionBtn"
-  type="button"
-  data-new-session-btn
-  aria-label={t('index.startNewSession')}
-  title={t('index.newSession')}
-  onclick={openNewSessionModal}>+</button
->
 
 <CommandPalette
   onNewSession={openNewSessionModal}
@@ -340,6 +335,7 @@
   bind:path={newSessionPath}
   {creating}
   error={newSessionError}
+  instanceName={host.instanceName}
   onClose={closeNewSessionModal}
   onCreate={createSession}
 />
