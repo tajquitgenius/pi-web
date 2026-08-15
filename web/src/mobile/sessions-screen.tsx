@@ -9,7 +9,15 @@ import {
   Settings,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import type {
   HostContext,
   PiModel,
@@ -21,6 +29,7 @@ import type {
 } from '../live-shared';
 import { getMobileCapability, type MobileProject } from './capabilities';
 import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
+import { useMobileDialog } from './dialog';
 import { t } from '../shared/i18n.js';
 
 const INITIAL_ROW_LIMIT = 30;
@@ -49,7 +58,7 @@ function formatActivity(value: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return '';
   const elapsed = Date.now() - timestamp;
-  if (elapsed < 60_000) return 'Now';
+  if (elapsed < 60_000) return t('index.now');
   if (elapsed < 3_600_000) return `${Math.max(1, Math.floor(elapsed / 60_000))}m`;
   if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`;
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(timestamp);
@@ -65,36 +74,123 @@ function matchesSession(session: SessionSummary, query: string, project: string)
     .includes(normalized);
 }
 
-function HostSwitcher({
-  host,
-  connection,
-}: {
+interface HomeNavigationSheetProps {
   host: HostContext;
   connection: MobileConnectionState;
-}) {
+  homeView: 'threads' | 'projects';
+  internalLink: SessionsScreenProps['internalLink'];
+  onSelectView: (view: 'threads' | 'projects') => void;
+  onClose: () => void;
+}
+
+function HomeNavigationSheet({
+  host,
+  connection,
+  homeView,
+  internalLink,
+  onSelectView,
+  onClose,
+}: HomeNavigationSheetProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useMobileDialog(dialogRef, onClose);
+
+  const selectView = (view: 'threads' | 'projects') => {
+    onSelectView(view);
+    onClose();
+  };
+
   return (
-    <details className="mobile-host-switcher">
-      <summary aria-label={t('host.switch', { host: host.instanceName })}>
-        <Server aria-hidden="true" size={17} />
-        <span>{host.instanceName}</span>
-        <ChevronDown aria-hidden="true" size={15} />
-      </summary>
-      <div className="mobile-host-menu">
-        <div className="mobile-host-current" aria-current="page">
-          <span>
-            {t('host.currentComputer')} · {connection === 'connected' ? 'Online' : 'Offline'}
-          </span>
-          <strong>{host.instanceName}</strong>
+    <div
+      className="mobile-sheet-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="mobile-bottom-sheet mobile-home-navigation-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-home-navigation-title"
+        tabIndex={-1}
+      >
+        <header>
+          <div>
+            <p className="mobile-eyebrow">{t('index.piSessions')}</p>
+            <h2 id="mobile-home-navigation-title">{t('index.mobileNavigation')}</h2>
+          </div>
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label={t('common.close')}
+            onClick={onClose}
+          >
+            <X aria-hidden="true" size={20} />
+          </button>
+        </header>
+
+        <nav className="mobile-home-navigation-list" aria-label={t('index.homeViews')}>
+          <button
+            type="button"
+            className={homeView === 'threads' ? 'is-selected' : ''}
+            aria-current={homeView === 'threads' ? 'page' : undefined}
+            onClick={() => selectView('threads')}
+          >
+            <span>
+              <Circle aria-hidden="true" size={17} />
+              {t('index.mobileThreads')}
+            </span>
+            {homeView === 'threads' && <span aria-hidden="true">✓</span>}
+          </button>
+          <button
+            type="button"
+            className={homeView === 'projects' ? 'is-selected' : ''}
+            aria-current={homeView === 'projects' ? 'page' : undefined}
+            onClick={() => selectView('projects')}
+          >
+            <span>
+              <Folder aria-hidden="true" size={17} />
+              {t('index.mobileProjects')}
+            </span>
+            {homeView === 'projects' && <span aria-hidden="true">✓</span>}
+          </button>
+          {internalLink(
+            '/settings',
+            <>
+              <span>
+                <Settings aria-hidden="true" size={18} />
+                {t('settings.title')}
+              </span>
+              <ChevronRight aria-hidden="true" size={18} />
+            </>,
+            'mobile-home-navigation-link',
+          )}
+        </nav>
+
+        <div className="mobile-home-computers">
+          <p className="mobile-eyebrow">{t('host.currentComputer')}</p>
+          <div className="mobile-home-computer is-current" aria-current="page">
+            <Server aria-hidden="true" size={18} />
+            <span>
+              <strong>{host.instanceName}</strong>
+              <small>{connection === 'connected' ? t('host.online') : t('host.offline')}</small>
+            </span>
+          </div>
+          {host.peers.length > 0 && <p className="mobile-eyebrow">{t('host.otherComputers')}</p>}
+          {host.peers.map((peer) => (
+            <a className="mobile-home-computer" key={`${peer.url}:${peer.label}`} href={peer.url}>
+              <Server aria-hidden="true" size={18} />
+              <span>
+                <strong>{peer.label}</strong>
+                <small>{peer.url}</small>
+              </span>
+              <ChevronRight aria-hidden="true" size={18} />
+            </a>
+          ))}
         </div>
-        {host.peers.length > 0 && <p>{t('host.otherComputers')}</p>}
-        {host.peers.map((peer) => (
-          <a key={`${peer.url}:${peer.label}`} href={peer.url}>
-            <span>{peer.label}</span>
-            <ChevronRight aria-hidden="true" size={17} />
-          </a>
-        ))}
-      </div>
-    </details>
+      </section>
+    </div>
   );
 }
 
@@ -106,6 +202,8 @@ interface NewTaskScreenProps {
 }
 
 function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useMobileDialog(dialogRef, onClose);
   const [path, setPath] = useState('');
   const [recentLocations, setRecentLocations] = useState<string[]>([]);
   const [models, setModels] = useState<PiModel[]>([]);
@@ -135,9 +233,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
           setModels([]);
           setModelProvider('');
           setModelId('');
-          setError(
-            `Open Pi on ${host.instanceName} and log in to a model provider before starting a task.`,
-          );
+          setError(t('index.providerLoginRequired', { host: host.instanceName }));
         }
       })
       .finally(() => {
@@ -185,7 +281,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
       return;
     }
     if (!modelProvider || !modelId) {
-      setError('Choose a provider and model.');
+      setError(t('index.chooseProviderModel'));
       return;
     }
     setCreating(true);
@@ -207,10 +303,12 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
 
   return (
     <section
+      ref={dialogRef}
       className="mobile-stack-screen mobile-new-task mobile-task-sheet"
       role="dialog"
-      aria-label="New task"
+      aria-label={t('index.newTask')}
       aria-modal="true"
+      tabIndex={-1}
     >
       <header className="mobile-nav-header">
         <button
@@ -223,7 +321,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
         </button>
         <div>
           <p className="mobile-eyebrow">{host.instanceName}</p>
-          <h1>New Task</h1>
+          <h1>{t('index.newTask')}</h1>
         </div>
         <div className="mobile-header-spacer" />
       </header>
@@ -231,7 +329,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
       <form className="mobile-new-task-form" onSubmit={submit}>
         <div className="mobile-form-scroll">
           <section className="mobile-form-section">
-            <label htmlFor="mobile-task-path">Destination folder</label>
+            <label htmlFor="mobile-task-path">{t('index.destinationFolder')}</label>
             <div className="mobile-input-with-icon">
               <Folder aria-hidden="true" size={18} />
               <input
@@ -254,21 +352,21 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
                 </datalist>
               )}
             </div>
-            <p>The new session starts on {host.instanceName}.</p>
+            <p>{t('index.newSessionStartsOn', { host: host.instanceName })}</p>
           </section>
 
           <section className="mobile-form-section" aria-labelledby="mobile-task-runtime-heading">
             <div className="mobile-section-heading">
               <div>
-                <p className="mobile-eyebrow">Runtime</p>
-                <h2 id="mobile-task-runtime-heading">Task settings</h2>
+                <p className="mobile-eyebrow">{t('index.runtime')}</p>
+                <h2 id="mobile-task-runtime-heading">{t('index.taskSettings')}</h2>
               </div>
-              {loading && <span role="status">Loading…</span>}
+              {loading && <span role="status">{t('index.loadingMore')}</span>}
             </div>
-            <label htmlFor="mobile-task-model">Provider and model</label>
+            <label htmlFor="mobile-task-model">{t('index.providerAndModel')}</label>
             <select
               id="mobile-task-model"
-              aria-label="Provider and model"
+              aria-label={t('index.providerAndModel')}
               value={selectedModelKey}
               disabled={loading || creating}
               onChange={(event) => {
@@ -290,14 +388,16 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
                   </option>
                 ))
               ) : (
-                <option value="">{loading ? 'Loading…' : 'No authenticated models'}</option>
+                <option value="">
+                  {loading ? t('index.loadingMore') : t('index.noAuthenticatedModels')}
+                </option>
               )}
             </select>
 
-            <label htmlFor="mobile-task-thinking">Thinking</label>
+            <label htmlFor="mobile-task-thinking">{t('index.thinking')}</label>
             <select
               id="mobile-task-thinking"
-              aria-label="Thinking level"
+              aria-label={t('index.thinkingLevel')}
               value={thinkingLevel}
               disabled={loading || creating}
               onChange={(event) => setThinkingLevel(event.currentTarget.value as ThinkingLevel)}
@@ -310,23 +410,25 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
             </select>
           </section>
 
-          <section className="mobile-destination-card" aria-label="New task destination">
-            <p className="mobile-eyebrow">Ready to create</p>
+          <section className="mobile-destination-card" aria-label={t('index.newTaskDestination')}>
+            <p className="mobile-eyebrow">{t('index.readyToCreate')}</p>
             <dl>
               <div>
-                <dt>Host</dt>
+                <dt>{t('index.host')}</dt>
                 <dd>{host.instanceName}</dd>
               </div>
               <div>
-                <dt>Provider</dt>
-                <dd>{modelProvider || (loading ? 'Loading…' : 'Unavailable')}</dd>
+                <dt>{t('index.provider')}</dt>
+                <dd>
+                  {modelProvider || (loading ? t('index.loadingMore') : t('index.unavailable'))}
+                </dd>
               </div>
               <div>
-                <dt>Model</dt>
-                <dd>{modelId || (loading ? 'Loading…' : 'Unavailable')}</dd>
+                <dt>{t('index.model')}</dt>
+                <dd>{modelId || (loading ? t('index.loadingMore') : t('index.unavailable'))}</dd>
               </div>
               <div>
-                <dt>Thinking</dt>
+                <dt>{t('index.thinking')}</dt>
                 <dd>{thinkingLevel}</dd>
               </div>
             </dl>
@@ -346,7 +448,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
             disabled={!runtimeReady || creating}
           >
             <Plus aria-hidden="true" size={19} />
-            {creating ? 'Creating task…' : 'Create task'}
+            {creating ? t('index.creatingTask') : t('index.createTask')}
           </button>
         </footer>
       </form>
@@ -366,6 +468,7 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
   const [connection, setConnection] = useState<MobileConnectionState>('connecting');
   const [registeredProjects, setRegisteredProjects] = useState<MobileProject[]>([]);
   const [showNewTask, setShowNewTask] = useState(false);
+  const [showNavigation, setShowNavigation] = useState(false);
   const [homeView, setHomeView] = useState<'threads' | 'projects'>('threads');
 
   const loadSessions = useCallback(() => {
@@ -379,7 +482,7 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
       })
       .catch((loadError) => {
         setConnection('offline');
-        setError(errorMessage(loadError, 'Could not load sessions.'));
+        setError(errorMessage(loadError, t('index.sessionsLoadFailed')));
       })
       .finally(() => setLoading(false));
   }, [client]);
@@ -480,56 +583,41 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
   return (
     <main className="mobile-screen mobile-home" data-mobile-route="sessions">
       <header className="mobile-home-header">
-        <div>
-          <p className="mobile-eyebrow">Pi sessions</p>
-          <HostSwitcher host={host} connection={connection} />
-        </div>
-        <div className="mobile-header-actions">
-          {internalLink(
-            '/settings',
-            <>
-              <Settings aria-hidden="true" size={20} />
-              <span className="mobile-visually-hidden">{t('settings.title')}</span>
-            </>,
-            'mobile-icon-button',
-          )}
-          <button
-            type="button"
-            className="mobile-primary-icon-button"
-            aria-label="New task"
-            onClick={() => setShowNewTask(true)}
-          >
-            <Plus aria-hidden="true" size={21} />
-          </button>
-        </div>
+        <button
+          type="button"
+          className="mobile-home-navigation-trigger"
+          aria-label={t('index.openNavigation')}
+          aria-haspopup="dialog"
+          onClick={() => setShowNavigation(true)}
+        >
+          <span className="mobile-home-navigation-mark" aria-hidden="true">
+            <Server size={19} />
+          </span>
+          <span className="mobile-home-title-copy">
+            <strong>
+              {homeView === 'threads' ? t('index.mobileThreads') : t('index.mobileProjects')}
+            </strong>
+            <small>{host.instanceName}</small>
+          </span>
+          <ChevronDown aria-hidden="true" size={16} />
+        </button>
+        <button
+          type="button"
+          className="mobile-primary-icon-button"
+          aria-label={t('index.newTask')}
+          onClick={() => setShowNewTask(true)}
+        >
+          <Plus aria-hidden="true" size={21} />
+        </button>
       </header>
 
       <MobileConnectivityNotice state={connection} onRetry={() => void loadSessions()} />
 
-      <nav className="mobile-home-tabs" aria-label="Home views">
-        <button
-          type="button"
-          className={homeView === 'threads' ? 'is-selected' : ''}
-          aria-selected={homeView === 'threads'}
-          onClick={() => setHomeView('threads')}
-        >
-          Threads
-        </button>
-        <button
-          type="button"
-          className={homeView === 'projects' ? 'is-selected' : ''}
-          aria-selected={homeView === 'projects'}
-          onClick={() => setHomeView('projects')}
-        >
-          Projects
-        </button>
-      </nav>
-
       {homeView === 'threads' && (
-        <section className="mobile-session-controls" aria-label="Filter sessions">
+        <section className="mobile-session-controls" aria-label={t('index.filterSessions')}>
           <label className="mobile-search-field">
             <Search aria-hidden="true" size={17} />
-            <span className="mobile-visually-hidden">Search sessions</span>
+            <span className="mobile-visually-hidden">{t('index.searchSessionsLabel')}</span>
             <input
               type="search"
               placeholder={t('index.searchSessions')}
@@ -538,9 +626,9 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
             />
           </label>
           <label className="mobile-project-filter">
-            <span className="mobile-visually-hidden">Filter by project</span>
+            <span className="mobile-visually-hidden">{t('index.filterByProject')}</span>
             <select value={project} onChange={(event) => setProject(event.currentTarget.value)}>
-              <option value="">All projects</option>
+              <option value="">{t('index.allProjects')}</option>
               {projectPaths.map((projectPath) => (
                 <option key={projectPath} value={projectPath}>
                   {projectLabel(projectPath)}
@@ -552,15 +640,15 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
       )}
 
       {homeView === 'projects' ? (
-        <section className="mobile-project-list" aria-label="Projects">
+        <section className="mobile-project-list" aria-label={t('index.projectsRegion')}>
           <div className="mobile-list-heading">
-            <h1>Projects</h1>
+            <h1>{t('index.mobileProjects')}</h1>
             <span>{projects.length}</span>
           </div>
           {projects.length === 0 ? (
             <div className="mobile-empty-state">
-              <h2>No projects yet</h2>
-              <p>Create a task to start a Pi project.</p>
+              <h2>{t('index.noProjectsYet')}</h2>
+              <p>{t('index.createTaskForProject')}</p>
             </div>
           ) : (
             <div className="mobile-project-cards">
@@ -580,8 +668,10 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
                   </span>
                   <span className="mobile-project-card-meta">
                     {project.running > 0
-                      ? `${project.running} running`
-                      : `${project.sessions.length} ${project.sessions.length === 1 ? 'thread' : 'threads'}`}
+                      ? t('index.projectRunning', { count: project.running })
+                      : project.sessions.length === 1
+                        ? t('index.projectThreadOne')
+                        : t('index.projectThreads', { count: project.sessions.length })}
                     <ChevronRight aria-hidden="true" size={18} />
                   </span>
                 </button>
@@ -590,10 +680,10 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
           )}
         </section>
       ) : (
-        <section className="mobile-session-list" aria-label="Sessions">
+        <section className="mobile-session-list" aria-label={t('index.sessionsRegion')}>
           <div className="mobile-list-heading">
             <h1>{runningIds.size > 0 ? t('index.runningNow') : t('index.recentSessions')}</h1>
-            <span>{orderedSessions.length}</span>
+            {!loading && <span>{orderedSessions.length}</span>}
           </div>
           {loading && (
             <p className="mobile-list-status" role="status">
@@ -614,9 +704,11 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
           )}
           {!loading && !error && visibleSessions.length === 0 && (
             <div className="mobile-empty-state">
-              <h2>{query || project ? 'No matching sessions' : t('index.noSessionsYet')}</h2>
+              <h2>{query || project ? t('index.noMatchingSessions') : t('index.noSessionsYet')}</h2>
               <p>
-                {query || project ? 'Try another search or project.' : t('index.noSessionsYetHint')}
+                {query || project
+                  ? t('index.tryAnotherSearchProject')
+                  : t('index.noSessionsYetHint')}
               </p>
             </div>
           )}
@@ -657,6 +749,17 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
             </button>
           )}
         </section>
+      )}
+
+      {showNavigation && (
+        <HomeNavigationSheet
+          host={host}
+          connection={connection}
+          homeView={homeView}
+          internalLink={internalLink}
+          onSelectView={setHomeView}
+          onClose={() => setShowNavigation(false)}
+        />
       )}
 
       {showNewTask && (

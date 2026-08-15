@@ -1533,13 +1533,6 @@ textarea:disabled {
   border-bottom: 0;
   border-radius: 22px 22px 0 0;
   box-shadow: 0 -12px 40px var(--shadow-color);
-  animation: mobile-sheet-enter 180ms ease-out;
-}
-
-@keyframes mobile-sheet-enter {
-  from {
-    transform: translateY(18%);
-  }
 }
 
 .mobile-bottom-sheet form {

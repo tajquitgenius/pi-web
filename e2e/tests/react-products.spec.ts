@@ -63,15 +63,11 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
     }
   } else {
     await expect(page.locator('[data-mobile-route="sessions"]')).toBeVisible();
-    await page
-      .locator('summary[aria-label="Current computer: Main. Switch computer"]')
-      .click();
+    await page.getByRole("button", { name: "Open navigation" }).click();
     for (const host of ["Work laptop", "Personal", "Cloud"]) {
       await expect(page.getByRole("link", { name: host })).toBeVisible();
     }
-    await page
-      .locator('summary[aria-label="Current computer: Main. Switch computer"]')
-      .click();
+    await page.keyboard.press("Escape");
     expect(await page.locator(".mobile-session-row").count()).toBeLessThanOrEqual(30);
   }
 
@@ -128,10 +124,8 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
 
   if (!desktop) {
     await expect(
-      page.getByRole("button", {
-        name: /openai-codex-secondary · gpt-5\.6-sol · high.*Open settings/,
-      }),
-    ).toBeVisible();
+      page.getByRole("button", { name: "Choose model and thinking level" }),
+    ).toContainText("openai-codex-secondary");
     await page.getByRole("textbox", { name: "Message", exact: true }).fill(prompt);
     await page.getByRole("button", { name: "Send" }).click();
   }
@@ -158,7 +152,7 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
     .click();
   await page
     .getByRole("button", {
-      name: desktop ? "Cancel response" : /Cancel.*response/i,
+      name: desktop ? "Cancel response" : "Stop",
     })
     .click();
 
@@ -229,7 +223,7 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
       };
     });
     expect(mobileLayout.horizontalOverflow).toBeLessThanOrEqual(0);
-    expect(mobileLayout.composerHeight).toBeLessThanOrEqual(72);
+    expect(mobileLayout.composerHeight).toBeLessThanOrEqual(140);
     expect(mobileLayout.undersized).toEqual([]);
   }
 

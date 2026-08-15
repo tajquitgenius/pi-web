@@ -4,11 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as liveShared from '../live-shared';
+import { CUSTOM_LANGUAGES_KEY, LOCALE_KEY, resetI18n } from '../shared/i18n.js';
 import type {
   PairedDevice,
   PiWebClient,
   SSESubscriptionHandlers,
   SessionDetails,
+  SessionList,
   SessionSummary,
 } from '../live-shared';
 import { MobileApp } from './app';
@@ -128,11 +130,45 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.removeItem(LOCALE_KEY);
+  localStorage.removeItem(CUSTOM_LANGUAGES_KEY);
+  resetI18n();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('mobile sessions home', () => {
+  it('renders redesigned navigation copy from a custom locale', async () => {
+    localStorage.setItem(
+      CUSTOM_LANGUAGES_KEY,
+      JSON.stringify([
+        {
+          code: 'mobile-test',
+          label: 'Mobile test',
+          strings: {
+            'index.mobileThreads': 'Conversaciones',
+            'index.mobileNavigation': 'Navegación',
+            'index.openNavigation': 'Abrir navegación',
+            'index.homeViews': 'Vistas',
+            'index.newTask': 'Nueva tarea',
+          },
+        },
+      ]),
+    );
+    localStorage.setItem(LOCALE_KEY, 'mobile-test');
+    resetI18n();
+    const user = userEvent.setup();
+
+    render(<MobileApp client={makeClient()} path="/" search="" />);
+
+    expect(screen.getByRole('button', { name: 'Abrir navegación' })).toHaveTextContent(
+      'Conversaciones',
+    );
+    expect(screen.getByRole('button', { name: 'Nueva tarea' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Abrir navegación' }));
+    expect(screen.getByRole('dialog', { name: 'Navegación' })).toBeInTheDocument();
+  });
+
   it('shows an explicit reconnecting state when the Pi event stream drops', async () => {
     let streamHandlers: SSESubscriptionHandlers | undefined;
     const client = makeClient({
@@ -286,6 +322,18 @@ describe('mobile sessions home', () => {
     );
   });
 
+  it('does not present a zero session count while the first load is pending', () => {
+    const client = makeClient({
+      listSessions: vi.fn(() => new Promise<SessionList>(() => undefined)),
+    });
+
+    render(<MobileApp client={client} path="/" search="" />);
+
+    const heading = screen.getByRole('heading', { name: 'Recent sessions' });
+    expect(heading.parentElement?.querySelector('span')).toBeNull();
+    expect(screen.getByText('Loading sessions…')).toBeInTheDocument();
+  });
+
   it('shows running sessions first and bounds the first render to 30 rows', async () => {
     const sessions = Array.from({ length: 35 }, (_, index) => sessionSummary(index));
     const subscribe = vi.fn((topic: string, handlers: SSESubscriptionHandlers) => {
@@ -325,6 +373,7 @@ describe('mobile sessions home', () => {
     render(<MobileApp client={client} path="/" search="" />);
     await screen.findByText('Session 1');
 
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
     await user.click(screen.getByRole('button', { name: 'Projects' }));
     expect(screen.getByRole('region', { name: 'Projects' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /alpha/ })).toHaveTextContent('1 thread');
@@ -474,6 +523,14 @@ describe('mobile pairing', () => {
 });
 
 describe('mobile conversation', () => {
+  async function openConversationTool(
+    user: ReturnType<typeof userEvent.setup>,
+    name: 'Project inspector' | 'Thread actions',
+  ) {
+    await user.click(screen.getByRole('button', { name: 'Tools' }));
+    await user.click(screen.getByRole('button', { name }));
+  }
+
   it('steers an in-flight Pi response without disabling the composer', async () => {
     const sendChat = vi.fn().mockResolvedValue({ ok: true, status: 'queued' });
     const client = makeClient({
@@ -494,7 +551,7 @@ describe('mobile conversation', () => {
         images: [],
       }),
     );
-    expect(screen.getByRole('button', { name: 'Cancel running response' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Stop' })).toBeInTheDocument();
   });
 
   it('refreshes a session after SSE auto-reconnect', async () => {
@@ -532,7 +589,7 @@ describe('mobile conversation', () => {
     render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
 
-    await user.click(screen.getByRole('button', { name: 'Open files, diff, and details' }));
+    await openConversationTool(user, 'Project inspector');
     expect(screen.getByRole('dialog', { name: 'Files, diff, and details' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Diff' }));
     expect(await screen.findByText('@@ -1 +1 @@')).toBeInTheDocument();
@@ -546,9 +603,9 @@ describe('mobile conversation', () => {
     const user = userEvent.setup();
     render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
-    const openButton = screen.getByRole('button', { name: 'Open files, diff, and details' });
+    const openButton = screen.getByRole('button', { name: 'Tools' });
 
-    await user.click(openButton);
+    await openConversationTool(user, 'Project inspector');
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close inspector' }));
     expect(screen.getByRole('tablist', { name: 'Inspector sections' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
@@ -559,7 +616,7 @@ describe('mobile conversation', () => {
     expect(
       screen.queryByRole('dialog', { name: 'Files, diff, and details' }),
     ).not.toBeInTheDocument();
-    await user.click(openButton);
+    await openConversationTool(user, 'Project inspector');
     await user.click(screen.getByRole('tab', { name: 'Diff' }));
     await user.keyboard('{Escape}');
     await waitFor(() =>
@@ -581,7 +638,7 @@ describe('mobile conversation', () => {
     const user = userEvent.setup();
     render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
-    await user.click(screen.getByRole('button', { name: 'Open files, diff, and details' }));
+    await openConversationTool(user, 'Project inspector');
     await user.click(screen.getByRole('tab', { name: 'Scratchpad' }));
     await user.type(screen.getByRole('textbox', { name: 'Project scratchpad' }), 'note');
     await user.click(screen.getByRole('button', { name: 'Save note' }));
@@ -617,7 +674,7 @@ describe('mobile conversation', () => {
     const user = userEvent.setup();
     render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
-    await user.click(screen.getByRole('button', { name: 'Open files, diff, and details' }));
+    await openConversationTool(user, 'Project inspector');
     await user.click(screen.getByRole('tab', { name: 'Files' }));
     expect(screen.getByLabelText('src directory')).not.toHaveAttribute('role', 'button');
     expect(getFile).not.toHaveBeenCalled();
@@ -671,7 +728,7 @@ describe('mobile conversation', () => {
     const user = userEvent.setup();
     render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
-    await user.click(screen.getByRole('button', { name: 'Open thread actions' }));
+    await openConversationTool(user, 'Thread actions');
     await user.clear(screen.getByLabelText('Thread name'));
     await user.type(screen.getByLabelText('Thread name'), 'Renamed');
     await user.click(screen.getByRole('button', { name: 'Save thread name' }));
@@ -707,7 +764,7 @@ describe('mobile conversation', () => {
     render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
 
-    await user.click(screen.getByRole('button', { name: 'Open thread actions' }));
+    await openConversationTool(user, 'Thread actions');
     expect(document.activeElement).toBe(
       screen.getByRole('button', { name: 'Close thread actions' }),
     );
@@ -719,7 +776,7 @@ describe('mobile conversation', () => {
     );
     expect(screen.queryByRole('dialog', { name: 'Renamed thread' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Open thread actions' }));
+    await openConversationTool(user, 'Thread actions');
     await user.type(screen.getByLabelText('Label latest entry'), 'review');
     await user.click(screen.getByRole('button', { name: 'Save entry label' }));
     await waitFor(() =>
@@ -766,7 +823,7 @@ describe('mobile conversation', () => {
     render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
 
-    await user.click(screen.getByRole('button', { name: 'Open files, diff, and details' }));
+    await openConversationTool(user, 'Project inspector');
     await user.click(screen.getByRole('tab', { name: 'Files' }));
     await user.click(await screen.findByRole('button', { name: /src\/main\.ts/ }));
     expect(await screen.findByText('export const ready = true;')).toBeInTheDocument();
@@ -830,21 +887,23 @@ describe('mobile conversation', () => {
     expect(screen.getByText('secret tool output')).toBeInTheDocument();
   });
 
-  it('exposes bounded composer sizing hooks and labelled touch controls', async () => {
+  it('uses a natural-height composer with one Tools entry and a separate runtime picker', async () => {
+    const user = userEvent.setup();
     render(<MobileApp client={makeClient()} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
 
     const composer = document.querySelector('.mobile-composer');
-    expect(composer).toHaveAttribute('data-collapsed-height', '64');
-    expect(composer).toHaveAttribute('data-expanded-height', '156');
+    expect(composer).not.toHaveAttribute('data-collapsed-height');
+    expect(composer).not.toHaveAttribute('data-expanded-height');
     expect(document.querySelector('.mobile-composer-chrome')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Attach images' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Tools' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', {
-        name: /openai-codex-secondary · gpt-5\.6-sol · high.*Open settings/,
-      }),
+      screen.getByRole('button', { name: 'Choose model and thinking level' }),
     ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(screen.getByRole('button', { name: 'Attach images' })).toBeInTheDocument();
   });
 });
 
@@ -904,14 +963,23 @@ describe('mobile routing and labels', () => {
     );
   });
 
-  it('labels primary icon controls and keeps peer hosts as top-level links', async () => {
+  it('keeps settings and independent peer hosts in the accessible navigation sheet', async () => {
     render(<MobileApp client={makeClient()} path="/" search="" />);
     expect(screen.getByRole('button', { name: 'New task' })).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'Open navigation' });
+    trigger.focus();
+    await userEvent.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Navigation' });
+    expect(dialog).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
-    await userEvent.click(screen.getByLabelText('Current computer: Work Mac. Switch computer'));
     expect(screen.getByRole('link', { name: /Home Mac/ })).toHaveAttribute(
       'href',
       'https://home.example',
     );
+
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });

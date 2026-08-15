@@ -1,0 +1,229 @@
+/* Chat-first mobile home and task flow. Loaded after mobile.css. */
+
+.mobile-home-header {
+  gap: 12px;
+  min-height: calc(64px + env(safe-area-inset-top));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-left: max(12px, env(safe-area-inset-left));
+}
+
+.mobile-home-navigation-trigger {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 48px;
+  gap: 10px;
+  padding: 4px 2px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.mobile-home-navigation-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  color: var(--accent-strong);
+  background: var(--surface-2);
+  border-radius: 12px;
+}
+
+.mobile-home-title-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mobile-home-title-copy strong,
+.mobile-home-title-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-home-title-copy strong {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.mobile-home-title-copy small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile-home-navigation-trigger > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.mobile-home-tabs {
+  display: none;
+}
+
+.mobile-home-navigation-sheet {
+  max-height: min(86dvh, 680px);
+}
+
+.mobile-home-navigation-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.mobile-home-navigation-list > button,
+.mobile-home-navigation-list > a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 50px;
+  gap: 12px;
+  padding: 0 14px;
+  color: var(--text);
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 680;
+}
+
+.mobile-home-navigation-list > button > span:first-child,
+.mobile-home-navigation-list > a > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.mobile-home-navigation-list > button.is-selected {
+  color: var(--accent-strong);
+  background: var(--surface-2);
+}
+
+.mobile-home-computers {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dim-2);
+}
+
+.mobile-home-computers > .mobile-eyebrow {
+  margin: 12px 12px 6px;
+}
+
+.mobile-home-computer {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 52px;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 12px;
+}
+
+.mobile-home-computer.is-current {
+  background: var(--surface-2);
+}
+
+.mobile-home-computer > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.mobile-home-computer > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mobile-home-computer strong,
+.mobile-home-computer small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-home-computer small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile-session-controls,
+.mobile-session-list,
+.mobile-project-list {
+  width: min(100%, 720px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.mobile-session-controls {
+  box-sizing: border-box;
+}
+
+.mobile-task-sheet {
+  position: fixed;
+  z-index: 100;
+  isolation: isolate;
+  background: var(--body-bg);
+  animation: none;
+}
+
+.mobile-task-sheet .mobile-nav-header {
+  background: var(--chrome-bg);
+}
+
+.mobile-task-sheet .mobile-form-scroll,
+.mobile-task-sheet .mobile-form-footer {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.mobile-task-sheet .mobile-form-section,
+.mobile-task-sheet .mobile-destination-card,
+.mobile-task-sheet .mobile-form-error,
+.mobile-task-sheet .mobile-form-footer > * {
+  box-sizing: border-box;
+  width: min(100%, 600px);
+}
+
+@media (max-width: 359px) {
+  .mobile-session-controls {
+    flex-wrap: wrap;
+  }
+
+  .mobile-project-filter,
+  .mobile-project-filter select {
+    width: 100%;
+  }
+}
+
+@media (min-width: 600px) {
+  .mobile-home-header > *,
+  .mobile-home-header > button {
+    flex: none;
+  }
+
+  .mobile-home-header {
+    justify-content: center;
+  }
+
+  .mobile-home-navigation-trigger {
+    width: min(calc(100% - 64px), 656px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-task-sheet {
+    animation: none;
+  }
+}

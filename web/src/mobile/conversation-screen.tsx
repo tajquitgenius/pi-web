@@ -2,13 +2,13 @@ import { marked } from 'marked';
 import {
   ArrowLeft,
   ChevronDown,
+  FileSearch,
   ImagePlus,
   LoaderCircle,
-  Send,
-  FileSearch,
   MoreHorizontal,
-  Settings2,
+  Send,
   Square,
+  Wrench,
   X,
 } from 'lucide-react';
 import {
@@ -41,6 +41,7 @@ import { getMobileCapability, type MobileCommand, type MobileFile } from './capa
 import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
 import { InspectorSheet } from './inspector-sheet';
 import { ThreadActionsSheet } from './thread-actions-sheet';
+import { useMobileDialog } from './dialog';
 import { t } from '../shared/i18n.js';
 
 const OLDER_ENTRY_PAGE = 100;
@@ -158,10 +159,14 @@ function toolResultText(result?: MobileSessionEntry): string {
 
 function ToolDisclosure({ call, result }: { call: MessageBlock; result?: MobileSessionEntry }) {
   const [expanded, setExpanded] = useState(false);
-  const name = call.name || 'tool';
+  const name = call.name || t('conversation.tool');
   const output = toolResultText(result);
   const label = formatToolCall(name, call.arguments || {});
-  const status = result ? (result.message?.isError ? 'Error' : 'Done') : 'Running';
+  const status = result
+    ? result.message?.isError
+      ? t('conversation.error')
+      : t('conversation.done')
+    : t('conversation.running');
 
   return (
     <section className={`mobile-tool-call${result?.message?.isError ? ' is-error' : ''}`}>
@@ -169,7 +174,10 @@ function ToolDisclosure({ call, result }: { call: MessageBlock; result?: MobileS
         type="button"
         className="mobile-disclosure-button"
         aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name} tool details`}
+        aria-label={t('conversation.toolDetails', {
+          action: expanded ? t('conversation.collapse') : t('conversation.expand'),
+          name,
+        })}
         onClick={() => setExpanded((current) => !current)}
       >
         <span>
@@ -196,12 +204,14 @@ function ThinkingDisclosure({ text }: { text: string }) {
         type="button"
         className="mobile-disclosure-button"
         aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} assistant thinking`}
+        aria-label={`${expanded ? t('conversation.collapse') : t('conversation.expand')} ${t('conversation.thinking').toLowerCase()}`}
         onClick={() => setExpanded((current) => !current)}
       >
         <span>
-          <strong>Thinking</strong>
-          <small>{expanded ? 'Hide reasoning' : 'Show reasoning'}</small>
+          <strong>{t('conversation.thinking')}</strong>
+          <small>
+            {expanded ? t('conversation.hideReasoning') : t('conversation.showReasoning')}
+          </small>
         </span>
         <ChevronDown aria-hidden="true" size={17} />
       </button>
@@ -231,7 +241,7 @@ function ConversationEntry({
               <img
                 key={`${entry.id || 'user'}:${index}`}
                 src={`data:${image.mimeType || 'image/png'};base64,${image.data}`}
-                alt="User attachment"
+                alt={t('conversation.userAttachment')}
               />
             ))}
           </div>
@@ -246,7 +256,7 @@ function ConversationEntry({
     const blocks = contentBlocks(message.content);
     return (
       <article className="mobile-message mobile-assistant-message" data-message-role="assistant">
-        <div className="mobile-message-role">Assistant</div>
+        <div className="mobile-message-role">{t('conversation.assistant')}</div>
         {blocks.map((block, index) => {
           if (block.type === 'text' && block.text?.trim()) {
             return (
@@ -273,10 +283,12 @@ function ConversationEntry({
           return null;
         })}
         {message.stopReason === 'aborted' && (
-          <p className="mobile-inline-error">Response cancelled.</p>
+          <p className="mobile-inline-error">{t('conversation.responseCancelled')}</p>
         )}
         {message.stopReason === 'error' && (
-          <p className="mobile-inline-error">{message.errorMessage || 'The response failed.'}</p>
+          <p className="mobile-inline-error">
+            {message.errorMessage || t('conversation.responseFailed')}
+          </p>
         )}
         {timestamp && <time>{timestamp}</time>}
       </article>
@@ -302,19 +314,23 @@ function ConversationEntry({
   if (entry.type === 'model_change' && !entry.implicit) {
     return (
       <p className="mobile-conversation-event">
-        Model changed to {entry.provider}/{entry.modelId}
+        {t('conversation.modelChanged', { model: `${entry.provider}/${entry.modelId}` })}
       </p>
     );
   }
 
   if (entry.type === 'thinking_level_change') {
-    return <p className="mobile-conversation-event">Thinking changed to {entry.thinkingLevel}</p>;
+    return (
+      <p className="mobile-conversation-event">
+        {t('conversation.thinkingChanged', { level: entry.thinkingLevel })}
+      </p>
+    );
   }
 
   if (entry.type === 'compaction') {
     return (
       <details className="mobile-conversation-note">
-        <summary>Earlier context compacted</summary>
+        <summary>{t('conversation.compacted')}</summary>
         <p>
           {entry.summary || `Compacted from ${(entry.tokensBefore || 0).toLocaleString()} tokens.`}
         </p>
@@ -325,7 +341,7 @@ function ConversationEntry({
   if (entry.type === 'branch_summary' && entry.summary) {
     return (
       <section className="mobile-conversation-note">
-        <strong>Branch summary</strong>
+        <strong>{t('conversation.branchSummary')}</strong>
         <MobileMarkdown text={entry.summary} />
       </section>
     );
@@ -334,7 +350,7 @@ function ConversationEntry({
   if (entry.type === 'custom_message' && entry.display) {
     return (
       <section className="mobile-conversation-note">
-        <strong>{entry.customType || 'Update'}</strong>
+        <strong>{entry.customType || t('conversation.update')}</strong>
         <MobileMarkdown
           text={typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content)}
         />
@@ -371,6 +387,8 @@ function RuntimeSheet({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const dialogRef = useRef<HTMLElement | null>(null);
+  useMobileDialog(dialogRef, onClose);
 
   useEffect(() => {
     let active = true;
@@ -385,7 +403,7 @@ function RuntimeSheet({
         }
       })
       .catch((loadError) => {
-        if (active) setError(errorMessage(loadError, 'Could not load models.'));
+        if (active) setError(errorMessage(loadError, t('conversation.loadModelsFailed')));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -415,23 +433,31 @@ function RuntimeSheet({
       onSaved(provider, model, thinking);
       onClose();
     } catch (saveError) {
-      setError(errorMessage(saveError, 'Could not update session settings.'));
+      setError(errorMessage(saveError, t('conversation.updateRuntimeFailed')));
       setSaving(false);
     }
   };
 
   return (
-    <div className="mobile-sheet-backdrop" role="presentation">
+    <div
+      className="mobile-sheet-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <section
+        ref={dialogRef}
         className="mobile-bottom-sheet"
         role="dialog"
         aria-modal="true"
         aria-labelledby="runtime-sheet-title"
+        tabIndex={-1}
       >
         <header>
           <div>
-            <p className="mobile-eyebrow">Session runtime</p>
-            <h2 id="runtime-sheet-title">Model and thinking</h2>
+            <p className="mobile-eyebrow">{t('conversation.runtime')}</p>
+            <h2 id="runtime-sheet-title">{t('conversation.modelAndThinking')}</h2>
           </div>
           <button
             type="button"
@@ -443,7 +469,7 @@ function RuntimeSheet({
           </button>
         </header>
         <form onSubmit={save}>
-          <label htmlFor="mobile-session-model">Account / provider and model</label>
+          <label htmlFor="mobile-session-model">{t('conversation.providerModel')}</label>
           <select
             id="mobile-session-model"
             value={selectedKey}
@@ -463,7 +489,7 @@ function RuntimeSheet({
               </option>
             ))}
           </select>
-          <label htmlFor="mobile-session-thinking">Thinking level</label>
+          <label htmlFor="mobile-session-thinking">{t('conversation.thinkingLevel')}</label>
           <select
             id="mobile-session-thinking"
             value={thinking}
@@ -486,9 +512,76 @@ function RuntimeSheet({
             type="submit"
             disabled={loading || saving}
           >
-            {saving ? 'Updating…' : 'Update session'}
+            {saving ? t('conversation.updating') : t('conversation.updateSession')}
           </button>
         </form>
+      </section>
+    </div>
+  );
+}
+
+interface ToolsSheetProps {
+  attachDisabled: boolean;
+  onAttach: () => void;
+  onInspector: () => void;
+  onActions: () => void;
+  onClose: () => void;
+}
+
+function ToolsSheet({
+  attachDisabled,
+  onAttach,
+  onInspector,
+  onActions,
+  onClose,
+}: ToolsSheetProps) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  useMobileDialog(dialogRef, onClose);
+
+  return (
+    <div
+      className="mobile-sheet-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="mobile-bottom-sheet mobile-tools-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-tools-title"
+        tabIndex={-1}
+      >
+        <header>
+          <div>
+            <p className="mobile-eyebrow">{t('conversation.tools')}</p>
+            <h2 id="mobile-tools-title">{t('conversation.tools')}</h2>
+          </div>
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label={t('common.close')}
+            onClick={onClose}
+          >
+            <X aria-hidden="true" size={20} />
+          </button>
+        </header>
+        <div className="mobile-tools-list">
+          <button type="button" onClick={onAttach} disabled={attachDisabled}>
+            <ImagePlus aria-hidden="true" size={19} />
+            <span>{t('conversation.attachImages')}</span>
+          </button>
+          <button type="button" onClick={onInspector}>
+            <FileSearch aria-hidden="true" size={19} />
+            <span>{t('conversation.projectInspector')}</span>
+          </button>
+          <button type="button" onClick={onActions}>
+            <MoreHorizontal aria-hidden="true" size={19} />
+            <span>{t('conversation.threadActions')}</span>
+          </button>
+        </div>
       </section>
     </div>
   );
@@ -507,7 +600,6 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
-  const [focused, setFocused] = useState(false);
   const [palette, setPalette] = useState<'files' | 'commands' | null>(null);
   const [paletteFiles, setPaletteFiles] = useState<MobileFile[]>([]);
   const [paletteCommands, setPaletteCommands] = useState<MobileCommand[]>([]);
@@ -521,8 +613,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const [connection, setConnection] = useState<MobileConnectionState>('connecting');
   const [composerError, setComposerError] = useState('');
   const [runtimeOpen, setRuntimeOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const [toolsSheet, setToolsSheet] = useState<'menu' | 'inspector' | 'actions' | null>(null);
   const [runtimeProvider, setRuntimeProvider] = useState(embeddedDetails?.modelProvider || '');
   const [runtimeModel, setRuntimeModel] = useState(embeddedDetails?.model || '');
   const [runtimeThinking, setRuntimeThinking] = useState<ThinkingLevel>(
@@ -530,7 +621,9 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   );
   const feedRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
   const didInitialScroll = useRef(false);
   const startupReloadRef = useRef(
     embeddedDetails === null
@@ -731,6 +824,13 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
   }, [details]);
 
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  }, [draft]);
+
   useEffect(() => {
     if (!preview) return;
     const feed = feedRef.current;
@@ -765,7 +865,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         if (feed) feed.scrollTop += feed.scrollHeight - previousHeight;
       });
     } catch (loadError) {
-      setComposerError(errorMessage(loadError, 'Could not load older messages.'));
+      setComposerError(errorMessage(loadError, t('conversation.loadOlderFailed')));
     } finally {
       setLoadingOlder(false);
     }
@@ -783,11 +883,10 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       setDraft('');
       setAttachments([]);
       setWorkerStatus((current) => ({ ...current, state: 'running' }));
-      setFocused(false);
       requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
     } catch (sendError) {
       setPendingPrompt('');
-      setComposerError(errorMessage(sendError, 'Could not send message.'));
+      setComposerError(errorMessage(sendError, t('conversation.sendFailed')));
     } finally {
       setSending(false);
     }
@@ -800,7 +899,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       setWorkerStatus((current) => ({ ...current, state: 'idle' }));
       setPreview('');
     } catch (cancelError) {
-      setComposerError(errorMessage(cancelError, 'Could not cancel the response.'));
+      setComposerError(errorMessage(cancelError, t('conversation.cancelFailed')));
     }
   };
 
@@ -873,7 +972,9 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         setPaletteFiles([]);
         setPaletteCommands([]);
         setPaletteError(
-          type === 'files' ? 'Could not load file suggestions.' : 'Could not load Pi commands.',
+          type === 'files'
+            ? t('conversation.fileSuggestionsLoadFailed')
+            : t('conversation.commandSuggestionsLoadFailed'),
         );
       })
       .finally(() => {
@@ -884,12 +985,6 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     };
   }, [client, draft, getCommands, listFiles, paletteRetry, sessionId]);
 
-  const expandedComposer =
-    focused ||
-    draft.includes('\n') ||
-    draft.length > 80 ||
-    attachments.length > 0 ||
-    palette !== null;
   const chatAvailable = details?.chatAvailable ?? false;
   const disabledReason = details?.chatDisabledReason || t('composer.disabledNotice');
   const cwd = typeof details?.header?.cwd === 'string' ? details.header.cwd : '';
@@ -900,19 +995,31 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       .filter(Boolean)
       .at(-1) || host.instanceName;
   const runtimeProviderLabel =
-    runtimeProvider || workerStatus.modelProvider || details?.modelProvider || 'Provider';
+    runtimeProvider ||
+    workerStatus.modelProvider ||
+    details?.modelProvider ||
+    t('conversation.provider');
   const runtimeModelLabel =
-    runtimeModel || workerStatus.modelName || workerStatus.model || details?.model || 'Model';
-  const runtimeLabel = `${runtimeProviderLabel} · ${runtimeModelLabel} · ${runtimeThinking}`;
+    runtimeModel ||
+    workerStatus.modelName ||
+    workerStatus.model ||
+    details?.model ||
+    t('conversation.model');
   const runtimeStateLabel =
     workerStatus.state === 'running'
-      ? 'Pi is working'
+      ? t('conversation.runtimeWorking')
       : workerStatus.state === 'error'
-        ? `Pi runtime unavailable${workerStatus.error ? `: ${workerStatus.error}` : ''}`
-        : 'Pi is ready';
+        ? workerStatus.error
+          ? t('conversation.runtimeUnavailable', { error: workerStatus.error })
+          : t('conversation.runtimeUnavailableWithoutError')
+        : t('conversation.runtimeReady');
   const composerStyle = {
     '--mobile-keyboard-inset': `${keyboardInset}px`,
   } as CSSProperties;
+  const closeToolSheet = () => {
+    setToolsSheet(null);
+    requestAnimationFrame(() => toolsTriggerRef.current?.focus());
+  };
 
   if (loading) {
     return (
@@ -940,56 +1047,44 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   return (
     <main className="mobile-screen mobile-session-screen" data-mobile-route="session">
       <header className="mobile-conversation-header">
-        {internalLink(
-          '/',
-          <>
-            <ArrowLeft aria-hidden="true" size={21} />
-            <span className="mobile-visually-hidden">{t('session.backToSessions')}</span>
-          </>,
-          'mobile-icon-button',
-        )}
-        <div className="mobile-conversation-title">
-          <h1>{details.name || sessionId}</h1>
-          <p>
-            {project} · {host.instanceName}
-          </p>
-          <span className={`mobile-runtime-state is-${workerStatus.state}`} role="status">
-            {runtimeStateLabel}
+        <div className="mobile-conversation-header-main">
+          {internalLink(
+            '/',
+            <>
+              <ArrowLeft aria-hidden="true" size={21} />
+              <span className="mobile-visually-hidden">{t('session.backToSessions')}</span>
+            </>,
+            'mobile-icon-button',
+          )}
+          <div className="mobile-conversation-title">
+            <h1>{details.name || sessionId}</h1>
+            <p>
+              {project} · {host.instanceName}
+            </p>
+            <span className={`mobile-runtime-state is-${workerStatus.state}`} role="status">
+              {runtimeStateLabel}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="mobile-runtime-picker"
+          aria-label={t('conversation.openRuntime')}
+          onClick={() => setRuntimeOpen(true)}
+        >
+          <span className="mobile-runtime-picker-model">
+            {runtimeProviderLabel} · {runtimeModelLabel}
           </span>
-        </div>
-        <div className="mobile-conversation-actions">
-          <button
-            type="button"
-            className="mobile-icon-button"
-            aria-label="Open files, diff, and details"
-            onClick={() => setInspectorOpen(true)}
-          >
-            <FileSearch aria-hidden="true" size={19} />
-          </button>
-          <button
-            type="button"
-            className="mobile-icon-button"
-            aria-label="Open thread actions"
-            onClick={() => setActionsOpen(true)}
-          >
-            <MoreHorizontal aria-hidden="true" size={20} />
-          </button>
-          <button
-            type="button"
-            className="mobile-icon-button"
-            aria-label="Session model and thinking settings"
-            onClick={() => setRuntimeOpen(true)}
-          >
-            <Settings2 aria-hidden="true" size={20} />
-          </button>
-        </div>
+          <span className="mobile-runtime-picker-thinking">{runtimeThinking}</span>
+          <ChevronDown aria-hidden="true" size={17} />
+        </button>
       </header>
       <MobileConnectivityNotice state={connection} onRetry={retrySession} />
 
       <div
         className="mobile-conversation-feed"
         ref={feedRef}
-        aria-label="Conversation messages"
+        aria-label={t('conversation.messages')}
         tabIndex={0}
       >
         {details.from > 0 && (
@@ -1004,9 +1099,9 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         )}
         {entries.length === 0 && !pendingPrompt && (
           <div className="mobile-empty-conversation">
-            <p className="mobile-eyebrow">New session</p>
-            <h2>What should pi work on?</h2>
-            <p>Send a task below to begin in {project}.</p>
+            <p className="mobile-eyebrow">{t('conversation.newSession')}</p>
+            <h2>{t('conversation.emptyTitle')}</h2>
+            <p>{t('conversation.emptyHint', { project })}</p>
           </div>
         )}
         {entries.map((entry, index) => (
@@ -1025,7 +1120,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
               {pendingPrompt ||
                 `${attachments.length} image attachment${attachments.length === 1 ? '' : 's'}`}
             </p>
-            <small>Sending</small>
+            <small>{t('conversation.sending')}</small>
           </article>
         )}
         {preview && (
@@ -1033,7 +1128,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
             className="mobile-message mobile-assistant-message is-preview"
             aria-live="polite"
           >
-            <div className="mobile-message-role">Assistant · working</div>
+            <div className="mobile-message-role">{t('conversation.assistantWorking')}</div>
             <p>{preview}</p>
           </article>
         )}
@@ -1041,11 +1136,9 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       </div>
 
       <form
-        className={`mobile-composer${expandedComposer ? ' is-expanded' : ''}`}
+        className="mobile-composer"
         style={composerStyle}
         data-keyboard-inset={keyboardInset}
-        data-collapsed-height="64"
-        data-expanded-height="156"
         onSubmit={sendMessage}
       >
         {composerError && (
@@ -1059,14 +1152,14 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           </p>
         )}
         {attachments.length > 0 && (
-          <div className="mobile-attachment-strip" aria-label="Image attachments">
+          <div className="mobile-attachment-strip" aria-label={t('conversation.imageAttachments')}>
             {attachments.map((file, index) => (
               <span key={`${file.name}:${file.size}:${index}`}>
                 <ImagePlus aria-hidden="true" size={15} />
                 <span>{file.name}</span>
                 <button
                   type="button"
-                  aria-label={`Remove ${file.name}`}
+                  aria-label={t('conversation.removeAttachment', { name: file.name })}
                   onClick={() =>
                     setAttachments((current) =>
                       current.filter((_, itemIndex) => itemIndex !== index),
@@ -1083,9 +1176,15 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           <div
             className="mobile-composer-palette"
             role="listbox"
-            aria-label={palette === 'files' ? 'Project file suggestions' : 'Pi command suggestions'}
+            aria-label={
+              palette === 'files'
+                ? t('conversation.fileSuggestions')
+                : t('conversation.commandSuggestions')
+            }
           >
-            {paletteLoading && <span className="mobile-palette-status">Loading…</span>}
+            {paletteLoading && (
+              <span className="mobile-palette-status">{t('conversation.loading')}</span>
+            )}
             {!paletteLoading && paletteError && (
               <span className="mobile-palette-status" role="alert">
                 {paletteError}
@@ -1098,13 +1197,13 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
               !paletteError &&
               palette === 'files' &&
               paletteFiles.length === 0 && (
-                <span className="mobile-palette-status">No matching files</span>
+                <span className="mobile-palette-status">{t('conversation.noFiles')}</span>
               )}
             {!paletteLoading &&
               !paletteError &&
               palette === 'commands' &&
               paletteCommands.length === 0 && (
-                <span className="mobile-palette-status">No matching Pi commands</span>
+                <span className="mobile-palette-status">{t('conversation.noCommands')}</span>
               )}
             {palette === 'files' &&
               paletteFiles.map((file) => (
@@ -1120,7 +1219,9 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
                   }}
                 >
                   <span>{file.path}</span>
-                  <small>{file.kind === 'directory' ? 'folder' : 'file'}</small>
+                  <small>
+                    {file.kind === 'directory' ? t('conversation.folder') : t('conversation.file')}
+                  </small>
                 </button>
               ))}
             {palette === 'commands' &&
@@ -1137,78 +1238,83 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
                   }}
                 >
                   <span>/{command.name}</span>
-                  <small>{command.description || command.source || 'Pi command'}</small>
+                  <small>
+                    {command.description || command.source || t('conversation.piCommand')}
+                  </small>
                 </button>
               ))}
           </div>
         )}
         <div className="mobile-composer-chrome">
           <textarea
-            aria-label="Message"
-            placeholder={chatAvailable ? t('composer.placeholder') : disabledReason}
+            ref={textareaRef}
+            aria-label={t('conversation.message')}
+            placeholder={chatAvailable ? t('composer.placeholder') : ''}
             value={draft}
             disabled={!chatAvailable}
             rows={1}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
             onChange={(event) => setDraft(event.currentTarget.value)}
           />
+          <input
+            ref={fileInputRef}
+            className="mobile-file-input"
+            type="file"
+            accept="image/*"
+            multiple
+            aria-label={t('conversation.chooseImageAttachments')}
+            onChange={addAttachments}
+          />
           <div className="mobile-composer-controls">
-            <div className="mobile-composer-context">
-              <button
-                type="button"
-                className="mobile-composer-icon"
-                aria-label="Attach images"
-                disabled={!chatAvailable}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <ImagePlus aria-hidden="true" size={19} />
-              </button>
-              <input
-                ref={fileInputRef}
-                className="mobile-file-input"
-                type="file"
-                accept="image/*"
-                multiple
-                aria-label="Choose image attachments"
-                onChange={addAttachments}
-              />
-              <button
-                type="button"
-                className="mobile-runtime-pill"
-                aria-label={`${runtimeLabel}. ${runtimeStateLabel}. Open settings`}
-                onClick={() => setRuntimeOpen(true)}
-              >
-                <span className={`mobile-status-dot is-${workerStatus.state}`} />
-                <span>{runtimeLabel}</span>
-                <ChevronDown aria-hidden="true" size={14} />
-              </button>
-            </div>
             <button
-              type="submit"
-              className="mobile-send-button"
-              aria-label={
-                workerStatus.state === 'running' ? t('composer.steer') : t('composer.send')
-              }
-              disabled={!chatAvailable || sending || (!draft.trim() && attachments.length === 0)}
+              ref={toolsTriggerRef}
+              type="button"
+              className="mobile-tools-trigger"
+              aria-label={t('conversation.tools')}
+              onClick={() => setToolsSheet('menu')}
             >
-              <Send aria-hidden="true" size={18} />
+              <Wrench aria-hidden="true" size={18} />
+              <span>{t('conversation.tools')}</span>
             </button>
-            {workerStatus.state === 'running' && (
+            {workerStatus.state === 'running' && !draft.trim() && attachments.length === 0 ? (
               <button
                 type="button"
-                className="mobile-cancel-button"
-                aria-label={t('composer.cancelRunning')}
+                className="mobile-stop-button"
+                aria-label={t('composer.stop')}
+                disabled={!chatAvailable || sending}
                 onClick={() => void cancel()}
               >
                 <Square aria-hidden="true" size={16} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="mobile-send-button"
+                aria-label={
+                  workerStatus.state === 'running' ? t('composer.steer') : t('composer.send')
+                }
+                disabled={!chatAvailable || sending || (!draft.trim() && attachments.length === 0)}
+              >
+                <Send aria-hidden="true" size={18} />
               </button>
             )}
           </div>
         </div>
       </form>
 
-      {inspectorOpen && (
+      {toolsSheet === 'menu' && (
+        <ToolsSheet
+          attachDisabled={!chatAvailable}
+          onAttach={() => {
+            setToolsSheet(null);
+            fileInputRef.current?.click();
+          }}
+          onInspector={() => setToolsSheet('inspector')}
+          onActions={() => setToolsSheet('actions')}
+          onClose={() => setToolsSheet(null)}
+        />
+      )}
+
+      {toolsSheet === 'inspector' && (
         <InspectorSheet
           client={client}
           sessionId={sessionId}
@@ -1218,23 +1324,23 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           thinking={runtimeThinking}
           entryCount={details.total}
           entries={details.entries}
-          onClose={() => setInspectorOpen(false)}
+          onClose={closeToolSheet}
         />
       )}
 
-      {actionsOpen && (
+      {toolsSheet === 'actions' && (
         <ThreadActionsSheet
           client={client}
           sessionId={sessionId}
           sessionName={details.name || sessionId}
           leafEntryId={entries.at(-1)?.id}
-          onClose={() => setActionsOpen(false)}
+          onClose={closeToolSheet}
           onRenamed={(name) => {
             setDetails((current) => (current ? { ...current, name } : current));
-            setActionsOpen(false);
+            closeToolSheet();
           }}
           onNavigate={(nextId) => {
-            setActionsOpen(false);
+            setToolsSheet(null);
             window.history.pushState({}, '', `/session?id=${encodeURIComponent(nextId)}`);
             window.dispatchEvent(new PopStateEvent('popstate'));
           }}
