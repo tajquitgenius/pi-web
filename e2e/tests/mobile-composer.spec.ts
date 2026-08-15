@@ -110,10 +110,18 @@ test.describe("iPhone mobile composer", () => {
         configurable: true,
         value: true,
       });
-      const state: { height?: number } = {};
+      const state = { height: 815 };
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        get: () => state.height,
+      });
+      Object.defineProperty(window.screen, "height", {
+        configurable: true,
+        value: 874,
+      });
       const viewport = new EventTarget() as VisualViewport;
       Object.defineProperties(viewport, {
-        height: { configurable: true, get: () => state.height ?? window.innerHeight },
+        height: { configurable: true, get: () => state.height },
         offsetTop: { configurable: true, get: () => 0 },
       });
       Object.defineProperty(window, "visualViewport", {
@@ -134,6 +142,10 @@ test.describe("iPhone mobile composer", () => {
     await openTestConversation(page, sessionsDir, testInfo, "sticky-viewport");
 
     const message = page.getByRole("textbox", { name: "Message", exact: true });
+    const initialRootBottom = await page
+      .locator(".mobile-session-screen")
+      .evaluate((root) => root.getBoundingClientRect().bottom);
+    expect(initialRootBottom).toBeCloseTo(874, 0);
     await message.focus();
     await page.evaluate(() =>
       (
@@ -144,6 +156,10 @@ test.describe("iPhone mobile composer", () => {
       "data-keyboard-open",
       "true",
     );
+    const firstOpenRootBottom = await page
+      .locator(".mobile-session-screen")
+      .evaluate((root) => root.getBoundingClientRect().bottom);
+    expect(firstOpenRootBottom).toBeCloseTo(459, 0);
 
     await message.blur();
     await page.evaluate(() =>

@@ -651,6 +651,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const previewBaselineRef = useRef<Set<string> | null>(null);
   const keyboardViewportBaselineRef = useRef(0);
   const keyboardViewportDeficitRef = useRef(0);
+  const keyboardScreenSeedHeightRef = useRef(0);
   const keyboardWasOpenRef = useRef(false);
   const refreshGenerationRef = useRef(0);
   const [pendingPrompt, setPendingPrompt] = useState('');
@@ -897,15 +898,26 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     const standalone =
       window.matchMedia?.('(display-mode: standalone)').matches === true ||
       Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+    const standaloneIPhone = standalone && /iPhone|iPod/.test(navigator.userAgent);
     const update = () => {
       const visibleBottom = viewport.height + viewport.offsetTop;
       const currentViewportHeight = Math.max(window.innerHeight, visibleBottom);
       const composerFocused = document.activeElement === textareaRef.current;
+      const screenDeficit = window.screen.height - currentViewportHeight;
+      const hasHealthyScreenReference =
+        standaloneIPhone && screenDeficit >= 0 && screenDeficit <= 120;
       if (keyboardViewportBaselineRef.current === 0) {
-        keyboardViewportBaselineRef.current = currentViewportHeight;
+        keyboardViewportBaselineRef.current = hasHealthyScreenReference
+          ? window.screen.height
+          : currentViewportHeight;
+        keyboardScreenSeedHeightRef.current =
+          hasHealthyScreenReference && screenDeficit > 0 ? currentViewportHeight : 0;
       }
       let baseline = keyboardViewportBaselineRef.current;
       const keyboardOpen = composerFocused && baseline - visibleBottom > 120;
+      const usingInitialScreenSeed =
+        keyboardScreenSeedHeightRef.current > 0 &&
+        Math.abs(keyboardScreenSeedHeightRef.current - currentViewportHeight) < 1;
       if (keyboardOpen) {
         keyboardWasOpenRef.current = true;
       } else {
@@ -913,10 +925,11 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         if (currentViewportHeight >= baseline) {
           keyboardViewportBaselineRef.current = currentViewportHeight;
           keyboardViewportDeficitRef.current = 0;
+          keyboardScreenSeedHeightRef.current = 0;
           keyboardWasOpenRef.current = false;
         } else if (
           standalone &&
-          keyboardWasOpenRef.current &&
+          (keyboardWasOpenRef.current || usingInitialScreenSeed) &&
           closedDeficit > 0 &&
           closedDeficit <= 120
         ) {
@@ -925,6 +938,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         } else if (!composerFocused && !keyboardWasOpenRef.current) {
           keyboardViewportBaselineRef.current = currentViewportHeight;
           keyboardViewportDeficitRef.current = 0;
+          keyboardScreenSeedHeightRef.current = 0;
         }
         baseline = keyboardViewportBaselineRef.current;
       }
@@ -947,6 +961,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       orientationResetTimer = window.setTimeout(() => {
         keyboardViewportBaselineRef.current = 0;
         keyboardViewportDeficitRef.current = 0;
+        keyboardScreenSeedHeightRef.current = 0;
         keyboardWasOpenRef.current = false;
         update();
       }, 250);

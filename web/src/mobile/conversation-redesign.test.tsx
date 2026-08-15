@@ -531,6 +531,8 @@ describe('mobile conversation redesign', () => {
     });
     vi.stubGlobal('visualViewport', visualViewport);
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('iPhone');
+    vi.spyOn(window.screen, 'height', 'get').mockReturnValue(800);
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
       value: 800,
@@ -593,6 +595,31 @@ describe('mobile conversation redesign', () => {
     Object.defineProperty(visualViewport, 'height', { configurable: true, value: 800 });
     act(() => visualViewport.dispatchEvent(new Event('resize')));
     await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false'));
+  });
+
+  it('restores the iPhone screen anchor when the app launches with a poisoned viewport', async () => {
+    const visualViewport = new EventTarget() as VisualViewport;
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 741 },
+      offsetTop: { configurable: true, value: 0 },
+    });
+    vi.stubGlobal('visualViewport', visualViewport);
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('iPhone');
+    vi.spyOn(window.screen, 'height', 'get').mockReturnValue(800);
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 741,
+      writable: true,
+    });
+
+    renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+    const screenRoot = screen.getByRole('main');
+
+    expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false');
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('800px');
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-top')).toBe('0px');
   });
 
   it('keeps the full-height composer anchor through the iOS dismissal shrink', async () => {
