@@ -132,6 +132,193 @@ func TestRecomputeAndBroadcastStatusNoBroadcastWhenUnchanged(t *testing.T) {
 	}
 }
 
+func TestThreadStaysRunningUntilLastBackgroundAgentTerminates(t *testing.T) {
+	sessionsDir := t.TempDir()
+	sessionDir := filepath.Join(sessionsDir, "--repo--")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "parent.jsonl"
+	sessionPath := filepath.Join(sessionDir, sessionID)
+	created := `{"type":"session","version":3,"id":"parent","timestamp":"2026-08-15T00:00:00Z","cwd":"/repo"}` + "\n" +
+		`{"type":"custom","customType":"background-agent-run-created","data":{"run":{"id":"agent-1","status":"running"}}}` + "\n"
+	if err := os.WriteFile(sessionPath, []byte(created), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().Add(time.Minute)
+	s := &Server{
+		sessionsDir: sessionsDir,
+		chatSender: &fakeSender{status: workers.WorkerStatus{
+			State: workers.WorkerStateIdle,
+			Model: "settled-parent",
+		}},
+		clients:   make([]*sseClient, 0),
+		lastKnown: map[string]struct{}{sessionID: {}},
+		fileMod:   map[string]time.Time{sessionID: now.Add(-time.Minute)},
+		now:       func() time.Time { return now },
+	}
+	client := s.addClient(globalSessID)
+	defer s.removeClient(client)
+
+	s.recomputeAndBroadcastStatus(sessionID)
+	select {
+	case msg := <-client.ch:
+		t.Fatalf("live background agent made settled parent idle: %q", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if _, running := s.lastKnown[sessionID]; !running {
+		t.Fatal("thread must remain running while a background agent is live")
+	}
+
+	file, err := os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := file.WriteString(`{"type":"custom","customType":"background-agent-run-terminal","data":{"run":{"id":"agent-1","status":"completed"}}}` + "\n")
+	closeErr := file.Close()
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+
+	// The short grace window lets a terminal child publish an automatic parent
+	// continuation without bouncing the thread idle in between.
+	s.recomputeAndBroadcastStatus(sessionID)
+	now = now.Add(time.Second)
+	s.recomputeAndBroadcastStatus(sessionID)
+	select {
+	case msg := <-client.ch:
+		want := "event: status-delta\ndata: {\"id\":\"parent.jsonl\",\"running\":false}"
+		if msg != want {
+			t.Fatalf("msg = %q want %q", msg, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected idle delta after the final background agent terminated")
+	}
+}
+
+func TestLastBackgroundTerminalDoesNotBounceIdleBeforeAutomaticContinuation(t *testing.T) {
+	sessionsDir := t.TempDir()
+	sessionDir := filepath.Join(sessionsDir, "--repo--")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "parent.jsonl"
+	sessionPath := filepath.Join(sessionDir, sessionID)
+	contents := `{"type":"session","version":3,"id":"parent","timestamp":"2026-08-15T00:00:00Z","cwd":"/repo"}` + "\n" +
+		`{"type":"custom","customType":"background-agent-run-created","data":{"run":{"id":"agent-1","status":"running"}}}` + "\n"
+	if err := os.WriteFile(sessionPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	sender := &fakeSender{status: workers.WorkerStatus{State: workers.WorkerStateIdle, Model: "settled-parent"}}
+	s := &Server{
+		sessionsDir: sessionsDir,
+		chatSender:  sender,
+		clients:     make([]*sseClient, 0),
+		lastKnown:   map[string]struct{}{sessionID: {}},
+		fileMod:     map[string]time.Time{sessionID: now.Add(-time.Minute)},
+		now:         func() time.Time { return now },
+	}
+	client := s.addClient(globalSessID)
+	defer s.removeClient(client)
+
+	file, err := os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := file.WriteString(`{"type":"custom","customType":"background-agent-run-terminal","data":{"run":{"id":"agent-1","status":"completed"}}}` + "\n")
+	closeErr := file.Close()
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+
+	s.recomputeAndBroadcastStatus(sessionID)
+	select {
+	case msg := <-client.ch:
+		t.Fatalf("last terminal bounced thread idle before result continuation: %q", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	sender.status = workers.WorkerStatus{State: workers.WorkerStateRunning, Model: "continuation"}
+	s.recomputeAndBroadcastStatus(sessionID)
+	sender.status = workers.WorkerStatus{State: workers.WorkerStateIdle, Model: "continuation"}
+	now = now.Add(time.Second)
+	s.recomputeAndBroadcastStatus(sessionID)
+
+	select {
+	case msg := <-client.ch:
+		want := "event: status-delta\ndata: {\"id\":\"parent.jsonl\",\"running\":false}"
+		if msg != want {
+			t.Fatalf("msg = %q want %q", msg, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected one idle delta after the automatic continuation settled")
+	}
+	select {
+	case msg := <-client.ch:
+		t.Fatalf("unexpected duplicate status transition: %q", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestParentIdleKicksQueueWhileBackgroundAgentKeepsThreadRunning(t *testing.T) {
+	sessionsDir := t.TempDir()
+	sessionDir := filepath.Join(sessionsDir, "--repo--")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "parent.jsonl"
+	contents := `{"type":"session","version":3,"id":"parent","timestamp":"2026-08-15T00:00:00Z","cwd":"/repo"}` + "\n" +
+		`{"type":"custom","customType":"background-agent-run-created","data":{"run":{"id":"agent-1","status":"running"}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, sessionID), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sender := &fakeSender{status: workers.WorkerStatus{State: workers.WorkerStateRunning}}
+	s := &Server{
+		sessionsDir: sessionsDir,
+		chatSender:  sender,
+		clients:     make([]*sseClient, 0),
+		lastKnown:   make(map[string]struct{}),
+		fileMod:     make(map[string]time.Time),
+		now:         time.Now,
+	}
+	s.queueDrainer = newQueueDrainer(s)
+	client := s.addClient(globalSessID)
+	defer s.removeClient(client)
+
+	s.recomputeAndBroadcastStatus(sessionID)
+	select {
+	case <-client.ch:
+	case <-time.After(time.Second):
+		t.Fatal("expected initial running delta")
+	}
+
+	sender.status = workers.WorkerStatus{State: workers.WorkerStateIdle, Model: "settled-parent"}
+	s.recomputeAndBroadcastStatus(sessionID)
+	select {
+	case kicked := <-s.queueDrainer.kickCh:
+		if kicked != sessionID {
+			t.Fatalf("kicked session = %q, want %q", kicked, sessionID)
+		}
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("parent idle transition did not promptly kick its queue")
+	}
+	select {
+	case msg := <-client.ch:
+		t.Fatalf("thread should remain running while background agent is live: %q", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestRecomputeAndBroadcastStatusFlipsBackToIdle(t *testing.T) {
 	s := &Server{
 		sessionsDir: t.TempDir(),

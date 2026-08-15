@@ -22,6 +22,20 @@ function message(id: string, content: string, parentId?: string): SessionEntry {
   };
 }
 
+function assistantMessage(
+  id: string,
+  content: unknown,
+  timestamp = '2026-01-01T12:34:00Z',
+): SessionEntry {
+  return {
+    id,
+    parentId: null,
+    timestamp,
+    type: 'message',
+    message: { role: 'assistant', content },
+  };
+}
+
 function details(entries: SessionEntry[], overrides: Partial<SessionDetails> = {}): SessionDetails {
   return {
     header: { cwd: '/work/project' },
@@ -77,6 +91,41 @@ afterEach(() => {
 });
 
 describe('desktop transcript', () => {
+  it('copies only the settled assistant response text from its metadata row', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    renderTranscript([
+      assistantMessage('assistant', [
+        { type: 'thinking', thinking: 'Private reasoning' },
+        { type: 'text', text: 'First paragraph' },
+        { type: 'toolCall', id: 'tool-1', name: 'read', arguments: { path: 'secret.txt' } },
+        { type: 'text', text: 'Second paragraph' },
+      ]),
+    ]);
+
+    const copyButton = screen.getByRole('button', { name: 'Copy response' });
+    expect(
+      copyButton.closest('.desktop-message-metadata')?.querySelector('time'),
+    ).toHaveTextContent(/\S/);
+
+    fireEvent.click(copyButton);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith('First paragraph\nSecond paragraph'),
+    );
+    expect(screen.getByRole('button', { name: 'Response copied' })).toBeInTheDocument();
+  });
+
+  it('does not offer copying for a streaming assistant preview', () => {
+    render(<Transcript details={details([])} streamingText="Still arriving" />);
+
+    expect(screen.getByText('Still arriving')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy response' })).toBeNull();
+  });
+
   it('renders only the active root-to-leaf chain and omits inactive forks', () => {
     renderTranscript([
       message('root', 'root'),

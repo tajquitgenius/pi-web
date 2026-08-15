@@ -138,7 +138,7 @@ func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("id")
 
 	status := workers.WorkerStatus{State: workers.WorkerStateIdle}
-	if s.computeRunningStatus(sessionID) {
+	if s.computeWorkerRunningStatus(sessionID) {
 		status.State = workers.WorkerStateRunning
 	} else if s.chatSender != nil {
 		// Do not create/prewarm workers from status polling. A browser can poll

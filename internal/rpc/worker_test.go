@@ -43,7 +43,7 @@ func TestStatusReportsRunningDuringRecentStreamActivity(t *testing.T) {
 	}
 }
 
-func TestStatusReturnsIdleAfterAgentEnd(t *testing.T) {
+func TestStatusStaysRunningUntilAgentSettles(t *testing.T) {
 	w := &piRPCWorker{
 		status:  workers.WorkerStatus{State: workers.WorkerStateRunning},
 		pending: make(map[string]chan response),
@@ -52,8 +52,47 @@ func TestStatusReturnsIdleAfterAgentEnd(t *testing.T) {
 	w.handleRPCLine(`{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hello"}}`)
 	w.handleRPCLine(`{"type":"agent_end"}`)
 
+	if got := w.Status(); got.State != workers.WorkerStateRunning {
+		t.Fatalf("status after agent_end = %q, want running", got.State)
+	}
+
+	w.handleRPCLine(`{"type":"agent_settled"}`)
 	if got := w.Status(); got.State != workers.WorkerStateIdle {
-		t.Fatalf("status = %q, want idle", got.State)
+		t.Fatalf("status after agent_settled = %q, want idle", got.State)
+	}
+}
+
+func TestAgentStartMarksAutomaticContinuationRunning(t *testing.T) {
+	w := &piRPCWorker{
+		status:       workers.WorkerStatus{State: workers.WorkerStateIdle},
+		currentModel: "gpt-test",
+		pending:      make(map[string]chan response),
+	}
+
+	w.handleRPCLine(`{"type":"agent_start"}`)
+	if got := w.Status(); got.State != workers.WorkerStateRunning || got.Model != "gpt-test" {
+		t.Fatalf("status after agent_start = %+v, want running with model metadata preserved", got)
+	}
+
+	w.handleRPCLine(`{"type":"agent_settled"}`)
+	if got := w.Status(); got.State != workers.WorkerStateIdle {
+		t.Fatalf("status after agent_settled = %q, want idle", got.State)
+	}
+}
+
+func TestLegacyRuntimeWithoutAgentSettledEventuallyBecomesIdle(t *testing.T) {
+	now := time.Now()
+	w := &piRPCWorker{
+		status:  workers.WorkerStatus{State: workers.WorkerStateRunning},
+		pending: make(map[string]chan response),
+		now:     func() time.Time { return now },
+	}
+
+	w.handleRPCLine(`{"type":"agent_end"}`)
+	now = now.Add(31 * time.Second)
+
+	if got := w.Status(); got.State != workers.WorkerStateIdle {
+		t.Fatalf("legacy status = %q, want idle after settlement fallback", got.State)
 	}
 }
 

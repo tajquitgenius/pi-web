@@ -16,10 +16,7 @@ var ErrSessionNotFound = errors.New("session not found")
 var ErrInvalidSessionID = errors.New("invalid session id")
 
 func ResolveByID(sessionsDir, id string) (ResolvedSession, error) {
-	if id == "" || filepath.Base(id) != id || filepath.Ext(id) != ".jsonl" {
-		return ResolvedSession{}, ErrInvalidSessionID
-	}
-	path, err := findPathByFilename(sessionsDir, id)
+	path, err := FindPathByID(sessionsDir, id)
 	if err != nil {
 		return ResolvedSession{}, err
 	}
@@ -30,7 +27,11 @@ func ResolveByID(sessionsDir, id string) (ResolvedSession, error) {
 	return ResolvedSession{Session: sess, Path: path}, nil
 }
 
-func findPathByFilename(sessionsDir, id string) (string, error) {
+// FindPathByID resolves a session filename without parsing its transcript.
+func FindPathByID(sessionsDir, id string) (string, error) {
+	if id == "" || filepath.Base(id) != id || filepath.Ext(id) != ".jsonl" {
+		return "", ErrInvalidSessionID
+	}
 	entries, err := os.ReadDir(sessionsDir)
 	if err != nil {
 		return "", err

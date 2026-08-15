@@ -1173,6 +1173,36 @@ textarea:disabled {
   padding: 2px 3px 2px;
 }
 
+.mobile-message-metadata {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.mobile-message-metadata button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+}
+
+.mobile-message-metadata button:active {
+  color: var(--text-soft);
+  background: var(--surface-2);
+}
+
+.mobile-message-metadata button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
 .mobile-message-role {
   margin-bottom: 8px;
   color: var(--accent);

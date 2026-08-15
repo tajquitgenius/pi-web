@@ -29,6 +29,9 @@ type piRPCWorker struct {
 	currentModel         string
 	currentProvider      string
 	currentThinkingLevel string
+	agentEndAt           time.Time
+	settlementObserved   bool
+	now                  func() time.Time
 	stderrBuf            *strings.Builder
 	commands             []workers.SlashCommand
 	commandsCached       bool
@@ -303,6 +306,14 @@ func (w *piRPCWorker) refreshThinkingLevel() {
 }
 
 const streamActivityWindow = 2 * time.Second
+const legacySettlementFallback = 30 * time.Second
+
+func (w *piRPCWorker) currentTime() time.Time {
+	if w.now != nil {
+		return w.now()
+	}
+	return time.Now()
+}
 
 func (w *piRPCWorker) Status() workers.WorkerStatus {
 	w.mu.Lock()
@@ -311,8 +322,12 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 	s.Model = w.currentModel
 	s.ModelProvider = w.currentProvider
 	s.ThinkingLevel = w.currentThinkingLevel
-	if s.State == workers.WorkerStateIdle && w.hasRecentStreamActivityLocked(time.Now()) {
+	now := w.currentTime()
+	if s.State == workers.WorkerStateIdle && w.hasRecentStreamActivityLocked(now) {
 		s.State = workers.WorkerStateRunning
+	}
+	if s.State == workers.WorkerStateRunning && !w.settlementObserved && !w.agentEndAt.IsZero() && now.Sub(w.agentEndAt) >= legacySettlementFallback {
+		s.State = workers.WorkerStateIdle
 	}
 	return s
 }
@@ -419,10 +434,22 @@ func (w *piRPCWorker) handleRPCLine(line string) {
 	case "message_end", "turn_end":
 		w.noteStreamActivity()
 		w.completeStreamPreview()
+	case "agent_start":
+		w.mu.Lock()
+		w.status.State = workers.WorkerStateRunning
+		w.status.Error = ""
+		w.agentEndAt = time.Time{}
+		w.mu.Unlock()
 	case "agent_end":
 		w.completeStreamPreview()
 		w.mu.Lock()
+		w.agentEndAt = w.currentTime()
+		w.mu.Unlock()
+	case "agent_settled":
+		w.mu.Lock()
 		w.status = workers.WorkerStatus{State: workers.WorkerStateIdle}
+		w.agentEndAt = time.Time{}
+		w.settlementObserved = true
 		w.mu.Unlock()
 		w.lastStreamActivity.Store(0)
 	case "thinking_level_changed":

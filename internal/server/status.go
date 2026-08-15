@@ -7,17 +7,10 @@ import (
 	"pi-web/internal/workers"
 )
 
-// computeRunningStatus is the single source of truth for "is this session
-// running right now". Both the HTTP handler (handleWorkerStatus) and the SSE
-// broadcaster (recomputeAndBroadcastStatus) call this; that is what keeps
-// terminal sessions, chat workers, and the recent-activity fallback from
-// drifting apart.
-//
-// Order matches the historical behaviour of handleWorkerStatus:
-//  1. session-status/<id> file (terminal sessions)
-//  2. in-process chat worker status
-//  3. recent jsonl mtime within recentSessionActivityWindow
-func (s *Server) computeRunningStatus(sessionID string) bool {
+// computeWorkerRunningStatus reports whether the parent agent itself is
+// running. It intentionally excludes background agents so worker-status and
+// Cancel controls remain scoped to the parent process.
+func (s *Server) computeWorkerRunningStatus(sessionID string) bool {
 	if sessionID == "" {
 		return false
 	}
@@ -41,6 +34,12 @@ func (s *Server) computeRunningStatus(sessionID string) bool {
 		}
 	}
 	return s.hasRecentSessionActivity(sessionID)
+}
+
+// computeRunningStatus is the thread-list aggregate: a thread remains running
+// until its parent has settled and every background agent is terminal.
+func (s *Server) computeRunningStatus(sessionID string) bool {
+	return s.computeWorkerRunningStatus(sessionID) || s.hasActiveBackgroundRuns(sessionID)
 }
 
 func (s *Server) runningStatusPayload(sessionID string, running bool) map[string]any {
@@ -78,7 +77,23 @@ func (s *Server) recomputeAndBroadcastStatus(sessionID string) {
 	if sessionID == "" {
 		return
 	}
-	now := s.computeRunningStatus(sessionID)
+	parentNow := s.computeWorkerRunningStatus(sessionID)
+	now := parentNow || s.hasActiveBackgroundRuns(sessionID)
+
+	s.parentRunningMu.Lock()
+	if s.parentRunning == nil {
+		s.parentRunning = make(map[string]struct{})
+	}
+	_, parentWas := s.parentRunning[sessionID]
+	if parentNow {
+		s.parentRunning[sessionID] = struct{}{}
+	} else {
+		delete(s.parentRunning, sessionID)
+	}
+	s.parentRunningMu.Unlock()
+	if parentWas && !parentNow && s.queueDrainer != nil {
+		s.queueDrainer.kick(sessionID)
+	}
 
 	s.lastKnownMu.Lock()
 	_, was := s.lastKnown[sessionID]
@@ -112,10 +127,4 @@ func (s *Server) recomputeAndBroadcastStatus(sessionID string) {
 		}
 	}
 
-	// Transition running → idle is also the cue for the autonomous queue
-	// drainer: if items are waiting, dispatch the next one now instead of
-	// waiting for the 5-second tick.
-	if was && !now && s.queueDrainer != nil {
-		s.queueDrainer.kick(sessionID)
-	}
 }

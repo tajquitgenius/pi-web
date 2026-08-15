@@ -204,6 +204,44 @@ describe('mobile conversation redesign', () => {
     expect(await screen.findByText('Child answer stays visible')).toBeVisible();
   });
 
+  it('copies only settled assistant response text from its metadata row', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const settledDetails = {
+      ...details,
+      entries: [
+        {
+          id: 'assistant-settled',
+          parentId: null,
+          timestamp: '2026-01-01T12:34:00Z',
+          type: 'message',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'Private reasoning' },
+              { type: 'text', text: 'First paragraph' },
+              { type: 'toolCall', id: 'tool-1', name: 'read', arguments: { path: 'secret.txt' } },
+              { type: 'text', text: 'Second paragraph' },
+            ],
+          },
+        },
+      ],
+    };
+    renderConversation(makeClient(settledDetails));
+
+    const copyButton = await screen.findByRole('button', { name: 'Copy response' });
+    expect(copyButton.closest('.mobile-message-metadata')?.querySelector('time')).toHaveTextContent(
+      /\S/,
+    );
+
+    await user.click(copyButton);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith('First paragraph\nSecond paragraph'),
+    );
+    expect(screen.getByRole('button', { name: 'Response copied' })).toBeInTheDocument();
+  });
+
   it('renders streamed assistant Markdown before the final session reload', async () => {
     let onEvent: ((name: string, payload: unknown) => void) | undefined;
     const client = makeClient(details, {
@@ -220,6 +258,7 @@ describe('mobile conversation redesign', () => {
 
     expect(screen.getByRole('heading', { name: 'Live heading', level: 2 })).toBeVisible();
     expect(screen.getByText('first')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Copy response' })).toBeNull();
   });
 
   it('keeps a completed preview until a new matching assistant entry arrives', async () => {

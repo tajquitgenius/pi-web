@@ -7,8 +7,9 @@
 //   - --session: load the session file path and its initial settings.
 //   - get_state / set_model / set_thinking_level / abort: acknowledge.
 //   - prompt: ack, then append a user turn + a deterministic assistant reply to
-//     the session JSONL (like real pi owns the file) and emit stream + agent_end
-//     events. The browser picks up the reply via the fsnotify->SSE reload path.
+//     the session JSONL (like real pi owns the file) and emit the modern
+//     agent_start → stream → agent_end → agent_settled lifecycle. The browser
+//     picks up the reply via the fsnotify->SSE reload path.
 
 import fs from "node:fs";
 import readline from "node:readline";
@@ -29,7 +30,11 @@ if (sessionPath) {
       if (!line.trim()) continue;
       const entry = JSON.parse(line);
       if (entry.type === "model_change") {
-        model = { id: entry.modelId, name: entry.modelId, provider: entry.provider };
+        model = {
+          id: entry.modelId,
+          name: entry.modelId,
+          provider: entry.provider,
+        };
       } else if (entry.type === "thinking_level_change") {
         thinkingLevel = entry.thinkingLevel;
       }
@@ -45,7 +50,11 @@ if (sessionPath) {
 const COMMANDS = [
   { name: "btw", description: "Open a side-chat popover", source: "extension" },
   { name: "workon", description: "Start working on a task", source: "prompt" },
-  { name: "skill:memory", description: "Project memory skill", source: "skill" },
+  {
+    name: "skill:memory",
+    description: "Project memory skill",
+    source: "skill",
+  },
 ];
 
 function send(obj) {
@@ -62,7 +71,10 @@ function nextId() {
 
 function lastEntryId() {
   try {
-    const lines = fs.readFileSync(sessionPath, "utf8").split("\n").filter((l) => l.trim());
+    const lines = fs
+      .readFileSync(sessionPath, "utf8")
+      .split("\n")
+      .filter((l) => l.trim());
     for (let i = lines.length - 1; i >= 0; i--) {
       const e = JSON.parse(lines[i]);
       if (e && e.id) return e.id;
@@ -86,7 +98,11 @@ function messageEntry(role, text, parentId) {
       id,
       parentId,
       timestamp: new Date().toISOString(),
-      message: { role, content: [{ type: "text", text }], timestamp: Date.now() },
+      message: {
+        role,
+        content: [{ type: "text", text }],
+        timestamp: Date.now(),
+      },
     },
   };
 }
@@ -100,7 +116,10 @@ let activeSlowRun = false;
 function parseDelay(raw) {
   const m = /\s*\[\[slow:(\d+)\]\]\s*/.exec(raw);
   if (!m) return { text: raw, delay: 0 };
-  return { text: (raw.slice(0, m.index) + raw.slice(m.index + m[0].length)).trim(), delay: Number(m[1]) };
+  return {
+    text: (raw.slice(0, m.index) + raw.slice(m.index + m[0].length)).trim(),
+    delay: Number(m[1]),
+  };
 }
 
 function writeTurn(userText, reply) {
@@ -114,7 +133,10 @@ function handlePrompt(cmd) {
   // Ack the prompt command first so POST /api/chat returns promptly.
   respond(cmd.id, "prompt", {});
 
-  const raw = typeof cmd.message === "string" ? cmd.message : JSON.stringify(cmd.message ?? "");
+  const raw =
+    typeof cmd.message === "string"
+      ? cmd.message
+      : JSON.stringify(cmd.message ?? "");
   const { text: userText, delay } = parseDelay(raw);
   const reply = `Stub reply: ${userText}`;
 
@@ -123,18 +145,27 @@ function handlePrompt(cmd) {
   // but let the original run own the agent_end / completion signal.
   if (activeSlowRun) {
     writeTurn(userText, reply);
-    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", text: reply } });
+    send({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", text: reply },
+    });
     return;
   }
 
+  send({ type: "agent_start" });
+
   if (delay > 0) {
     activeSlowRun = true;
-    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", text: "working…" } });
+    send({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", text: "working…" },
+    });
     setTimeout(() => {
       writeTurn(userText, reply);
       send({ type: "message_end" });
       send({ type: "turn_end" });
       send({ type: "agent_end" });
+      send({ type: "agent_settled" });
       activeSlowRun = false;
     }, delay);
     return;
@@ -144,10 +175,14 @@ function handlePrompt(cmd) {
   setTimeout(() => {
     writeTurn(userText, reply);
     // Best-effort stream signals; shape mismatch is harmless to the worker.
-    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", text: reply } });
+    send({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", text: reply },
+    });
     send({ type: "message_end" });
     send({ type: "turn_end" });
     send({ type: "agent_end" });
+    send({ type: "agent_settled" });
   }, 30);
 }
 
@@ -189,6 +224,7 @@ function handle(cmd) {
     case "abort":
       respond(cmd.id, "abort", {});
       send({ type: "agent_end" });
+      send({ type: "agent_settled" });
       break;
     case "get_commands":
       respond(cmd.id, "get_commands", { commands: COMMANDS });
