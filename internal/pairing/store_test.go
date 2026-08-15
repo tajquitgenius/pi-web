@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -260,7 +261,7 @@ func TestPairingCodeKeyPersistsWithOwnerOnlyPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat pairing key: %v", err)
 	}
-	if info.Mode().Perm() != 0600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatalf("pairing key permissions = %o, want 600", info.Mode().Perm())
 	}
 }
