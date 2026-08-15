@@ -34,6 +34,13 @@ import (
 // page subscribes to this so it can refresh when new sessions show up.
 const globalSessID = "__all__"
 
+type RemoteAuthMode uint8
+
+const (
+	RemoteAuthPairing RemoteAuthMode = iota
+	RemoteAuthExternal
+)
+
 // Deps groups everything the server needs that lives outside this package:
 // rendering (which depends on embedded templates in package main), the model
 // list (which depends on a process-wide cache), and the chat sender (which
@@ -43,6 +50,7 @@ type Deps struct {
 	SessionsDir         string
 	Auth                *auth.Middleware
 	PublicURL           string
+	RemoteAuth          RemoteAuthMode
 	ChatSender          ChatSender
 	Cache               *sessions.Cache
 	RenderExportSession func(s sessions.Session, theme string) string
@@ -95,6 +103,7 @@ type Server struct {
 	db                    *sql.DB
 	pairing               *pairing.Store
 	publicAuthority       string
+	remoteAuth            RemoteAuthMode
 	schedules             *schedules.Store
 	chatQueue             *chatqueue.Store
 	queueDrainer          *queueDrainer
@@ -185,6 +194,7 @@ func New(deps Deps) (*Server, error) {
 		db:                    db,
 		pairing:               pairingStore,
 		publicAuthority:       normalizeHTTPSAuthority(deps.PublicURL),
+		remoteAuth:            deps.RemoteAuth,
 		schedules:             schedules.NewStore(db),
 		chatQueue:             chatqueue.NewStore(db),
 		updater:               deps.Updater,
@@ -207,7 +217,7 @@ func New(deps Deps) (*Server, error) {
 	if pm, err := NewPushManager(agentDir); err != nil {
 		fmt.Fprintf(os.Stderr, "push notifications unavailable: %v\n", err)
 	} else {
-		pm.ConfigureDeviceBinding(pairingStore, s.publicAuthority != "")
+		pm.ConfigureDeviceBinding(pairingStore, s.publicAuthority != "" && s.remoteAuth == RemoteAuthPairing)
 		s.push = pm
 	}
 	s.watchFiles()

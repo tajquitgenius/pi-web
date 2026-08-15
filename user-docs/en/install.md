@@ -244,6 +244,7 @@ Keep pi-web on loopback and publish it through an externally managed HTTPS tunne
 cat > ~/.config/pi-web/env <<'EOF'
 PI_WEB_INSTANCE_NAME='Personal laptop'
 PI_WEB_PUBLIC_URL=https://personal-pi.example.com
+PI_WEB_REMOTE_AUTH=external
 PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work-pi.example.com"}]'
 PI_WEB_TOKEN=replace-with-a-random-token
 EOF
@@ -255,9 +256,11 @@ Restart pi-web, then use `/remote` to show the public URL and QR code. The comma
 
 `PI_WEB_PUBLIC_URL` must be an origin-only HTTPS URL: no path, query, fragment, credentials, or wildcard. When set, pi-web refuses a non-loopback bind and accepts browser traffic only for that hostname. It marks the token cookie Secure on the public host.
 
+Device pairing is the default when `PI_WEB_REMOTE_AUTH` is unset or set to `pairing`. The example uses `external`, which disables the `pi_device` gate and requires both an HTTPS public URL and a loopback bind. Use external mode only when a trusted proxy authenticates every remote request. That proxy becomes the sole remote authentication and revocation boundary.
+
 See [Remote access with Cloudflare Access](cloudflare-access.md) for the recommended exact-host Access applications, independent named tunnels, identity allowlist, and verification checklist.
 
-> Remote pi-web access is equivalent to remote code execution as your operating-system user. Require an exact-user identity policy at the tunnel edge, keep the application token for defense in depth, and never publish port `31415` directly.
+> Remote pi-web access is equivalent to remote code execution as your operating-system user. In external mode, require an exact-user identity policy and validated Access JWT at the tunnel edge. Keep `PI_WEB_TOKEN` for optional defense in depth, and never publish port `31415` directly.
 
 ## Browser Chat
 

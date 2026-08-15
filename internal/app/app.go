@@ -29,6 +29,7 @@ import (
 const defaultPort = "31415"
 const tokenEnvVar = "PI_WEB_TOKEN"
 const publicURLEnvVar = "PI_WEB_PUBLIC_URL"
+const remoteAuthEnvVar = "PI_WEB_REMOTE_AUTH"
 const instanceNameEnvVar = "PI_WEB_INSTANCE_NAME"
 const peersJSONEnvVar = "PI_WEB_PEERS_JSON"
 const developmentEnvVar = "PI_WEB_DEV"
@@ -61,12 +62,17 @@ func Main(version string) {
 	}
 
 	bindHost := chooseBindHost(*hostOverride)
+	remoteAuth, err := parseRemoteAuthMode(os.Getenv(remoteAuthEnvVar))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid %s: %v\n", remoteAuthEnvVar, err)
+		os.Exit(1)
+	}
 	publicURL, err := validatePublicURL(*publicURLFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid public URL: %v\n", err)
 		os.Exit(1)
 	}
-	if err := validatePublicBind(publicURL, bindHost); err != nil {
+	if err := validatePublicBind(remoteAuth, publicURL, bindHost); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
@@ -110,6 +116,7 @@ func Main(version string) {
 		SessionsDir:         sessionsDir,
 		Auth:                authMiddleware,
 		PublicURL:           publicURL,
+		RemoteAuth:          remoteAuth,
 		ChatSender:          manager,
 		Cache:               sessions.NewCache(),
 		RenderExportSession: ui.RenderExportSessionPage,
@@ -182,6 +189,11 @@ func Main(version string) {
 	fmt.Printf("Pi Sessions Viewer -> %s\n", url)
 	if publicURL != "" {
 		fmt.Printf("Public HTTPS -> %s\n", publicURL)
+	}
+	if remoteAuth == server.RemoteAuthExternal {
+		fmt.Println("Remote auth: external proxy; device pairing disabled")
+	} else {
+		fmt.Println("Remote auth: device pairing enabled")
 	}
 	fmt.Printf("Serving from: %s\n", sessionsDir)
 	if developmentMode {

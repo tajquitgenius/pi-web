@@ -139,6 +139,7 @@ type Server struct {
     auth          *auth.Middleware
     pairing       *pairing.Store
     publicAuthority string       // exact configured public HTTPS Host
+    remoteAuth    RemoteAuthMode // pairing (default) or trusted external proxy
     shareRunner   shareCmdRunner  // overridable in tests
     now           func() time.Time
     renderExportSession func(s sessions.Session, theme string) string
@@ -174,7 +175,7 @@ type Server struct {
 
 `Deps` (passed to `New`) supplies everything wired from `internal/app`: the
 `RenderExportSession` and `RenderAppShell` renderers, `Models`, `Cache`, `Auth`,
-`PublicURL`, `ChatSender`, plus the optional `Updater`, `RunInstall`, and
+`PublicURL`, typed `RemoteAuth`, `ChatSender`, plus the optional `Updater`, `RunInstall`, and
 `RunRestart`. When
 `Updater` is nil the version/update routes are not registered; when
 `RunInstall`/`RunRestart` are nil the corresponding endpoints respond `503`.
@@ -285,7 +286,7 @@ Before pi-web creates a fresh session, it starts an ephemeral `pi --mode rpc --n
 | `/api/pair` | POST | `handlePairDevice` | Redeem a code and set the device credential cookie |
 | `/api/devices` | GET | `handleDevices` | List paired-device metadata from loopback |
 | `/api/devices/{id}` | DELETE | `handleDevice` | Revoke a paired device from loopback |
-| `/api/pairing-status` | GET | `handlePairingStatus` | Report local trust or public device-pairing state |
+| `/api/pairing-status` | GET | `handlePairingStatus` | Report whether local, paired, or external authentication admitted the request |
 | `/api/session` | GET | `handleApiSession` | JSON session data |
 | `/api/sessions` | GET | `handleApiSessions` | JSON list of session summaries |
 | `/api/chat` | POST | `handleChat` | Send chat message (multipart) |

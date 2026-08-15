@@ -516,6 +516,10 @@ export default {
   'settings.pairingCodeLabel': 'One-time pairing code',
   'settings.pairingCodeExpires': 'Expires',
   'settings.pairingCodeError': 'Could not create a pairing code.',
+  'pairing.externalEyebrow': 'External authentication',
+  'pairing.externalTitle': 'Access granted',
+  'pairing.externalHint':
+    'Your trusted external proxy approved this request. Device pairing is disabled.',
 
   'settings.sessionDisplay': 'Session Display',
   'settings.thinkingExpanded': 'Show thinking by default',

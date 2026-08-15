@@ -56,6 +56,16 @@ func newPairingRouteTestServerWithToken(t *testing.T, publicURL, token string, c
 
 func newPairingRouteTestServerInDir(t *testing.T, dir, publicURL, token string, clock *serverPairingClock) (*Server, http.Handler) {
 	t.Helper()
+	return newRemoteAuthRouteTestServerInDir(t, dir, publicURL, token, RemoteAuthPairing, clock)
+}
+
+func newRemoteAuthRouteTestServer(t *testing.T, publicURL string, remoteAuth RemoteAuthMode, clock *serverPairingClock) (*Server, http.Handler) {
+	t.Helper()
+	return newRemoteAuthRouteTestServerInDir(t, t.TempDir(), publicURL, "", remoteAuth, clock)
+}
+
+func newRemoteAuthRouteTestServerInDir(t *testing.T, dir, publicURL, token string, remoteAuth RemoteAuthMode, clock *serverPairingClock) (*Server, http.Handler) {
+	t.Helper()
 	authMiddleware := auth.New(token)
 	authMiddleware.AllowHost("127.0.0.1:31415")
 	if publicURL != "" {
@@ -66,6 +76,7 @@ func newPairingRouteTestServerInDir(t *testing.T, dir, publicURL, token string, 
 		SessionsDir: dir,
 		Auth:        authMiddleware,
 		PublicURL:   publicURL,
+		RemoteAuth:  remoteAuth,
 		Cache:       sessions.NewCache(),
 		RenderAppShell: func(w io.Writer, _ *http.Request, bootstrap string) error {
 			_, err := io.WriteString(w, "pairing shell")
@@ -191,6 +202,93 @@ func TestPublicDeviceGateExposesOnlyPairingSurface(t *testing.T) {
 	crossOrigin := pairingRequest(handler, http.MethodPost, "https://pi.example/api/pair", `{"code":"AAAAAAAA","label":"Phone"}`, "https://evil.example")
 	if crossOrigin.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin pairing status = %d, want 403", crossOrigin.Code)
+	}
+}
+
+func TestExternalRemoteAuthAllowsPublicRequestsOnlyInsideExactBoundary(t *testing.T) {
+	_, handler := newRemoteAuthRouteTestServer(t, "https://pi.example", RemoteAuthExternal, newServerPairingClock())
+
+	status := pairingRequest(handler, http.MethodGet, "https://pi.example/api/pairing-status", "", "")
+	if status.Code != http.StatusOK {
+		t.Fatalf("external pairing status = %d, body = %s", status.Code, status.Body.String())
+	}
+	var access struct {
+		Authenticated bool `json:"authenticated"`
+		Paired        bool `json:"paired"`
+		Local         bool `json:"local"`
+	}
+	if err := json.Unmarshal(status.Body.Bytes(), &access); err != nil {
+		t.Fatal(err)
+	}
+	if !access.Authenticated || access.Paired || access.Local {
+		t.Fatalf("external pairing status = %+v, want authenticated without pairing or local trust", access)
+	}
+
+	protected := pairingRequest(handler, http.MethodGet, "https://pi.example/api/sessions", "", "")
+	if protected.Code != http.StatusOK {
+		t.Fatalf("external protected API status = %d, body = %s", protected.Code, protected.Body.String())
+	}
+	page := pairingRequest(handler, http.MethodGet, "https://pi.example/", "", "")
+	if page.Code != http.StatusOK || page.Header().Get("Location") == "/pairing" {
+		t.Fatalf("external page = (%d, %q), want app without pairing redirect", page.Code, page.Header().Get("Location"))
+	}
+	stalePairingPage := pairingRequest(handler, http.MethodGet, "https://pi.example/pairing", "", "")
+	if stalePairingPage.Code != http.StatusFound || stalePairingPage.Header().Get("Location") != "/" {
+		t.Fatalf("external stale pairing page = (%d, %q), want workspace redirect", stalePairingPage.Code, stalePairingPage.Header().Get("Location"))
+	}
+
+	unknownHost := pairingRequest(handler, http.MethodGet, "https://evil.example/api/sessions", "", "")
+	if unknownHost.Code != http.StatusForbidden {
+		t.Fatalf("external request on unknown Host = %d, want 403", unknownHost.Code)
+	}
+	crossOrigin := pairingRequest(handler, http.MethodPost, "https://pi.example/api/push/subscribe", `{}`, "https://evil.example")
+	if crossOrigin.Code != http.StatusForbidden {
+		t.Fatalf("external cross-origin mutation = %d, want 403", crossOrigin.Code)
+	}
+}
+
+func TestExternalRemoteAuthKeepsSSEAndPushFunctionalWithoutDeviceCredentials(t *testing.T) {
+	dir := t.TempDir()
+	clock := newServerPairingClock()
+	s, handler := newRemoteAuthRouteTestServerInDir(t, dir, "https://pi.example", "", RemoteAuthExternal, clock)
+
+	request := httptest.NewRequest(http.MethodGet, "https://pi.example/events?id=__all__", nil)
+	ctx, cancel := context.WithCancel(request.Context())
+	request = request.WithContext(ctx)
+	recorder := newSyncRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(recorder, request)
+		close(done)
+	}()
+	waitFor(t, recorder, ":ok")
+	s.broadcast(globalSessID, "new-session")
+	waitFor(t, recorder, "data: new-session")
+	cancel()
+	<-done
+
+	subscription := `{"endpoint":"https://push.example/external","keys":{"p256dh":"key","auth":"auth"}}`
+	subscribed := pairingRequest(
+		handler,
+		http.MethodPost,
+		"https://pi.example/api/push/subscribe",
+		subscription,
+		"https://pi.example",
+	)
+	if subscribed.Code != http.StatusOK {
+		t.Fatalf("external push subscribe = (%d, %s)", subscribed.Code, subscribed.Body.String())
+	}
+	s.Shutdown()
+
+	restarted, _ := newRemoteAuthRouteTestServerInDir(t, dir, "https://pi.example", "", RemoteAuthExternal, clock)
+	var sent []string
+	restarted.push.sendNotification = func(_ []byte, subscription *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
+		sent = append(sent, subscription.Endpoint)
+		return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader(""))}, nil
+	}
+	restarted.push.NotifyDone("session.jsonl")
+	if len(sent) != 1 || sent[0] != "https://push.example/external" {
+		t.Fatalf("external push endpoints after restart = %#v", sent)
 	}
 }
 
