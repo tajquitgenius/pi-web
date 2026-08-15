@@ -239,6 +239,35 @@ func TestTerminalBridgeRejectsPublicAndBrowserConnections(t *testing.T) {
 	}
 }
 
+func TestTerminalBridgeAllowsNodeFetchModeWithoutBrowserOrigin(t *testing.T) {
+	sessionsDir := t.TempDir()
+	id, _ := writeTerminalTestSession(t, sessionsDir)
+	router := NewRouter(sessionsDir, "test-terminal-token", &fakeFallback{})
+	server := httptest.NewServer(router)
+	defer server.Close()
+	connection, _, err := websocket.Dial(t.Context(), "ws"+server.URL[len("http"):]+"/api/terminal/connect", &websocket.DialOptions{
+		HTTPHeader:   http.Header{"Sec-Fetch-Mode": {"websocket"}},
+		Subprotocols: []string{"pi-web-terminal-v1", "token.test-terminal-token"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.CloseNow()
+	if err := wsjson.Write(t.Context(), connection, clientMessage{
+		Type: "hello", Version: protocolVersion, SessionID: id, SessionUUID: "terminal",
+		State: workers.WorkerStatus{State: workers.WorkerStateIdle},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var ready serverMessage
+	if err := wsjson.Read(t.Context(), connection, &ready); err != nil {
+		t.Fatal(err)
+	}
+	if ready.Type != "ready" {
+		t.Fatalf("Node-style websocket first frame = %#v, want ready", ready)
+	}
+}
+
 func TestTerminalBridgeRejectsWrongHandshakeCredential(t *testing.T) {
 	router := NewRouter(t.TempDir(), "correct-token", &fakeFallback{})
 	server := httptest.NewServer(router)

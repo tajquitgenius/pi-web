@@ -101,7 +101,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		http.Error(w, "terminal bridge is local only", http.StatusForbidden)
 		return
 	}
-	if request.Header.Get("Origin") != "" || hasBrowserFetchMetadata(request.Header) {
+	// Browser WebSocket clients always attach Origin and JavaScript cannot remove it.
+	// Node's standards-compliant WebSocket also sends Sec-Fetch-Mode: websocket, so
+	// fetch metadata alone is not evidence of a browser origin.
+	if request.Header.Get("Origin") != "" {
 		http.Error(w, "browser websocket clients are not allowed", http.StatusForbidden)
 		return
 	}
@@ -554,15 +557,6 @@ func websocketToken(header http.Header) string {
 		}
 	}
 	return ""
-}
-
-func hasBrowserFetchMetadata(header http.Header) bool {
-	for name := range header {
-		if strings.HasPrefix(strings.ToLower(name), "sec-fetch-") {
-			return true
-		}
-	}
-	return false
 }
 
 func loopbackRemote(raw string) bool {
