@@ -290,6 +290,9 @@ func (session *connectorSession) keepAlive(ctx context.Context) {
 }
 
 func (session *connectorSession) send(ctx context.Context, message WireMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	message.Version = ProtocolVersion
 	encoded, err := json.Marshal(message)
 	if err != nil {
@@ -299,6 +302,9 @@ func (session *connectorSession) send(ctx context.Context, message WireMessage) 
 	defer cancel()
 	session.writeMu.Lock()
 	defer session.writeMu.Unlock()
+	if err := writeContext.Err(); err != nil {
+		return err
+	}
 	return session.socket.Write(writeContext, websocket.MessageText, encoded)
 }
 

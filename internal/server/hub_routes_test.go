@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -354,10 +355,17 @@ func TestHubConnectorUnreadBodyDoesNotBlockOtherRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second relay was blocked by unread request body: %v", err)
 	}
-	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		t.Fatalf("second relay status = %d, want 200", response.StatusCode)
+		body, _ := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		select {
+		case connectorErr := <-connectorError:
+			t.Fatalf("second relay status = %d, want 200: %s (connector: %v)", response.StatusCode, body, connectorErr)
+		default:
+			t.Fatalf("second relay status = %d, want 200: %s", response.StatusCode, body)
+		}
 	}
+	_ = response.Body.Close()
 	select {
 	case <-streamResult:
 	case <-time.After(2 * time.Second):
