@@ -47,11 +47,10 @@ export function groupSessions(
 
   return [...grouped.entries()]
     .map(([project, projectSessions]) => {
-      projectSessions.sort((left, right) => {
-        const runningOrder =
-          Number(runningSessionIds.has(right.id)) - Number(runningSessionIds.has(left.id));
-        return runningOrder || activityTime(right) - activityTime(left);
-      });
+      projectSessions.sort(
+        (left, right) =>
+          activityTime(right) - activityTime(left) || left.id.localeCompare(right.id),
+      );
       return {
         project,
         sessions: projectSessions,
@@ -61,7 +60,7 @@ export function groupSessions(
     })
     .sort(
       (left, right) =>
-        Number(right.running) - Number(left.running) || right.lastActivity - left.lastActivity,
+        right.lastActivity - left.lastActivity || left.project.localeCompare(right.project),
     );
 }
 

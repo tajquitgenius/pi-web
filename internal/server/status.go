@@ -39,7 +39,7 @@ func (s *Server) computeWorkerRunningStatus(sessionID string) bool {
 // computeRunningStatus is the thread-list aggregate: a thread remains running
 // until its parent has settled and every background agent is terminal.
 func (s *Server) computeRunningStatus(sessionID string) bool {
-	return s.computeWorkerRunningStatus(sessionID) || s.hasActiveBackgroundRuns(sessionID)
+	return s.computeWorkerRunningStatus(sessionID) || s.hasDurableThreadActivity(sessionID)
 }
 
 func (s *Server) runningStatusPayload(sessionID string, running bool) map[string]any {
@@ -78,7 +78,7 @@ func (s *Server) recomputeAndBroadcastStatus(sessionID string) {
 		return
 	}
 	parentNow := s.computeWorkerRunningStatus(sessionID)
-	now := parentNow || s.hasActiveBackgroundRuns(sessionID)
+	now := parentNow || s.hasDurableThreadActivity(sessionID)
 
 	s.parentRunningMu.Lock()
 	if s.parentRunning == nil {

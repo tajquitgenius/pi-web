@@ -318,7 +318,7 @@ describe('desktop product shell', () => {
     await waitFor(() => expect(client.listSessions).toHaveBeenCalledWith({ limit: 500 }));
   });
 
-  it('groups running threads and projects before newer idle work', () => {
+  it('keeps activity order stable when thread running states change', () => {
     const running = summary('running', 'Running task', '/projects/alpha', '2026-01-01T00:00:00Z');
     const newer = summary('newer', 'Newer idle task', '/projects/alpha', '2026-03-01T00:00:00Z');
     const newestOther = summary(
@@ -327,11 +327,23 @@ describe('desktop product shell', () => {
       '/projects/beta',
       '2026-04-01T00:00:00Z',
     );
+    const sessions = [newestOther, newer, running];
 
-    const groups = groupSessions([newestOther, newer, running], new Set(['running']));
+    const idleGroups = groupSessions(sessions, new Set());
+    const runningGroups = groupSessions(sessions, new Set(['running']));
 
-    expect(groups.map((group) => group.project)).toEqual(['/projects/alpha', '/projects/beta']);
-    expect(groups[0].sessions.map((session) => session.id)).toEqual(['running', 'newer']);
+    expect(runningGroups.map((group) => group.project)).toEqual(
+      idleGroups.map((group) => group.project),
+    );
+    expect(runningGroups.flatMap((group) => group.sessions.map((session) => session.id))).toEqual(
+      idleGroups.flatMap((group) => group.sessions.map((session) => session.id)),
+    );
+    expect(runningGroups.map((group) => group.project)).toEqual([
+      '/projects/beta',
+      '/projects/alpha',
+    ]);
+    expect(runningGroups[1].sessions.map((session) => session.id)).toEqual(['newer', 'running']);
+    expect(runningGroups[1].running).toBe(true);
   });
 
   it('toggles the sidebar and command palette with keyboard shortcuts', async () => {
@@ -882,7 +894,7 @@ describe('conversation and pairing', () => {
     expect(window.location.search).not.toContain('ABCD2345');
   });
 
-  it('reacts to a running status event in the accessible thread list', async () => {
+  it('reacts to a running status event without moving the accessible thread row', async () => {
     const sessions = [
       summary('older', 'Older running', '/project', '2026-01-01T00:00:00Z'),
       summary('newer', 'Newer idle', '/project', '2026-02-01T00:00:00Z'),
@@ -902,9 +914,9 @@ describe('conversation and pairing', () => {
 
     const rows = [...container.querySelectorAll('.desktop-thread-row')];
     expect(rows.map((row) => row.querySelector('.desktop-thread-name')?.textContent)).toEqual([
-      'Older running',
       'Newer idle',
+      'Older running',
     ]);
-    expect(rows[0]).toHaveAttribute('data-running', 'true');
+    expect(rows[1]).toHaveAttribute('data-running', 'true');
   });
 });
