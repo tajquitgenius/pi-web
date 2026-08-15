@@ -33,7 +33,7 @@ class ServiceEnvironmentTest(unittest.TestCase):
                 "python3 -c 'import json, os, sys; "
                 "json.dump({key: os.environ.get(key) for key in "
                 "[\"PI_WEB_INSTANCE_NAME\", \"PI_WEB_PUBLIC_URL\", "
-                "\"PI_WEB_REMOTE_AUTH\", \"PI_WEB_PEERS_JSON\", \"PI_WEB_TOKEN\"]}, "
+                "\"PI_WEB_REMOTE_AUTH\", \"PI_WEB_PEERS_JSON\", \"PI_WEB_TOKEN\", \"PATH\"]}, "
                 "open(sys.argv[1], \"w\"))' "
                 '"$PI_WEB_ENV_OUTPUT"\n'
             )
@@ -44,7 +44,13 @@ class ServiceEnvironmentTest(unittest.TestCase):
             self.assertEqual(arguments[:2], ["/bin/sh", "-c"])
 
             environment = os.environ.copy()
-            environment.update({"HOME": str(home), "PI_WEB_ENV_OUTPUT": str(output)})
+            environment.update(
+                {
+                    "HOME": str(home),
+                    "PI_WEB_ENV_OUTPUT": str(output),
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                }
+            )
             subprocess.run(
                 [arguments[0], arguments[1], arguments[2], str(probe)],
                 env=environment,
@@ -60,6 +66,10 @@ class ServiceEnvironmentTest(unittest.TestCase):
                 '[{"label":"Work laptop","url":"https://work-pi.example.com"}]',
             )
             self.assertEqual(values["PI_WEB_TOKEN"], "test-token")
+            self.assertEqual(
+                values["PATH"],
+                "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            )
 
     def test_linux_and_windows_load_remote_auth_from_the_service_env_file(self):
         systemd_service = (ROOT / "init" / "pi-web.service").read_text()
