@@ -200,6 +200,71 @@ func TestThreadStaysRunningUntilLastBackgroundAgentTerminates(t *testing.T) {
 	}
 }
 
+func TestDurableParentLifecycleStaysRunningThroughBackgroundContinuation(t *testing.T) {
+	sessionsDir := t.TempDir()
+	sessionDir := filepath.Join(sessionsDir, "--repo--")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "parent.jsonl"
+	sessionPath := filepath.Join(sessionDir, sessionID)
+	contents := `{"type":"session","version":3,"id":"parent","timestamp":"2026-08-15T00:00:00Z","cwd":"/repo"}` + "\n" +
+		`{"type":"custom","customType":"pi-web-parent-agent-started","data":{"turnId":"turn-1"}}` + "\n"
+	if err := os.WriteFile(sessionPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	s := &Server{
+		sessionsDir: sessionsDir,
+		chatSender: &fakeSender{status: workers.WorkerStatus{
+			State: workers.WorkerStateIdle,
+			Model: "external-parent",
+		}},
+		fileMod: map[string]time.Time{sessionID: now.Add(-time.Minute)},
+		now:     func() time.Time { return now },
+	}
+	if !s.computeRunningStatus(sessionID) {
+		t.Fatal("durable parent start must mark an external Pi turn running")
+	}
+
+	file, err := os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := file.WriteString(
+		`{"type":"custom","customType":"background-agent-run-created","data":{"run":{"id":"agent-1","status":"running"}}}` + "\n" +
+			`{"type":"custom","customType":"pi-web-parent-agent-settled","data":{"turnId":"turn-1"}}` + "\n" +
+			`{"type":"custom","customType":"background-agent-run-terminal","data":{"run":{"id":"agent-1","status":"completed"}}}` + "\n" +
+			`{"type":"custom","customType":"pi-web-parent-agent-started","data":{"turnId":"turn-2"}}` + "\n",
+	)
+	if closeErr := file.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	now = now.Add(time.Second)
+	if !s.computeRunningStatus(sessionID) {
+		t.Fatal("terminal child followed by an automatic parent continuation must not flip idle")
+	}
+
+	file, err = os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr = file.WriteString(`{"type":"custom","customType":"pi-web-parent-agent-settled","data":{"turnId":"turn-2"}}` + "\n")
+	if closeErr := file.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if s.computeRunningStatus(sessionID) {
+		t.Fatal("thread must become idle after the parent settles and no child remains")
+	}
+}
+
 func TestHistoricalBackgroundTerminalIsIdleOnStartup(t *testing.T) {
 	sessionsDir := t.TempDir()
 	sessionDir := filepath.Join(sessionsDir, "--repo--")

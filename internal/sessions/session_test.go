@@ -91,6 +91,33 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLifecycleMetadataDoesNotChangeVisibleSessionActivity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "parent.jsonl")
+	contents := `{"type":"session","id":"parent","timestamp":"2026-08-15T00:00:00Z","cwd":"/repo"}` + "\n" +
+		`{"type":"message","id":"assistant","timestamp":"2026-08-15T00:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Done"}]}}` + "\n" +
+		`{"type":"custom","customType":"background-agent-run-terminal","timestamp":"2026-08-15T00:02:00Z","data":{"run":{"id":"agent-1"}}}` + "\n" +
+		`{"type":"custom","customType":"pi-web-parent-agent-settled","timestamp":"2026-08-15T00:03:00Z","data":{"turnId":"turn-1"}}` + "\n"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := ParseSummary(path, "--repo--", filepath.Base(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseFile(path, "--repo--", filepath.Base(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "2026-08-15T00:01:00Z"
+	if summary.LastActivity != want {
+		t.Fatalf("summary LastActivity = %q, want visible message time %q", summary.LastActivity, want)
+	}
+	if parsed.LastActivity != want {
+		t.Fatalf("session LastActivity = %q, want visible message time %q", parsed.LastActivity, want)
+	}
+}
+
 func TestSortSummariesByActivityOrdersNewestFirst(t *testing.T) {
 	summaries := []SessionSummary{
 		{ID: "old", LastActivity: "2026-02-27T15:13:25.383Z"},

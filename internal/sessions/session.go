@@ -24,15 +24,16 @@ const (
 
 // Typed structs for ParseSummary — avoid map[string]any per line.
 type summaryLine struct {
-	Type      string      `json:"type"`
-	Timestamp string      `json:"timestamp"`
-	Name      string      `json:"name"`
-	CWD       string      `json:"cwd"`
-	ID        string      `json:"id"`
-	Provider  string      `json:"provider"`
-	ModelID   string      `json:"modelId"`
-	AutoTitle bool        `json:"autoTitle"`
-	Message   *summaryMsg `json:"message"`
+	Type       string      `json:"type"`
+	Timestamp  string      `json:"timestamp"`
+	Name       string      `json:"name"`
+	CWD        string      `json:"cwd"`
+	ID         string      `json:"id"`
+	Provider   string      `json:"provider"`
+	ModelID    string      `json:"modelId"`
+	AutoTitle  bool        `json:"autoTitle"`
+	CustomType string      `json:"customType"`
+	Message    *summaryMsg `json:"message"`
 }
 
 type summaryMsg struct {
@@ -220,6 +221,14 @@ func applySummaryContext(s *SessionSummary, path, fileName, sessionInfoName, hea
 // ParseSummary streams path line-by-line, accumulating only the fields the
 // index page needs. Lines are discarded after parsing — unlike ParseFile,
 // the full conversation is not retained in memory.
+func isLifecycleMetadata(entryType, customType string) bool {
+	if entryType != "custom" {
+		return false
+	}
+	return strings.HasPrefix(customType, "background-agent-") ||
+		strings.HasPrefix(customType, "pi-web-parent-agent-")
+}
+
 func ParseSummary(path, dirName, fileName string) (SessionSummary, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -283,7 +292,7 @@ func ParseSummary(path, dirName, fileName string) (SessionSummary, error) {
 				s.ModelProvider = raw.Provider
 			}
 		default:
-			if raw.Timestamp != "" {
+			if raw.Timestamp != "" && !isLifecycleMetadata(raw.Type, raw.CustomType) {
 				s.LastActivity = raw.Timestamp
 			}
 		}
@@ -580,7 +589,9 @@ func ParseFile(path, dirName, fileName string) (Session, error) {
 				s.ModelProvider, _ = raw["provider"].(string)
 			}
 		default:
-			if ts, ok := raw["timestamp"].(string); ok {
+			entryType, _ := raw["type"].(string)
+			customType, _ := raw["customType"].(string)
+			if ts, ok := raw["timestamp"].(string); ok && !isLifecycleMetadata(entryType, customType) {
 				s.LastActivity = ts
 			}
 		}

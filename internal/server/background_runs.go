@@ -14,10 +14,15 @@ import (
 const backgroundCompletionGrace = 250 * time.Millisecond
 
 type backgroundRunTracker struct {
-	path      string
-	offset    int64
-	active    map[string]struct{}
-	holdUntil time.Time
+	path           string
+	offset         int64
+	parentActive   bool
+	activeChildren map[string]struct{}
+	holdUntil      time.Time
+}
+
+func (t *backgroundRunTracker) running(now time.Time) bool {
+	return t.parentActive || len(t.activeChildren) > 0 || now.Before(t.holdUntil)
 }
 
 type backgroundRunEvent struct {
@@ -30,7 +35,7 @@ type backgroundRunEvent struct {
 	} `json:"data"`
 }
 
-func (s *Server) hasActiveBackgroundRuns(sessionID string) bool {
+func (s *Server) hasDurableThreadActivity(sessionID string) bool {
 	path := ""
 	if s.cache != nil {
 		path, _ = s.cache.FindPath(sessionID)
@@ -50,31 +55,32 @@ func (s *Server) hasActiveBackgroundRuns(sessionID string) bool {
 	}
 	tracker := s.backgroundRuns[sessionID]
 	if tracker == nil || tracker.path != path {
-		tracker = &backgroundRunTracker{path: path, active: make(map[string]struct{})}
+		tracker = &backgroundRunTracker{path: path, activeChildren: make(map[string]struct{})}
 		s.backgroundRuns[sessionID] = tracker
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		return len(tracker.active) > 0
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return len(tracker.active) > 0
-	}
-	if info.Size() < tracker.offset {
-		tracker.offset = 0
-		tracker.active = make(map[string]struct{})
-	}
-	reconstructing := tracker.offset == 0
-	if _, err := file.Seek(tracker.offset, io.SeekStart); err != nil {
-		return len(tracker.active) > 0
 	}
 
 	now := time.Now()
 	if s.now != nil {
 		now = s.now()
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return tracker.running(now)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return tracker.running(now)
+	}
+	if info.Size() < tracker.offset {
+		tracker.offset = 0
+		tracker.parentActive = false
+		tracker.activeChildren = make(map[string]struct{})
+		tracker.holdUntil = time.Time{}
+	}
+	reconstructing := tracker.offset == 0
+	if _, err := file.Seek(tracker.offset, io.SeekStart); err != nil {
+		return tracker.running(now)
 	}
 	reader := bufio.NewReader(file)
 	for {
@@ -84,15 +90,24 @@ func (s *Server) hasActiveBackgroundRuns(sessionID string) bool {
 			parseErr := json.Unmarshal([]byte(strings.TrimSpace(line)), &event)
 			if parseErr == nil {
 				switch event.CustomType {
+				case "pi-web-parent-agent-started":
+					if event.Type == "custom" {
+						tracker.parentActive = true
+						tracker.holdUntil = time.Time{}
+					}
+				case "pi-web-parent-agent-settled":
+					if event.Type == "custom" {
+						tracker.parentActive = false
+					}
 				case "background-agent-run-created":
 					if event.Type == "custom" && event.Data.Run.ID != "" {
-						tracker.active[event.Data.Run.ID] = struct{}{}
+						tracker.activeChildren[event.Data.Run.ID] = struct{}{}
 						tracker.holdUntil = time.Time{}
 					}
 				case "background-agent-run-terminal":
 					if event.Type == "custom" && event.Data.Run.ID != "" {
-						delete(tracker.active, event.Data.Run.ID)
-						if len(tracker.active) == 0 && !reconstructing {
+						delete(tracker.activeChildren, event.Data.Run.ID)
+						if len(tracker.activeChildren) == 0 && !tracker.parentActive && !reconstructing {
 							tracker.holdUntil = now.Add(backgroundCompletionGrace)
 						}
 					}
@@ -106,5 +121,5 @@ func (s *Server) hasActiveBackgroundRuns(sessionID string) bool {
 			break
 		}
 	}
-	return len(tracker.active) > 0 || now.Before(tracker.holdUntil)
+	return tracker.running(now)
 }
