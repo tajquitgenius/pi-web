@@ -18,6 +18,8 @@ export const THINKING_LEVELS: ThinkingLevel[] = [
 export const SIDEBAR_COLLAPSED_KEY = 'pi-web:desktop:sidebar-collapsed';
 export const SIDEBAR_WIDTH_KEY = 'pi-web:desktop:sidebar-width';
 export const DETAILS_OPEN_KEY = 'pi-web:desktop:details-open';
+export const RIGHT_PANEL_TAB_KEY = 'pi-web:desktop:right-panel-tab';
+export const RIGHT_PANEL_WIDTH_KEY = 'pi-web:desktop:right-panel-width';
 
 export interface SessionGroup {
   project: string;
@@ -103,11 +105,28 @@ export function readStoredBoolean(storage: Storage, key: string, fallback: boole
   }
 }
 
-export function readStoredWidth(storage: Storage, fallback = 288): number {
+export function readStoredWidth(
+  storage: Storage,
+  fallback = 288,
+  minimum = 224,
+  maximum = 440,
+  key = SIDEBAR_WIDTH_KEY,
+): number {
   try {
-    const value = Number(storage.getItem(SIDEBAR_WIDTH_KEY));
-    return Number.isFinite(value) && value >= 224 && value <= 440 ? value : fallback;
+    const value = Number(storage.getItem(key));
+    return Number.isFinite(value) && value >= minimum && value <= maximum ? value : fallback;
   } catch {
     return fallback;
+  }
+}
+
+export type StoredPanelTab = 'details' | 'files' | 'diff' | 'scratchpad';
+
+export function readStoredPanelTab(storage: Storage): StoredPanelTab {
+  try {
+    const value = storage.getItem(RIGHT_PANEL_TAB_KEY);
+    return value === 'files' || value === 'diff' || value === 'scratchpad' ? value : 'details';
+  } catch {
+    return 'details';
   }
 }

@@ -1,6 +1,7 @@
 import { KeyRound, Link, LoaderCircle, ShieldCheck, Smartphone } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { PiWebClient } from '../live-shared';
+import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
 
 const PAIRING_CODE = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/;
 
@@ -18,33 +19,52 @@ export function PairingScreen({ client, topLevelNavigate }: PairingScreenProps) 
   const [label, setLabel] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [connection, setConnection] = useState<MobileConnectionState>('connected');
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const deviceLabel = label.trim();
-    if (!PAIRING_CODE.test(code)) {
-      setError('Enter the exact 8-character code shown on the host computer.');
-      return;
-    }
-    if (!deviceLabel || deviceLabel.length > 80) {
-      setError('Enter a device label of 80 characters or fewer.');
-      return;
-    }
+  const attemptPairing = async (pairingCode: string, deviceLabel: string) => {
     setSubmitting(true);
+    setConnection('connecting');
     setError('');
     try {
-      const result = await client.submitPairing({ code, label: deviceLabel });
+      const result = await client.submitPairing({ code: pairingCode, label: deviceLabel });
       if (!result.paired) throw new Error('The device was not paired.');
       topLevelNavigate('/');
     } catch (pairingError) {
+      setConnection('offline');
       setError(errorMessage(pairingError));
       setSubmitting(false);
     }
   };
 
+  const validateForm = (): { code: string; label: string } | null => {
+    const deviceLabel = label.trim();
+    if (!PAIRING_CODE.test(code)) {
+      setError('Enter the exact 8-character code shown on the host computer.');
+      return null;
+    }
+    if (!deviceLabel || deviceLabel.length > 80) {
+      setError('Enter a device label of 80 characters or fewer.');
+      return null;
+    }
+    return { code, label: deviceLabel };
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const values = validateForm();
+    if (values) void attemptPairing(values.code, values.label);
+  };
+
   return (
     <main className="mobile-screen mobile-pairing-screen" data-mobile-route="pairing">
       <div className="mobile-pairing-scroll">
+        <MobileConnectivityNotice
+          state={connection}
+          onRetry={() => {
+            const values = validateForm();
+            if (values) void attemptPairing(values.code, values.label);
+          }}
+        />
         <header className="mobile-pairing-header">
           <span className="mobile-pairing-mark">
             <ShieldCheck aria-hidden="true" size={29} />

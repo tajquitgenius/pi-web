@@ -1,3 +1,44 @@
+import type {
+  AddQueueItemInput,
+  AnnotationInput,
+  AnnotationResult,
+  AnnotationsResult,
+  BtwResult,
+  ChatQueue,
+  CommandsResult,
+  CreateBtwInput,
+  CreateBtwResult,
+  FileListQuery,
+  FileListResult,
+  PiFilePreview,
+  GitDiff,
+  GitInfo,
+  LabelSessionResult,
+  MetricsResult,
+  ProjectList,
+  ProjectListQuery,
+  RecentLocationsResult,
+  RenameBranchResult,
+  RenameSessionResult,
+  ReviewCommentInput,
+  ReviewCommentResult,
+  ReviewCommentsResult,
+  RunScheduleResult,
+  SaveScratchpadResult,
+  SaveSettingsResult,
+  ScheduleInput,
+  ScheduleResult,
+  ScheduleRunsResult,
+  ScratchpadResult,
+  SessionMutationResult,
+  SettingsResult,
+  UpdateProjectInput,
+  UpdateProjectResult,
+  UpdateResult,
+  VersionInfo,
+} from '../live-domain';
+import type { PiSession } from '../live-domain';
+
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface SessionSummary {
@@ -184,6 +225,7 @@ export type PiWebSSETopic = '__all__' | (string & {});
 
 export interface SSESubscriptionHandlers {
   onEvent: <Name extends PiWebSSEEventName>(name: Name, payload: PiWebSSEEventMap[Name]) => void;
+  onOpen?: (event: Event) => void;
   onError?: (event: Event) => void;
 }
 
@@ -235,6 +277,7 @@ export interface PairedDevicesResult {
 export interface PiWebClient {
   listSessions(query?: SessionListQuery): Promise<SessionList>;
   getSession(id: string, query?: SessionDetailsQuery): Promise<SessionDetails>;
+  getPiSession?(id: string, query?: SessionDetailsQuery): Promise<PiSession>;
   createSession(input: NewSessionInput): Promise<NewSessionResult>;
   getSessionDefaults(sourceSessionId?: string): Promise<SessionDefaults>;
   listModels(): Promise<ModelsResult>;
@@ -243,6 +286,53 @@ export interface PiWebClient {
   getWorkerStatus(sessionId: string): Promise<ChatWorkerStatus>;
   setModel(sessionId: string, provider: string, modelId: string): Promise<MutationResult>;
   setThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<SetThinkingLevelResult>;
+  listProjects(query?: ProjectListQuery): Promise<ProjectList>;
+  updateProject(input: UpdateProjectInput): Promise<UpdateProjectResult>;
+  listRecentLocations(): Promise<RecentLocationsResult>;
+  listFiles(sessionId: string, query?: string | FileListQuery): Promise<FileListResult>;
+  getFile(sessionId: string, relativePath: string): Promise<PiFilePreview>;
+  getCommands(sessionId: string, load?: boolean): Promise<CommandsResult>;
+  forkSession(sessionId: string, entryId: string): Promise<SessionMutationResult>;
+  cloneSession(sessionId: string, leafId?: string): Promise<SessionMutationResult>;
+  renameSession(sessionId: string, name: string): Promise<RenameSessionResult>;
+  labelSession(sessionId: string, entryId: string, label: string): Promise<LabelSessionResult>;
+  getGitInfo(sessionId: string): Promise<GitInfo>;
+  getGitDiff(sessionId: string): Promise<GitDiff>;
+  renameGitBranch(sessionId: string, name: string): Promise<RenameBranchResult>;
+  listReviewComments(sessionId: string): Promise<ReviewCommentsResult>;
+  saveReviewComment(sessionId: string, input: ReviewCommentInput): Promise<ReviewCommentResult>;
+  deleteReviewComment(sessionId: string, commentId: string): Promise<MutationResult>;
+  listAnnotations(sessionId: string): Promise<AnnotationsResult>;
+  saveAnnotation(sessionId: string, input: AnnotationInput): Promise<AnnotationResult>;
+  deleteAnnotation(sessionId: string, annotationId: string): Promise<MutationResult>;
+  getScratchpad(projectPath: string): Promise<ScratchpadResult>;
+  saveScratchpad(projectPath: string, content: string): Promise<SaveScratchpadResult>;
+  getQueue(sessionId: string): Promise<ChatQueue>;
+  addQueueItem(
+    sessionId: string,
+    input: AddQueueItemInput,
+  ): Promise<import('../live-domain').QueueItem>;
+  removeQueueItem(sessionId: string, position: number): Promise<MutationResult>;
+  setQueuePaused(
+    sessionId: string,
+    paused: boolean,
+  ): Promise<import('../live-domain').SetQueuePausedResult>;
+  getSettings(): Promise<SettingsResult>;
+  saveSettings(settings: Record<string, string>): Promise<SaveSettingsResult>;
+  getBtw(parent: string): Promise<BtwResult>;
+  createBtw(input: CreateBtwInput): Promise<CreateBtwResult>;
+  listSchedules(): Promise<import('../live-domain').SchedulesResult>;
+  createSchedule(input: ScheduleInput): Promise<ScheduleResult>;
+  getSchedule(scheduleId: string): Promise<ScheduleResult>;
+  updateSchedule(scheduleId: string, input: ScheduleInput): Promise<ScheduleResult>;
+  deleteSchedule(scheduleId: string): Promise<MutationResult>;
+  runSchedule(scheduleId: string): Promise<RunScheduleResult>;
+  listScheduleRuns(scheduleId: string): Promise<ScheduleRunsResult>;
+  getMetrics(): Promise<MetricsResult>;
+  getVersion(): Promise<VersionInfo>;
+  checkForUpdate(): Promise<VersionInfo>;
+  installUpdate(): Promise<UpdateResult>;
+  restartServer(): Promise<UpdateResult>;
   getHostContext(): HostContext;
   subscribe(topic: PiWebSSETopic, handlers: SSESubscriptionHandlers): SSESubscription;
   getPairingStatus(): Promise<PairingStatus>;

@@ -11,7 +11,7 @@ import {
   Smartphone,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import {
   writeSurfaceOverride,
   type PairedDevice,
@@ -19,6 +19,7 @@ import {
   type PiWebClient,
 } from '../live-shared';
 import { t } from '../shared/i18n.js';
+import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
 
 interface SettingsScreenProps {
   client: PiWebClient;
@@ -75,31 +76,46 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
   const [local, setLocal] = useState(false);
   const [devicesLoading, setDevicesLoading] = useState(true);
   const [deviceError, setDeviceError] = useState('');
+  const [connection, setConnection] = useState<MobileConnectionState>('connecting');
   const [revokingId, setRevokingId] = useState('');
   const [pairingCode, setPairingCode] = useState<PairingCode | null>(null);
   const [creatingCode, setCreatingCode] = useState(false);
 
+  const loadDevices = useCallback(
+    async (isActive: () => boolean = () => true) => {
+      setDevicesLoading(true);
+      setDeviceError('');
+      setConnection('connecting');
+      try {
+        const status = await client.getPairingStatus();
+        if (!isActive()) return;
+        setConnection('connected');
+        setLocal(status.local);
+        if (!status.local) {
+          setDevices([]);
+          return;
+        }
+        const result = await client.listPairedDevices();
+        if (isActive()) setDevices(result.devices);
+      } catch (error) {
+        if (isActive()) {
+          setConnection('offline');
+          setDeviceError(errorMessage(error, 'Paired devices are unavailable here.'));
+        }
+      } finally {
+        if (isActive()) setDevicesLoading(false);
+      }
+    },
+    [client],
+  );
+
   useEffect(() => {
     let active = true;
-    client
-      .getPairingStatus()
-      .then(async (status) => {
-        if (!active) return;
-        setLocal(status.local);
-        if (!status.local) return;
-        const result = await client.listPairedDevices();
-        if (active) setDevices(result.devices);
-      })
-      .catch((error) => {
-        if (active) setDeviceError(errorMessage(error, 'Paired devices are unavailable here.'));
-      })
-      .finally(() => {
-        if (active) setDevicesLoading(false);
-      });
+    void loadDevices(() => active);
     return () => {
       active = false;
     };
-  }, [client]);
+  }, [loadDevices]);
 
   const createPairingCode = async () => {
     setCreatingCode(true);
@@ -151,6 +167,8 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
         </div>
         <div className="mobile-header-spacer" />
       </header>
+
+      <MobileConnectivityNotice state={connection} onRetry={() => void loadDevices()} />
 
       <div className="mobile-settings-scroll">
         <section className="mobile-settings-group" aria-labelledby="mobile-product-heading">

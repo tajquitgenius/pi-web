@@ -5,14 +5,13 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
-  Clock3,
   FileText,
-  Folder,
   LoaderCircle,
   Paperclip,
   PanelRight,
   Send,
   Square,
+  Tag,
   Wrench,
   X,
 } from 'lucide-react';
@@ -33,7 +32,9 @@ import type {
   PiWebClient,
   SessionDetails,
   SessionEntry,
+  SessionStatus,
   SessionSummary,
+  StatusSnapshot,
   ThinkingLevel,
 } from '../live-shared';
 import {
@@ -43,6 +44,8 @@ import {
   THINKING_LEVELS,
   uniqueProviders,
 } from './desktop-model';
+import { RightPanel, type RightPanelTab } from './RightPanel';
+import { getPath, stitchOrphanRoots } from '../session/tree/session-tree.js';
 
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -117,6 +120,39 @@ function entryId(entry: SessionEntry, index: number): string {
   return textValue(entry.id) || `${textValue(entry.type)}-${index}`;
 }
 
+function activeConversationEntries(entries: SessionEntry[]): SessionEntry[] {
+  const stitched = stitchOrphanRoots(entries);
+  const byId = new Map<string, SessionEntry>();
+  const childIds = new Set<string>();
+  for (const entry of stitched) {
+    const id = textValue(entry.id);
+    if (id) byId.set(id, entry);
+  }
+  for (const entry of stitched) {
+    const parentId = textValue(entry.parentId);
+    if (parentId && byId.has(parentId)) childIds.add(parentId);
+  }
+
+  let leafId = '';
+  for (let index = stitched.length - 1; index >= 0; index -= 1) {
+    const entry = stitched[index];
+    const id = textValue(entry?.id);
+    const type = textValue(entry?.type);
+    if (id && type !== 'session' && type !== 'label' && !childIds.has(id)) {
+      leafId = id;
+      break;
+    }
+  }
+  if (!leafId) return entries;
+
+  const activeEntries = new Set(getPath(leafId, byId));
+  return stitched.filter((entry) => {
+    if (!entry.id || activeEntries.has(entry)) return true;
+    const parentId = textValue(entry.parentId);
+    return !parentId || !byId.has(parentId);
+  });
+}
+
 function imageSource(block: Record<string, unknown>): string {
   const data = textValue(block.data);
   if (!data) return '';
@@ -176,9 +212,10 @@ export function Transcript({
   optimisticPrompt = '',
   streamingText = '',
 }: TranscriptProps) {
+  const entries = useMemo(() => activeConversationEntries(details.entries), [details.entries]);
   const toolResults = useMemo(() => {
     const results = new Map<string, Record<string, unknown>>();
-    for (const entry of details.entries) {
+    for (const entry of entries) {
       if (entry.type !== 'message') continue;
       const message = recordValue(entry.message);
       if (message?.role === 'toolResult' && typeof message.toolCallId === 'string') {
@@ -186,13 +223,13 @@ export function Transcript({
       }
     }
     return results;
-  }, [details.entries]);
+  }, [entries]);
 
   return (
     <div aria-live="polite" className="desktop-transcript" data-testid="transcript">
       <div className="desktop-transcript-boundary">
         {details.from > 0 ? null : <div className="desktop-transcript-start">Session started</div>}
-        {details.entries.map((entry, index) => {
+        {entries.map((entry, index) => {
           const type = textValue(entry.type);
           if (type === 'message') {
             const message = recordValue(entry.message);
@@ -279,7 +316,9 @@ export function Transcript({
                     <Wrench aria-hidden="true" size={13} /> Shell activity
                   </summary>
                   <pre>
-                    $ {textValue(message?.command)}\n{textValue(message?.output)}
+                    $ {textValue(message?.command)}
+                    {'\n'}
+                    {textValue(message?.output)}
                   </pre>
                 </details>
               );
@@ -301,11 +340,54 @@ export function Transcript({
             );
           }
           if (type === 'compaction') {
+            const summary = textValue(entry.summary);
+            const tokensBefore =
+              typeof entry.tokensBefore === 'number' && Number.isFinite(entry.tokensBefore)
+                ? entry.tokensBefore.toLocaleString()
+                : '0';
             return (
               <details className="desktop-compaction" key={entryId(entry, index)}>
                 <summary>Earlier context compacted</summary>
-                <p>{textValue(entry.summary)}</p>
+                <p>{summary || `Compacted from ${tokensBefore} tokens.`}</p>
               </details>
+            );
+          }
+          if (type === 'branch_summary') {
+            return (
+              <details
+                className="desktop-timeline-row desktop-branch-summary"
+                key={entryId(entry, index)}
+              >
+                <summary>
+                  <ChevronRight aria-hidden="true" size={12} />
+                  <strong>Branch summary</strong>
+                </summary>
+                <RichText text={textValue(entry.summary)} />
+              </details>
+            );
+          }
+          if (type === 'custom_message') {
+            if (entry.display === false) return null;
+            const customText = contentText(entry.content);
+            return (
+              <article
+                className="desktop-timeline-row desktop-custom-message"
+                key={entryId(entry, index)}
+              >
+                <Bot aria-hidden="true" size={13} />
+                <div>
+                  <strong>{textValue(entry.customType) || 'Pi update'}</strong>
+                  {customText ? <RichText text={customText} /> : null}
+                </div>
+              </article>
+            );
+          }
+          if (type === 'label' && textValue(entry.label)) {
+            return (
+              <div className="desktop-timeline-row desktop-label-row" key={entryId(entry, index)}>
+                <Tag aria-hidden="true" size={13} />
+                <span>{textValue(entry.label)}</span>
+              </div>
             );
           }
           return null;
@@ -378,6 +460,15 @@ export function SessionComposer({
 
   const providerModels = modelsForProvider(models, provider);
   const providers = uniqueProviders(models, provider);
+  const selectedModelAvailable = models.some(
+    (item) => item.provider === provider && item.id === model,
+  );
+  const composerAvailable = chatAvailable && models.length > 0 && selectedModelAvailable;
+  const unavailableReason = !chatAvailable
+    ? chatDisabledReason || 'Chat is unavailable for this session.'
+    : models.length === 0
+      ? 'No authenticated models are available. Open Pi and log in to a model provider before sending.'
+      : `The selected model ${provider}/${model} is unavailable. Choose an available model before sending.`;
   const queueSetting = (operation: () => Promise<unknown>) => {
     const task = settingsTask.current.catch(() => undefined).then(operation);
     settingsTask.current = task;
@@ -409,7 +500,7 @@ export function SessionComposer({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const trimmed = message.trim();
-    if (!trimmed || busy || running || !chatAvailable) return;
+    if (!trimmed || busy || !composerAvailable) return;
     setBusy(true);
     setError('');
     try {
@@ -470,13 +561,13 @@ export function SessionComposer({
         ) : null}
         <textarea
           aria-label="Message"
-          disabled={!chatAvailable}
+          disabled={!composerAvailable}
           onChange={(event) => setMessage(event.currentTarget.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            chatAvailable
+            composerAvailable
               ? 'Ask pi to build, investigate, or change something…'
-              : chatDisabledReason
+              : unavailableReason
           }
           rows={2}
           value={message}
@@ -550,6 +641,19 @@ export function SessionComposer({
             >
               <Paperclip aria-hidden="true" size={15} />
             </button>
+            <button
+              aria-label={running ? 'Steer' : 'Send message'}
+              className="desktop-send-button"
+              disabled={busy || !message.trim() || !composerAvailable}
+              title={running ? 'Steer' : 'Send message'}
+              type="submit"
+            >
+              {busy ? (
+                <LoaderCircle aria-hidden="true" className="desktop-spin" size={15} />
+              ) : (
+                <Send aria-hidden="true" size={15} />
+              )}
+            </button>
             {running ? (
               <button
                 aria-label="Cancel response"
@@ -561,28 +665,23 @@ export function SessionComposer({
               >
                 <Square aria-hidden="true" fill="currentColor" size={12} />
               </button>
-            ) : (
-              <button
-                aria-label="Send message"
-                className="desktop-send-button"
-                disabled={busy || !message.trim() || !chatAvailable}
-                title="Send message"
-                type="submit"
-              >
-                {busy ? (
-                  <LoaderCircle aria-hidden="true" className="desktop-spin" size={15} />
-                ) : (
-                  <Send aria-hidden="true" size={15} />
-                )}
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
+        {!composerAvailable ? (
+          <div aria-label="Chat unavailable" className="desktop-composer-error" role="alert">
+            {unavailableReason}
+          </div>
+        ) : null}
         {error ? <div className="desktop-composer-error">{error}</div> : null}
       </form>
     </div>
   );
 }
+
+const STATUS_RECONCILIATION_MAX_ATTEMPTS = 3;
+const STATUS_RECONCILIATION_DELAY_MS = 200;
+const INITIAL_RELOAD_GRACE_MS = 250;
 
 interface SessionPageProps {
   client: PiWebClient;
@@ -590,6 +689,10 @@ interface SessionPageProps {
   initialRunning: boolean;
   models: PiModel[];
   onDetailsToggle: () => void;
+  onPanelTabChange: (tab: RightPanelTab) => void;
+  onPanelWidthChange: (width: number) => void;
+  panelTab: RightPanelTab;
+  panelWidth: number;
   selectedSummary?: SessionSummary;
   sessionId: string;
 }
@@ -600,6 +703,10 @@ export function SessionPage({
   initialRunning,
   models,
   onDetailsToggle,
+  onPanelTabChange,
+  onPanelWidthChange,
+  panelTab,
+  panelWidth,
   selectedSummary,
   sessionId,
 }: SessionPageProps) {
@@ -607,12 +714,20 @@ export function SessionPage({
     readEmbeddedSession(sessionId),
   );
   const [loading, setLoading] = useState(!details);
+  const startupReloadRef = useRef(
+    details === null
+      ? null
+      : { deadline: Date.now() + INITIAL_RELOAD_GRACE_MS, handled: false, opened: false },
+  );
   const [error, setError] = useState('');
   const [running, setRunning] = useState(initialRunning);
   const [streamingText, setStreamingText] = useState('');
   const [optimisticPrompt, setOptimisticPrompt] = useState('');
   const [workerThinking, setWorkerThinking] = useState<ThinkingLevel>('high');
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const activityRef = useRef(initialRunning);
+  const reconciliationRef = useRef({ generation: 0, timer: 0 });
+  const streamStateRef = useRef({ opened: false, reconnectPending: false });
 
   const load = useCallback(async () => {
     setError('');
@@ -642,31 +757,131 @@ export function SessionPage({
     setStreamingText('');
   }, [load, sessionId]);
 
+  const applyRunningStatus = useCallback(
+    (nextRunning: boolean, thinking?: ThinkingLevel) => {
+      setRunning(nextRunning);
+      if (thinking) setWorkerThinking(thinking);
+      if (nextRunning) {
+        activityRef.current = true;
+        return;
+      }
+      setStreamingText('');
+      setOptimisticPrompt('');
+      if (activityRef.current) {
+        activityRef.current = false;
+        void load();
+      }
+    },
+    [load],
+  );
+
+  const onComposerRunningChange = useCallback(
+    (nextRunning: boolean) => {
+      activityRef.current = true;
+      setRunning(nextRunning);
+      if (!nextRunning) {
+        setStreamingText('');
+        setOptimisticPrompt('');
+        void load();
+      }
+    },
+    [load],
+  );
+
+  const reconcileWorkerStatus = useCallback(() => {
+    const generation = reconciliationRef.current.generation + 1;
+    reconciliationRef.current.generation = generation;
+    if (reconciliationRef.current.timer) {
+      window.clearTimeout(reconciliationRef.current.timer);
+      reconciliationRef.current.timer = 0;
+    }
+    let attempts = 0;
+    const check = () => {
+      attempts += 1;
+      void client
+        .getWorkerStatus(sessionId)
+        .then((status) => {
+          if (reconciliationRef.current.generation !== generation) return;
+          applyRunningStatus(status.state === 'running', status.thinkingLevel);
+          if (status.state === 'running' && attempts < STATUS_RECONCILIATION_MAX_ATTEMPTS) {
+            reconciliationRef.current.timer = window.setTimeout(
+              check,
+              STATUS_RECONCILIATION_DELAY_MS,
+            );
+          }
+        })
+        .catch(() => {
+          if (
+            reconciliationRef.current.generation === generation &&
+            attempts < STATUS_RECONCILIATION_MAX_ATTEMPTS
+          ) {
+            reconciliationRef.current.timer = window.setTimeout(
+              check,
+              STATUS_RECONCILIATION_DELAY_MS,
+            );
+          }
+        });
+    };
+    check();
+  }, [applyRunningStatus, client, sessionId]);
+
   useEffect(() => {
-    void client
-      .getWorkerStatus(sessionId)
-      .then((status) => {
-        setRunning(status.state === 'running');
-        if (status.thinkingLevel) setWorkerThinking(status.thinkingLevel);
-      })
-      .catch(() => undefined);
+    let active = true;
+    reconcileWorkerStatus();
     const subscription = client.subscribe(sessionId, {
       onEvent: (name, payload) => {
+        if (!active) return;
         if (name === 'chat-preview') {
           const preview = recordValue(payload);
-          setStreamingText(textValue(preview?.content));
-          setRunning(preview?.done !== true);
-          if (preview?.done === true) window.setTimeout(() => void load(), 80);
+          const done = preview?.done === true;
+          const hadActivity = activityRef.current;
+          setStreamingText(done ? '' : textValue(preview?.content));
+          applyRunningStatus(!done);
+          if (done && !hadActivity) window.setTimeout(() => void load(), 80);
         } else if (name === 'reload') {
+          const startup = startupReloadRef.current;
+          if (startup && !startup.handled && (!startup.opened || Date.now() < startup.deadline)) {
+            startup.handled = true;
+            return;
+          }
+          if (startup) startup.handled = true;
           void load();
+        } else if (name === 'status-snapshot') {
+          const snapshot = payload as StatusSnapshot;
+          const status = snapshot.statuses?.[sessionId];
+          applyRunningStatus(
+            status ? status.running === true : snapshot.running.includes(sessionId),
+          );
         } else if (name === 'status-delta') {
-          const status = recordValue(payload);
-          if (status?.id === sessionId) setRunning(status.running === true);
+          const status = payload as SessionStatus;
+          if (status.id === sessionId) applyRunningStatus(status.running === true);
         }
       },
+      onOpen: () => {
+        if (!active) return;
+        const reopened = streamStateRef.current.opened && streamStateRef.current.reconnectPending;
+        streamStateRef.current.opened = true;
+        if (startupReloadRef.current) startupReloadRef.current.opened = true;
+        streamStateRef.current.reconnectPending = false;
+        if (reopened) void load();
+        reconcileWorkerStatus();
+      },
+      onError: () => {
+        if (!active) return;
+        if (streamStateRef.current.opened) streamStateRef.current.reconnectPending = true;
+        reconcileWorkerStatus();
+      },
     });
-    return () => subscription.close();
-  }, [client, load, sessionId]);
+    return () => {
+      active = false;
+      reconciliationRef.current.generation += 1;
+      if (reconciliationRef.current.timer) {
+        window.clearTimeout(reconciliationRef.current.timer);
+        reconciliationRef.current.timer = 0;
+      }
+      subscription.close();
+    };
+  }, [applyRunningStatus, client, load, onComposerRunningChange, reconcileWorkerStatus, sessionId]);
 
   useEffect(() => {
     if (details?.thinkingLevel) setWorkerThinking(details.thinkingLevel);
@@ -782,7 +997,7 @@ export function SessionPage({
               initialProvider={provider}
               initialThinking={workerThinking}
               models={models}
-              onRunningChange={setRunning}
+              onRunningChange={onComposerRunningChange}
               onSent={setOptimisticPrompt}
               running={running}
               sessionId={sessionId}
@@ -792,69 +1007,21 @@ export function SessionPage({
       </main>
 
       {detailsOpen && details ? (
-        <aside aria-label="Session details" className="desktop-details-panel">
-          <header>
-            <div>
-              <span>Context</span>
-              <strong>Session details</strong>
-            </div>
-            <button
-              aria-label="Close session details"
-              className="desktop-icon-button"
-              onClick={onDetailsToggle}
-              type="button"
-            >
-              <X aria-hidden="true" size={15} />
-            </button>
-          </header>
-          <div className="desktop-details-scroll">
-            <section className="desktop-detail-card">
-              <h2>Workspace</h2>
-              <div className="desktop-detail-path">
-                <Folder aria-hidden="true" size={14} />
-                <span>{projectPath || 'Unknown path'}</span>
-              </div>
-            </section>
-            <section className="desktop-detail-card">
-              <h2>Runtime</h2>
-              <dl>
-                <div>
-                  <dt>Status</dt>
-                  <dd>{running ? 'Running' : 'Idle'}</dd>
-                </div>
-                <div>
-                  <dt>Provider</dt>
-                  <dd>{provider || 'Unknown'}</dd>
-                </div>
-                <div>
-                  <dt>Model</dt>
-                  <dd>{model || 'Unknown'}</dd>
-                </div>
-                <div>
-                  <dt>Thinking</dt>
-                  <dd>{workerThinking}</dd>
-                </div>
-              </dl>
-            </section>
-            <section className="desktop-detail-card">
-              <h2>Thread</h2>
-              <dl>
-                <div>
-                  <dt>Entries</dt>
-                  <dd>{details.total}</dd>
-                </div>
-                <div>
-                  <dt>Session ID</dt>
-                  <dd title={sessionId}>{sessionId}</dd>
-                </div>
-              </dl>
-            </section>
-            <div className="desktop-details-note">
-              <Clock3 aria-hidden="true" size={13} />
-              Files and diffs appear here when supplied by the current session APIs.
-            </div>
-          </div>
-        </aside>
+        <RightPanel
+          client={client}
+          details={details}
+          model={model}
+          onClose={onDetailsToggle}
+          onTabChange={onPanelTabChange}
+          onWidthChange={onPanelWidthChange}
+          projectPath={projectPath}
+          provider={provider}
+          running={running}
+          sessionId={sessionId}
+          tab={panelTab}
+          thinking={workerThinking}
+          width={panelWidth}
+        />
       ) : null}
     </>
   );

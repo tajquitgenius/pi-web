@@ -50,8 +50,9 @@ export function MobileApp({
     setRoute({ path: next.pathname, search: next.search });
   };
 
-  const internalLink = (url: string, children: ReactNode, className?: string) => (
+  const internalLink = (url: string, children: ReactNode, className?: string, key?: string) => (
     <a
+      key={key}
       className={className}
       href={url}
       onClick={(event) => {
