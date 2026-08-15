@@ -429,6 +429,11 @@ func (s *Server) handleNewSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 0, map[string]any{"ok": true, "id": id})
 }
 
+type sessionMetadataOwner interface {
+	SetSessionName(context.Context, string, string, string, time.Time) error
+	SetLabel(context.Context, string, string, string, string, time.Time) error
+}
+
 func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -458,12 +463,18 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := sessions.RenameSession(resolved.Path, name, s.now); err != nil {
+	var renameErr error
+	if owner, ok := s.chatSender.(sessionMetadataOwner); ok {
+		renameErr = owner.SetSessionName(r.Context(), resolved.Session.ID, resolved.Path, name, s.now())
+	} else {
+		renameErr = sessions.RenameSession(resolved.Path, name, s.now)
+	}
+	if err := renameErr; err != nil {
 		if errors.Is(err, sessions.ErrEmptySessionName) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeOwnerError(w, err)
 		return
 	}
 	if s.fileMod != nil {
@@ -506,12 +517,18 @@ func (s *Server) handleLabelSessionEntry(w http.ResponseWriter, r *http.Request)
 	}
 
 	label := strings.TrimSpace(body.Label)
-	if err := sessions.LabelSessionEntry(resolved.Path, entryID, label, s.now); err != nil {
+	var labelErr error
+	if owner, ok := s.chatSender.(sessionMetadataOwner); ok {
+		labelErr = owner.SetLabel(r.Context(), resolved.Session.ID, resolved.Path, entryID, label, s.now())
+	} else {
+		labelErr = sessions.LabelSessionEntry(resolved.Path, entryID, label, s.now)
+	}
+	if err := labelErr; err != nil {
 		if errors.Is(err, sessions.ErrSessionEntryNotFound) {
 			writeJSONError(w, http.StatusNotFound, "entry not found")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeOwnerError(w, err)
 		return
 	}
 	if s.fileMod != nil {

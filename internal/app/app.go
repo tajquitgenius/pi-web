@@ -20,6 +20,7 @@ import (
 	"pi-web/internal/rpc"
 	"pi-web/internal/server"
 	"pi-web/internal/sessions"
+	"pi-web/internal/terminalbridge"
 	"pi-web/internal/ui"
 	"pi-web/internal/updater"
 	"pi-web/internal/workers"
@@ -124,6 +125,17 @@ func Main(version string) {
 			}
 		})
 	})
+	terminalBridge, err := terminalbridge.Start(agentDir, sessionsDir, manager)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "terminal bridge unavailable: %v\n", err)
+		os.Exit(1)
+	}
+	terminalRouter := terminalBridge.Router
+	go func() {
+		for err := range terminalBridge.ServeErrors() {
+			fmt.Fprintf(os.Stderr, "terminal bridge stopped: %v\n", err)
+		}
+	}()
 	var srvErr error
 	srv, srvErr = server.New(server.Deps{
 		AgentDir:            agentDir,
@@ -131,7 +143,7 @@ func Main(version string) {
 		Auth:                authMiddleware,
 		PublicURL:           publicURL,
 		RemoteAuth:          remoteAuth,
-		ChatSender:          manager,
+		ChatSender:          terminalRouter,
 		Cache:               sessions.NewCache(),
 		RenderExportSession: ui.RenderExportSessionPage,
 		RenderAppShell:      ui.RenderAppShell,
@@ -303,6 +315,7 @@ func Main(version string) {
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 		srv.Shutdown()
+		_ = terminalBridge.Close(shutdownCtx)
 		_ = manager.Close()
 	}()
 

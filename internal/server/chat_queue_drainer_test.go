@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +23,24 @@ func newDrainerServer(t *testing.T, sender ChatSender) (*Server, *queueDrainer, 
 	s.queueDrainer = d
 	id := writeQueueTestSession(t, s.sessionsDir)
 	return s, d, id
+}
+
+func waitQueueLength(t *testing.T, store *chatqueue.Store, sessionID string, count int) chatqueue.Snapshot {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		snapshot, err := store.List(sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snapshot.Items) == count {
+			return snapshot
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("queue length = %d, want %d: %#v", len(snapshot.Items), count, snapshot.Items)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func TestDrainerDispatchesNextItem(t *testing.T) {
@@ -48,10 +67,43 @@ func TestDrainerDispatchesNextItem(t *testing.T) {
 		t.Fatalf("Send message=%q want %q", req.Message, "first prompt")
 	}
 
-	// PopHead removed the item, so the queue is now empty.
-	snap, _ := s.chatQueue.List(id)
-	if len(snap.Items) != 0 {
-		t.Fatalf("queue should be empty after dispatch, got %#v", snap.Items)
+	// The item is acknowledged only after Send returns successfully.
+	waitQueueLength(t, s.chatQueue, id, 0)
+}
+
+func TestDrainerRetainsAndPausesItemWhenOwnerAdmissionFails(t *testing.T) {
+	fake := &fakeSender{sendCh: make(chan struct{}, 1), sendErr: errors.New("ambiguous terminal delivery")}
+	s, d, id := newDrainerServer(t, fake)
+	if _, err := s.chatQueue.Add(id, "do not replay", "do not replay"); err != nil {
+		t.Fatal(err)
+	}
+
+	d.drainSession(id)
+	select {
+	case <-fake.sendCh:
+	case <-time.After(time.Second):
+		t.Fatal("expected Send")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		snapshot, err := s.chatQueue.List(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snapshot.Paused && len(snapshot.Items) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("failed item was not retained and paused: %#v", snapshot)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	d.drainSession(id)
+	select {
+	case <-fake.sendCh:
+		t.Fatal("paused ambiguous item was replayed")
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
@@ -78,8 +130,8 @@ func TestDrainerSkipsWhenPaused(t *testing.T) {
 
 func TestDrainerSkipsWhenWorkerBusy(t *testing.T) {
 	fake := &fakeSender{
-		status:  workers.WorkerStatus{State: workers.WorkerStateRunning},
-		sendCh:  make(chan struct{}, 1),
+		status: workers.WorkerStatus{State: workers.WorkerStateRunning},
+		sendCh: make(chan struct{}, 1),
 	}
 	s, d, id := newDrainerServer(t, fake)
 	s.chatQueue.Add(id, "wait your turn", "wait your turn")
@@ -115,8 +167,8 @@ func TestDrainerDrainAllScansEveryActiveSession(t *testing.T) {
 	}
 
 	// Second item still queued (waiting for next idle).
-	snap, _ := s.chatQueue.List(id)
-	if len(snap.Items) != 1 || snap.Items[0].Message != "beta" {
+	snap := waitQueueLength(t, s.chatQueue, id, 1)
+	if snap.Items[0].Message != "beta" {
 		t.Fatalf("after first drain, queue should hold beta: %#v", snap.Items)
 	}
 }

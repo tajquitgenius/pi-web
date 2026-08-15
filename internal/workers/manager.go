@@ -11,6 +11,8 @@ import (
 
 type State string
 
+var ErrManagerClosed = errors.New("worker manager is closed")
+
 const (
 	WorkerStateIdle    State = "idle"
 	WorkerStateRunning State = "running"
@@ -72,6 +74,7 @@ type Manager struct {
 	mu       sync.Mutex
 	workers  map[string]ChatWorker
 	creating map[string]*createCall
+	closing  map[string]*closeCall
 	factory  Factory
 
 	// pendingSends counts Send calls that have been accepted but whose prompt
@@ -85,12 +88,18 @@ type Manager struct {
 	idleTTL    time.Duration
 	reaperStop chan struct{}
 	reaperDone chan struct{}
+	closed     bool
 }
 
 type createCall struct {
 	done   chan struct{}
 	worker ChatWorker
 	err    error
+}
+
+type closeCall struct {
+	done chan struct{}
+	err  error
 }
 
 // DefaultIdleTTL is how long a worker may sit idle before the reaper closes it.
@@ -107,6 +116,7 @@ func NewManagerWithTTL(factory Factory, ttl time.Duration) *Manager {
 	m := &Manager{
 		workers:      make(map[string]ChatWorker),
 		creating:     make(map[string]*createCall),
+		closing:      make(map[string]*closeCall),
 		factory:      factory,
 		pendingSends: make(map[string]int),
 		idleTTL:      ttl,
@@ -141,7 +151,12 @@ func (m *Manager) reapLoop() {
 
 func (m *Manager) reapOnce(now time.Time) {
 	m.mu.Lock()
-	var dead []ChatWorker
+	type removedWorker struct {
+		id     string
+		worker ChatWorker
+		call   *closeCall
+	}
+	var dead []removedWorker
 	for id, w := range m.workers {
 		reaper, ok := w.(idleReportable)
 		if !ok {
@@ -153,12 +168,14 @@ func (m *Manager) reapOnce(now time.Time) {
 		if reaper.IdleSince(now) <= m.idleTTL {
 			continue
 		}
-		dead = append(dead, w)
+		call := &closeCall{done: make(chan struct{})}
+		dead = append(dead, removedWorker{id: id, worker: w, call: call})
 		delete(m.workers, id)
+		m.closing[id] = call
 	}
 	m.mu.Unlock()
-	for _, w := range dead {
-		_ = w.Close()
+	for _, removed := range dead {
+		m.finishClose(removed.id, removed.worker, removed.call)
 	}
 }
 
@@ -284,40 +301,117 @@ func (m *Manager) EnsureWorker(ctx context.Context, sessionID, sessionPath strin
 	return err
 }
 
+// Release ends any RPC ownership of a session before another runtime takes
+// over. If a worker is still being created, Release waits for that creation and
+// then closes the result so a late factory completion cannot recreate a second
+// owner behind the caller.
+func (m *Manager) Release(ctx context.Context, sessionID string) error {
+	for {
+		m.mu.Lock()
+		var wait <-chan struct{}
+		if call := m.creating[sessionID]; call != nil {
+			wait = call.done
+		} else if call := m.closing[sessionID]; call != nil {
+			wait = call.done
+		}
+		if wait != nil {
+			m.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		worker := m.workers[sessionID]
+		if worker == nil {
+			m.mu.Unlock()
+			return nil
+		}
+		call := &closeCall{done: make(chan struct{})}
+		delete(m.workers, sessionID)
+		m.closing[sessionID] = call
+		m.mu.Unlock()
+		return m.finishClose(sessionID, worker, call)
+	}
+}
+
+func (m *Manager) finishClose(sessionID string, worker ChatWorker, call *closeCall) error {
+	call.err = worker.Close()
+	m.mu.Lock()
+	if m.closing[sessionID] == call {
+		delete(m.closing, sessionID)
+	}
+	close(call.done)
+	m.mu.Unlock()
+	return call.err
+}
+
 func (m *Manager) Close() error {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil
+	}
+	m.closed = true
+	m.mu.Unlock()
 	select {
 	case <-m.reaperStop:
-		// already closed
+		// already stopped
 	default:
 		close(m.reaperStop)
 	}
 	<-m.reaperDone
 
-	m.mu.Lock()
-	workers := make([]ChatWorker, 0, len(m.workers))
-	for _, worker := range m.workers {
-		workers = append(workers, worker)
+	for {
+		m.mu.Lock()
+		var waits []<-chan struct{}
+		for _, call := range m.creating {
+			waits = append(waits, call.done)
+		}
+		for _, call := range m.closing {
+			waits = append(waits, call.done)
+		}
+		if len(waits) > 0 {
+			m.mu.Unlock()
+			for _, done := range waits {
+				<-done
+			}
+			continue
+		}
+		workers := m.workers
+		m.workers = make(map[string]ChatWorker)
+		m.mu.Unlock()
+		var result error
+		for _, worker := range workers {
+			result = errors.Join(result, worker.Close())
+		}
+		return result
 	}
-	m.workers = make(map[string]ChatWorker)
-	m.mu.Unlock()
-	var result error
-	for _, worker := range workers {
-		result = errors.Join(result, worker.Close())
-	}
-	return result
 }
 
 func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 	for {
 		m.mu.Lock()
+		if m.closed {
+			m.mu.Unlock()
+			return nil, ErrManagerClosed
+		}
 		if worker := m.workers[sessionID]; worker != nil {
 			if worker.Status().State != WorkerStateError {
 				m.mu.Unlock()
 				return worker, nil
 			}
+			call := &closeCall{done: make(chan struct{})}
 			delete(m.workers, sessionID)
+			m.closing[sessionID] = call
 			m.mu.Unlock()
-			_ = worker.Close()
+			_ = m.finishClose(sessionID, worker, call)
+			continue
+		}
+		if call := m.closing[sessionID]; call != nil {
+			m.mu.Unlock()
+			<-call.done
 			continue
 		}
 		if call := m.creating[sessionID]; call != nil {
@@ -335,9 +429,14 @@ func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 		worker, err := m.factory(sessionID, sessionPath)
 
 		m.mu.Lock()
-		if err == nil {
+		var workerToClose ChatWorker
+		if err == nil && m.closed {
+			err = ErrManagerClosed
+			workerToClose = worker
+			worker = nil
+		} else if err == nil {
 			if existing := m.workers[sessionID]; existing != nil && existing.Status().State != WorkerStateError {
-				_ = worker.Close()
+				workerToClose = worker
 				worker = existing
 			} else {
 				m.workers[sessionID] = worker
@@ -348,6 +447,9 @@ func (m *Manager) workerFor(sessionID, sessionPath string) (ChatWorker, error) {
 		call.err = err
 		close(call.done)
 		m.mu.Unlock()
+		if workerToClose != nil {
+			_ = workerToClose.Close()
+		}
 		return worker, err
 	}
 }

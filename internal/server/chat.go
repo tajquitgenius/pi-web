@@ -12,6 +12,7 @@ import (
 
 	"pi-web/internal/chat"
 	"pi-web/internal/sessions"
+	"pi-web/internal/terminalbridge"
 	"pi-web/internal/workers"
 )
 
@@ -24,6 +25,19 @@ type ChatSender interface {
 	GetCommands(ctx context.Context, sessionID string) ([]workers.SlashCommand, bool, error)
 	Status(sessionID string) workers.WorkerStatus
 	EnsureWorker(ctx context.Context, sessionID, sessionPath string) error
+}
+
+func writeOwnerError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		writeJSONError(w, http.StatusGatewayTimeout, "session owner did not acknowledge the request in time")
+	case errors.Is(err, terminalbridge.ErrDeliveryUnknown):
+		writeJSONError(w, http.StatusBadGateway, "terminal request delivery could not be confirmed; it was not retried")
+	case errors.Is(err, terminalbridge.ErrTerminalReconnecting):
+		writeJSONError(w, http.StatusServiceUnavailable, err.Error())
+	default:
+		writeJSONError(w, http.StatusServiceUnavailable, err.Error())
+	}
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -61,15 +75,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := resolved.Session.ID
 	sessionPath := resolved.Path
-	if !s.startTask(func(ctx context.Context) {
-		if err := s.chatSender.Send(ctx, sessionID, sessionPath, chatReq); err != nil && !errors.Is(err, context.Canceled) {
-			fmt.Fprintf(os.Stderr, "chat send failed for %s: %v\n", sessionID, err)
-		}
-	}) {
-		writeJSONError(w, http.StatusServiceUnavailable, "server is shutting down")
+	dispatchCtx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+	if err := s.chatSender.Send(dispatchCtx, sessionID, sessionPath, chatReq); err != nil {
+		writeOwnerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "status": "queued"})
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "status": "accepted"})
 }
 
 // recentSessionActivityWindow is the grace period after a JSONL write during
@@ -125,7 +137,7 @@ func (s *Server) handleCancelChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.chatSender.Abort(r.Context(), resolved.Session.ID); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeOwnerError(w, err)
 		return
 	}
 	_ = os.Remove(filepath.Join(s.sessionStatusDir(), resolved.Session.ID))
@@ -148,6 +160,8 @@ func (s *Server) handleWorkerStatus(w http.ResponseWriter, r *http.Request) {
 		stateCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if state, err := s.chatSender.GetState(stateCtx, sessionID); err == nil {
+			status.State = state.State
+			status.Error = state.Error
 			status.Model = state.Model
 			status.ModelName = state.ModelName
 			status.ModelProvider = state.ModelProvider
@@ -228,7 +242,7 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.chatSender.SetModel(r.Context(), resolved.Session.ID, resolved.Path, body.Provider, body.ModelID); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeOwnerError(w, err)
 		return
 	}
 	writeJSON(w, 0, map[string]any{"ok": true})
@@ -254,7 +268,7 @@ func (s *Server) handleSetThinkingLevel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.chatSender.SetThinkingLevel(r.Context(), resolved.Session.ID, resolved.Path, body.Level); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeOwnerError(w, err)
 		return
 	}
 	status := s.chatSender.Status(resolved.Session.ID)

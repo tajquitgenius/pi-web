@@ -14,7 +14,7 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
 | Static export | Independent Svelte IIFE rendered through Go `html/template`; self-contained and isolated from all live bundles |
 | Styling | Surface-owned live CSS plus the existing multi-theme shell variables |
 | Live Updates | Server-Sent Events (SSE) |
-| Chat RPC | JSONL over stdin/stdout via `pi --mode rpc` |
+| Session runtime | Authenticated loopback bridge to an active Pi TUI, with JSONL RPC fallback via `pi --mode rpc` |
 | Session Storage | JSONL files on disk; pi-web creates new session files and appends `session_info` for browser rename |
 | Local DB | SQLite (`~/.pi/agent/pi-web.sqlite`) for per-project scratchpads, per-session review annotations, project visibility prefs, server-backed user settings, and the btw scratch-chat registry |
 | Auth | Exact Host/Origin boundary; 90-day public device pairing; optional token form/cookie/header (URL credentials rejected) |
@@ -85,24 +85,27 @@ pi-web is a local HTTP server that lets you browse and interact with your pi cod
          │                          │                          │
          ▼                          ▼                          ▼
    ┌──────────┐            ┌──────────────┐           ┌──────────────┐
-   │ Sessions │            │    Chat      │           │   File       │
-   │  Cache   │            │   Workers    │           │  Watchers    │
+   │ Sessions │            │   Runtime    │           │   File       │
+   │  Cache   │            │   Owners     │           │  Watchers    │
    │          │            │              │           │              │
-   │ LoadAll  │            │ Manager      │           │ fsnotify     │
-   │ ParseFile│            │  ├─ worker   │           │  ├─ debounce │
-   │ Resolve  │            │  ├─ reap     │           │  └─ fallback │
-   │ Create   │            │  └─ status   │           │ polling      │
+   │ LoadAll  │            │ Terminal     │           │ fsnotify     │
+   │ ParseFile│            │  ├─ lease    │           │  ├─ debounce │
+   │ Resolve  │            │  └─ status   │           │  └─ fallback │
+   │ Create   │            │ RPC fallback │           │ polling      │
    └──────────┘            └──────────────┘           └──────────────┘
                                     │
                                     ▼
    ┌──────────────────────────────────────────────────────────────────┐
    │                    External Processes                             │
    │                                                                   │
-   │   pi --mode rpc          (per-session chat worker subprocess)     │
+   │   active Pi TUI          (preferred owner for its open session)   │
+   │   pi --mode rpc          (fallback only without terminal owner)   │
    │   gh gist create         (share session as private gist)          │
    │                                                                   │
    └──────────────────────────────────────────────────────────────────┘
 ```
+
+The terminal bridge is not registered on the HTTP Router shown above. It uses a separate ephemeral `127.0.0.1` listener and an owner-only rotating discovery credential. See [Terminal Session Ownership](terminal-ownership.md).
 
 ## Network Binding
 

@@ -51,6 +51,9 @@ func (s *Server) maybeAutoTitleContext(ctx context.Context, sessID string) {
 	if sessID == "" || !s.autoTitleEnabled() {
 		return
 	}
+	if owner, ok := s.chatSender.(interface{ TerminalOwned(string) bool }); ok && owner.TerminalOwned(sessID) {
+		return
+	}
 	eachTurn := s.autoTitleEachTurn()
 
 	// Cheap pre-parse gate.

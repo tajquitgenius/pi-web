@@ -126,21 +126,21 @@ Browser POST /api/chat?id=<id>
            │         ├──▶ Extract text + image files
            │         └──▶ Validate (not empty, image size, mime type)
            │
-           ├──▶ workers.Manager.Send(ctx, sessionID, sessionPath, chatReq)
+           ├──▶ terminalbridge.Router.Send(ctx, sessionID, sessionPath, chatReq)
            │         │
-           │         ├──▶ Get or create ChatWorker for session
-           │         │         └──▶ rpc.NewPiWorkerWithStream(sessionPath, streamSink)
-           │         │               ├──▶ exec.Command("pi", "--mode", "rpc")
-           │         │               ├──▶ Start subprocess
-           │         │               ├──▶ switch_session RPC
-           │         │               └──▶ Background goroutines: consume stdout, wait
+           │         ├── terminal lease exists
+           │         │      ├── send one request over the authenticated loopback socket
+           │         │      ├── terminal calls ExtensionAPI.sendUserMessage(...)
+           │         │      └── wait for synchronous dispatch acknowledgement
            │         │
-           │         └──▶ worker.Prompt(ctx, chatReq)
-           │               ├──▶ BuildPromptCommand (JSONL to stdin)
-           │               ├──▶ Await response on pending channel
-           │               └──▶ Update status → running
+           │         └── no terminal lease or fresh heartbeat
+           │                └── workers.Manager.Send(...)
+           │                      ├── get or create pi --mode rpc worker
+           │                      └── worker.Prompt(ctx, chatReq)
            │
-           └──▶ Return {"ok": true, "status": "accepted"}
+           └──▶ Return 202 {"ok": true, "status": "accepted"}
+
+A terminal timeout, disconnect, rejection, or ambiguous acknowledgement returns an error. The same operation never crosses to RPC. A later independent operation may use RPC only after the terminal connection and reconnect heartbeat have both expired or been explicitly released.
 ```
 
 ## Data Flow: Rename Session

@@ -16,6 +16,7 @@ type fakeChatWorker struct {
 	prompts         []map[string]any
 	commands        []SlashCommand
 	getCommandsCall int
+	closed          bool
 }
 
 func (f *fakeChatWorker) Prompt(ctx context.Context, chat chat.Request) error {
@@ -55,7 +56,26 @@ func (f *fakeChatWorker) GetCommands(ctx context.Context) ([]SlashCommand, error
 	return f.commands, nil
 }
 
-func (f *fakeChatWorker) Close() error { return nil }
+func (f *fakeChatWorker) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = true
+	return nil
+}
+
+type blockingCloseWorker struct {
+	*fakeChatWorker
+	closeStarted chan struct{}
+	closeRelease chan struct{}
+	closeOnce    sync.Once
+}
+
+func (w *blockingCloseWorker) IdleSince(time.Time) time.Duration { return time.Hour }
+func (w *blockingCloseWorker) Close() error {
+	w.closeOnce.Do(func() { close(w.closeStarted) })
+	<-w.closeRelease
+	return w.fakeChatWorker.Close()
+}
 
 func TestManagerCreatesOneWorkerPerSession(t *testing.T) {
 	created := 0
@@ -426,5 +446,108 @@ func TestEnsureWorkerCreatesWorkerWithoutSendingMessage(t *testing.T) {
 	status := manager.Status("a.jsonl")
 	if status.State != WorkerStateIdle {
 		t.Fatalf("status = %q, want idle", status.State)
+	}
+}
+
+func TestManagerCloseWaitsForFactoryAndPreventsLateWorkerPublication(t *testing.T) {
+	factoryStarted := make(chan struct{})
+	factoryRelease := make(chan struct{})
+	worker := &fakeChatWorker{}
+	manager := NewManagerWithTTL(func(string, string) (ChatWorker, error) {
+		close(factoryStarted)
+		<-factoryRelease
+		return worker, nil
+	}, 0)
+	ensureDone := make(chan error, 1)
+	go func() { ensureDone <- manager.EnsureWorker(context.Background(), "a.jsonl", "/tmp/a.jsonl") }()
+	<-factoryStarted
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- manager.Close() }()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned before factory settled: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(factoryRelease)
+	if err := <-ensureDone; !errors.Is(err, ErrManagerClosed) {
+		t.Fatalf("EnsureWorker error = %v, want ErrManagerClosed", err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatal(err)
+	}
+	worker.mu.Lock()
+	closed := worker.closed
+	worker.mu.Unlock()
+	if !closed {
+		t.Fatal("worker created during shutdown was not closed")
+	}
+	if err := manager.EnsureWorker(context.Background(), "a.jsonl", "/tmp/a.jsonl"); !errors.Is(err, ErrManagerClosed) {
+		t.Fatalf("post-close EnsureWorker error = %v, want ErrManagerClosed", err)
+	}
+}
+
+func TestManagerReleaseWaitsForConcurrentReaperClose(t *testing.T) {
+	worker := &blockingCloseWorker{
+		fakeChatWorker: &fakeChatWorker{},
+		closeStarted:   make(chan struct{}),
+		closeRelease:   make(chan struct{}),
+	}
+	manager := NewManagerWithTTL(func(string, string) (ChatWorker, error) { return worker, nil }, 0)
+	if err := manager.EnsureWorker(context.Background(), "a.jsonl", "/tmp/a.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+	reaped := make(chan struct{})
+	go func() {
+		manager.reapOnce(time.Now())
+		close(reaped)
+	}()
+	<-worker.closeStarted
+
+	released := make(chan error, 1)
+	go func() { released <- manager.Release(context.Background(), "a.jsonl") }()
+	select {
+	case err := <-released:
+		t.Fatalf("Release returned before reaper close completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(worker.closeRelease)
+	if err := <-released; err != nil {
+		t.Fatal(err)
+	}
+	<-reaped
+}
+
+func TestManagerReleaseClosesAndForgetsSessionWorker(t *testing.T) {
+	created := 0
+	var first *fakeChatWorker
+	manager := NewManager(func(string, string) (ChatWorker, error) {
+		created++
+		worker := &fakeChatWorker{}
+		if first == nil {
+			first = worker
+		}
+		return worker, nil
+	})
+	if err := manager.EnsureWorker(context.Background(), "a.jsonl", "/tmp/a.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.Release(context.Background(), "a.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+	first.mu.Lock()
+	closed := first.closed
+	first.mu.Unlock()
+	if !closed {
+		t.Fatal("released worker was not closed")
+	}
+	if status := manager.Status("a.jsonl"); status.State != WorkerStateIdle {
+		t.Fatalf("status after release = %q, want idle", status.State)
+	}
+	if err := manager.EnsureWorker(context.Background(), "a.jsonl", "/tmp/a.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+	if created != 2 {
+		t.Fatalf("created workers = %d, want replacement after release", created)
 	}
 }

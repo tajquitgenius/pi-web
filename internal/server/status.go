@@ -14,6 +14,13 @@ func (s *Server) computeWorkerRunningStatus(sessionID string) bool {
 	if sessionID == "" {
 		return false
 	}
+	if authority, ok := s.chatSender.(interface {
+		AuthoritativeStatus(string) (workers.WorkerStatus, bool)
+	}); ok {
+		if status, authoritative := authority.AuthoritativeStatus(sessionID); authoritative {
+			return status.State == workers.WorkerStateRunning
+		}
+	}
 	if status := s.readSessionStatus(sessionID); status != nil && status.State == workers.WorkerStateRunning {
 		return true
 	}

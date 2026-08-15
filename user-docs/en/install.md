@@ -7,7 +7,8 @@
 - Continue any session from the browser with text or image attachments
 - Start a brand-new session against any project path, right from the web UI
 - In-browser model switching and thinking-level selector, per session
-- Per-session worker status (idle / running / error) with auto-recovery on crash
+- Per-session runtime status (idle / running / error) from the active terminal Pi or browser-owned RPC worker
+- Send browser prompts and controls into an open Pi terminal without starting a competing session writer
 - Multiple sessions run in parallel — kick off work in one, watch another stream
 - Loopback-only remote access through an externally managed HTTPS tunnel
 - Exact public Host and Origin validation with optional `PI_WEB_TOKEN` defense in depth
@@ -58,6 +59,14 @@ Session auto-titling is built into pi-web (not the extension) and configured on 
 On Linux, auto-start is configured as a user systemd service at `~/.config/systemd/user/pi-web.service`. The installer rewrites its `ExecStart` to the actual installed binary path. If user systemd is unavailable, run it manually with `~/.pi/agent/bin/pi-web -o`.
 
 Then restart Pi or run `/reload`. Use `/web` for local access and `/remote` after configuring `PI_WEB_PUBLIC_URL`. Manage the optional second-layer token with `/pi-web token` and `/pi-web set-token`.
+
+### Open terminal sessions
+
+When the pi-web extension is loaded in a persisted Pi terminal session, that terminal becomes the session's only runtime owner. Browser prompts, cancellation, model and thinking changes, rename, and labels are sent into the open terminal. pi-web does not start a second `pi --mode rpc` process for the same JSONL file.
+
+If the local bridge briefly disconnects, browser mutations fail closed while the terminal reconnects. An operation that may have reached the terminal is never replayed through RPC. Submit a new request only after checking the terminal or transcript.
+
+If pi-web says the terminal is behind the session file, quit that Pi process and resume the session once. `/reload` reloads extensions but does not import entries another process already appended into the terminal's in-memory history. To hand ownership back to browser-managed RPC, close the terminal session before sending another browser prompt.
 
 ### Install as a PWA
 

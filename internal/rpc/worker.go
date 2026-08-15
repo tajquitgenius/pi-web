@@ -39,6 +39,8 @@ type piRPCWorker struct {
 	lastStreamActivity   atomic.Int64 // unix nanos; stream/turn events keep worker visually running
 	streamSink           StreamEventSink
 	streamPreview        *streamPreviewAccumulator
+	waitDone             chan struct{}
+	closeOnce            sync.Once
 }
 
 func (w *piRPCWorker) touch() {
@@ -91,6 +93,7 @@ func NewPiWorkerWithStream(sessionPath string, streamSink StreamEventSink) (work
 		stderrBuf:     &stderrBuf,
 		streamSink:    streamSink,
 		streamPreview: &streamPreviewAccumulator{},
+		waitDone:      make(chan struct{}),
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -333,11 +336,16 @@ func (w *piRPCWorker) Status() workers.WorkerStatus {
 }
 
 func (w *piRPCWorker) Close() error {
-	if w.stdin != nil {
-		_ = w.stdin.Close()
-	}
-	if w.cmd != nil && w.cmd.Process != nil {
-		_ = w.cmd.Process.Kill()
+	w.closeOnce.Do(func() {
+		if w.stdin != nil {
+			_ = w.stdin.Close()
+		}
+		if w.cmd != nil && w.cmd.Process != nil {
+			_ = w.cmd.Process.Kill()
+		}
+	})
+	if w.waitDone != nil {
+		<-w.waitDone
 	}
 	return nil
 }
@@ -492,6 +500,7 @@ func (w *piRPCWorker) hasRecentStreamActivityLocked(now time.Time) bool {
 }
 
 func (w *piRPCWorker) wait() {
+	defer close(w.waitDone)
 	if err := w.cmd.Wait(); err != nil {
 		w.setError(err)
 	}

@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
+import { wirePiWebTerminalBridge } from "./terminal-bridge-runtime.mjs";
 
 interface PiWebState {
   pid: number;
@@ -662,6 +663,8 @@ async function showRemoteAccess(
 }
 
 export default function (pi: ExtensionAPI) {
+  wirePiWebTerminalBridge(pi);
+
   // Session auto-titling now lives in pi-web itself (see internal/server/
   // auto_title.go), gated by the /settings page, so the extension no longer
   // registers a title tool or input handler.
@@ -835,7 +838,10 @@ export default function (pi: ExtensionAPI) {
               : "Updating pi-web package...",
             "info",
           );
-          await pi.exec("pi", ["install", "git:github.com/tajquitgenius/pi-web"]);
+          await pi.exec("pi", [
+            "install",
+            "git:github.com/tajquitgenius/pi-web",
+          ]);
           try {
             await restartPiWeb(pi);
           } catch {

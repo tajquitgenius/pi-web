@@ -28,6 +28,7 @@ type fakeSender struct {
 	getStateErr    error
 	ensureWorkerCh chan struct{}
 	sendCh         chan struct{}
+	sendErr        error
 	commands       []workers.SlashCommand
 	commandsReady  bool
 	commandsErr    error
@@ -60,7 +61,7 @@ func (f *fakeSender) Send(ctx context.Context, sessionID, sessionPath string, ch
 	if f.sendCh != nil {
 		f.sendCh <- struct{}{}
 	}
-	return nil
+	return f.sendErr
 }
 
 func (f *fakeSender) SetModel(ctx context.Context, sessionID, sessionPath, provider, modelID string) error {
@@ -156,7 +157,7 @@ func (f *fakeSender) thinkingSessionID() string {
 	return f.setThinkingSessionID
 }
 
-func TestHandleChatQueuesResolvedSession(t *testing.T) {
+func TestHandleChatAcceptsOnlyAfterResolvedOwnerAcknowledges(t *testing.T) {
 	root := t.TempDir()
 	wantPath := writeSessionFile(t, root, "--tmp--project--", "session.jsonl")
 	fake := &fakeSender{sendCh: make(chan struct{}, 1)}
@@ -176,17 +177,37 @@ func TestHandleChatQueuesResolvedSession(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["status"] != "queued" {
-		t.Fatalf("status body = %#v, want queued", got)
+	if got["status"] != "accepted" {
+		t.Fatalf("status body = %#v, want accepted", got)
 	}
 	select {
 	case <-fake.sendCh:
-	case <-time.After(time.Second):
-		t.Fatal("Send was not called asynchronously")
+	default:
+		t.Fatal("202 returned before Send acknowledged")
 	}
 	sentID, sentPath, sentReq := fake.sentInfo()
 	if sentID != "session.jsonl" || sentPath != wantPath || sentReq.Message != "hello" {
 		t.Fatalf("sent id=%q path=%q msg=%q, want path %q", sentID, sentPath, sentReq.Message, wantPath)
+	}
+}
+
+func TestHandleChatSurfacesOwnerAdmissionFailure(t *testing.T) {
+	root := t.TempDir()
+	writeSessionFile(t, root, "--tmp--project--", "session.jsonl")
+	fake := &fakeSender{sendErr: errors.New("terminal unavailable")}
+	s := &Server{sessionsDir: root, chatSender: fake}
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	mw.WriteField("message", "hello")
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/chat?id=session.jsonl", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	s.handleChat(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d body = %s, want 503", w.Code, w.Body.String())
 	}
 }
 

@@ -1,234 +1,126 @@
 # Sequence Flow: Chat Message
 
-This flow covers a user typing a message (with optional image attachment) in the session page chat composer and sending it.
+This flow covers a browser prompt with optional image attachments. The central rule is that one runtime owns the session: a connected Pi terminal, or an RPC worker, never both.
 
-## Sequence Diagram
+## Owner selection
 
-```
-┌─────────┐   ┌─────────┐   ┌────────────┐   ┌──────────────┐   ┌─────────────┐   ┌──────────┐
-│ Browser │   │  Server │   │  sessions  │   │    chat      │   │   workers   │   │  pi rpc  │
-│         │   │         │   │  (resolve) │   │  (request)   │   │  (manager)  │   │ (worker) │
-└────┬────┘   └────┬────┘   └─────┬──────┘   └──────┬───────┘   └──────┬──────┘   └────┬─────┘
-     │             │              │                  │                  │               │
-     │ POST /api/chat?id=abc
-     │ (multipart: message + images)
-     │────────────▶│              │                  │                  │               │
-     │             │              │                  │                  │               │
-     │             │─── ResolveByID ────────────────▶│                  │               │
-     │             │              │                  │                  │               │
-     │             │◀───────────── Session + Path ────│                  │               │
-     │             │              │                  │                  │               │
-     │             │─── Check ChatAvailable ──────────│                  │               │
-     │             │   (return 409 if disabled)       │                  │               │
-     │             │              │                  │                  │               │
-     │             │─── chat.ParseRequest(r) ────────▶│                  │               │
-     │             │              │                  │                  │               │
-     │             │              │─── ParseMultipartForm               │               │
-     │             │              │─── Extract text + image files       │               │
-     │             │              │─── Validate size / mime type        │               │
-     │             │              │─── base64 encode images             │               │
-     │             │              │                  │                  │               │
-     │             │◀───────────── chat.Request ──────│                  │               │
-     │             │   {Message, Images}               │                  │               │
-     │             │              │                  │                  │               │
-     │             │─── chatSender.Send(ctx, id, path, req) ──────────▶│               │
-     │             │              │                  │                  │               │
-     │             │              │                  │                  ├─── workerFor(id, path)
-     │             │              │                  │                  │               │
-     │             │              │                  │                  ├─── Get existing?
-     │             │              │                  │                  │   ┌─ yes ─┐   │
-     │             │              │                  │                  │   ▼       │   │
-     │             │              │                  │                  │  use it   │   │
-     │             │              │                  │                  │   │       │   │
-     │             │              │                  │                  │   └───┬───┘   │
-     │             │              │                  │                  │       │       │
-     │             │              │                  │                  │   no  │       │
-     │             │              │                  │                  │   ▼   │       │
-     │             │              │                  │                  │─── factory(id, path)──▶│
-     │             │              │                  │                  │       │       │
-     │             │              │                  │                  │       │─── exec.Command("pi", "--mode", "rpc")
-     │             │              │                  │                  │       │─── Start()
-     │             │              │                  │                  │       │─── switch_session RPC
-     │             │              │                  │                  │       │─── goroutines: consume stdout, wait
-     │             │              │                  │                  │       │
-     │             │              │                  │                  │◀────── ChatWorker ─│
-     │             │              │                  │                  │               │
-     │             │              │                  │                  ├─── worker.Prompt(ctx, chatReq)
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               ├─── touch() (update idle tracking)
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               ├─── BuildPromptCommand(id, chat, streaming)
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               ├─── sendAndAwait(ctx, cmd)
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               │─── Write JSONL to stdin
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               │─── Block on pending channel
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               │◀── consume() goroutine
-     │             │              │                  │                  │               │    reads stdout line-by-line
-     │             │              │                  │                  │               │    matches response by id
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               │─── Response arrives
-     │             │              │                  │                  │               │─── status → idle
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │◀────────────── nil
-     │             │              │                  │                  │               │
-     │             │◀───────────── nil ──────────────│                  │               │
-     │             │              │                  │                  │               │
-     │◀──────────── {ok: true, status: "accepted"} ─│                  │               │
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               │
-     │ GET /api/worker-status?id=abc
-     │────────────▶│              │                  │                  │               │
-     │             │─── computeRunningStatus ─────────────────────────▶│               │
-     │             │              │                  │                  │               │
-     │             │              │                  │                  ├─── Status()
-     │             │              │                  │                  │   (may return running)
-     │             │              │                  │                  │               │
-     │◀──────────── {state: "running", model: "…", thinkingLevel: "…"} ─│                  │               │
-     │             │              │                  │                  │               │
-     │             │              │                  │                  │               │
-     │  [Later]    │              │                  │                  │               │
-     │  SSE: agent_end
-     │◀──────────── event: reload ──────────────────────────────────────────────────────│
-     │             │              │                  │                  │               │
-     │  (browser reconciles from `/api/session`; interim assistant text may have appeared earlier via `chat-preview` SSE)
+```text
+Browser                 Server              Terminal router        Pi TUI / RPC manager
+   │ POST /api/chat        │                       │                         │
+   ├──────────────────────▶│                       │                         │
+   │                       ├─ resolve session      │                         │
+   │                       ├─ parse and validate   │                         │
+   │                       ├─ Send(id,path,chat) ─▶│                         │
+   │                       │                       │                         │
+   │                       │       terminal connected?                      │
+   │                       │                       ├─ yes: request ─────────▶ Pi TUI
+   │                       │                       │       sendUserMessage()
+   │                       │                       │◀─ dispatch ACK ─────────│
+   │                       │                       │                         │
+   │                       │       no terminal or heartbeat?                │
+   │                       │                       ├─ yes: fallback.Send ───▶ RPC manager
+   │                       │                       │                         ├─ get/create worker
+   │                       │                       │                         └─ Prompt()
+   │                       │◀─ owner admitted ─────│                         │
+   │◀─ 202 accepted ───────│                       │                         │
 ```
 
-## Step-by-Step
+A fresh terminal heartbeat without a live socket is reconnect quarantine, not permission to start RPC. A terminal request that times out or loses its connection is ambiguous and returns an error. That operation is never replayed through RPC or on reconnect.
 
-### 1. User Submits Chat
+## 1. Parse the request
 
-Browser sends a `multipart/form-data` POST:
+The browser sends `multipart/form-data`:
 
-```
+```http
 POST /api/chat?id=2026-01-15T10-30-00.000Z_a1b2c3d4.jsonl
-Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+Content-Type: multipart/form-data; boundary=...
 
-------WebKitFormBoundary
-Content-Disposition: form-data; name="message"
-
-Hello, can you refactor this function?
-------WebKitFormBoundary
-Content-Disposition: form-data; name="images"; filename="screenshot.png"
-Content-Type: image/png
-
-<binary data>
-------WebKitFormBoundary--
+message=Hello, can you refactor this function?
+images=<optional binary image files>
 ```
-
-### 2. Request Parsing
 
 `chat.ParseRequest`:
 
-1. Sets `MaxBytesReader` (32 MB default)
-2. Calls `ParseMultipartForm`
-3. Extracts `message` text field
-4. For each `images` file:
-   - Read with `io.LimitReader` (10 MB per image)
-   - Validate size
-   - Detect MIME type (`http.DetectContentType`)
-   - Reject non-image types
-   - Base64 encode
-5. Validate at least one of message or images is present
+1. Applies the 32 MiB request limit.
+2. Extracts the text and image parts.
+3. Limits each image to 10 MiB and the image count to six.
+4. Detects the MIME type and rejects non-images.
+5. Base64-encodes accepted images.
+6. Requires text or at least one image.
 
-### 3. Worker Resolution
+The terminal protocol and extension apply their own bounded frame, decoded body, identifier, and aggregate-image checks.
 
-After parsing succeeds, the server registers the send as server-owned
-background work and immediately returns `202 Accepted`. The task uses the
-server lifecycle context: graceful shutdown cancels an in-flight RPC wait and
-waits for the task to exit before closing shared resources.
+## 2. Admit the prompt
 
-`workers.Manager.workerFor(sessionID, sessionPath)`:
+`handleChat` calls `chatSender.Send` before returning HTTP 202. This admission boundary matters:
 
-```
-Lock mutex
-  Check existing worker for sessionID
-    If exists and not error → return it
-    If exists and error → close and delete
-Unlock mutex
+- **Terminal owner:** The router sends one request and waits for the extension's response. The extension validates the payload and synchronously calls `pi.sendUserMessage(content, {deliverAs: "steer"})` before acknowledging.
+- **RPC owner:** `workers.Manager` returns an existing healthy worker or creates `pi --mode rpc --session <path>`, then sends the RPC prompt command.
 
-Create new worker: factory(sessionID, sessionPath)
-  → rpc.NewPiWorkerWithStream(sessionPath, streamSink)
-
-Lock mutex
-  Double-check no race winner created one
-  Store new worker
-Unlock mutex
-
-Return worker
-```
-
-### 4. RPC Prompt Command
-
-`piRPCWorker.Prompt` builds and sends:
+The HTTP response is:
 
 ```json
-{"id":"req-1","type":"prompt","message":"Hello, can you refactor this function?","images":[{"type":"image","data":"iVBORw0…","mimeType":"image/png"}],"streamingBehavior":"steer"}
+{"ok":true,"status":"accepted"}
 ```
 
-If the worker is already in `running` state, `streamingBehavior` is `"steer"` to steer an ongoing stream instead of starting a new turn.
+For terminal Pi, this means synchronous extension API dispatch, not provider preflight acceptance or turn completion. The public extension API returns `void`, so later failures are visible only through Pi's normal status and transcript events.
 
-### 5. Response Handling
+## 3. Terminal takeover ordering
 
-The `consume()` goroutine reads JSONL lines from `pi`'s stdout:
+Before accepting a terminal hello, the router validates the session filename, UUID, and current leaf. It then calls `workers.Manager.Release` for that session.
 
-```
-{"type":"response","id":"req-1","success":true}
-```
-
-It matches by `id` and delivers to the waiting `pending` channel. The worker then updates its status to `idle`.
-
-### 6. Streaming Events
-
-While the AI is generating, `pi` may emit stream events:
-
-```
-{"type":"message_update", …}
-{"type":"message_update", …}
-{"type":"message_end"}
-{"type":"turn_end"}
-{"type":"agent_end"}
+```text
+block new RPC creation
+    └─ close RPC worker
+          └─ kill process if needed
+                └─ wait for process exit
+                      └─ publish terminal ready
 ```
 
-These update `lastStreamActivity` so `Status()` continues to report `running` until the stream completes.
+A duplicate terminal is rejected. A terminal whose leaf is behind the JSONL file is rejected and must quit and resume before it can own the session.
 
-### 7. Error Handling
+## 4. Streaming and canonical state
 
-| Error | Response |
-|-------|----------|
-| Empty request | 400 `{"error": "message or image required"}` |
-| Image too large | 413 `{"error": "image attachment too large"}` |
-| Unsupported image type | 415 `{"error": "only image attachments are supported"}` |
-| Session not found | 404 `{"error": "not found"}` |
-| Chat disabled | 409 `{"error": "This session can be viewed, but chat is disabled because its working directory no longer exists."}` |
-| RPC failure | 500 `{"error": "…"}` |
+Both owners write normal Pi JSONL entries. The server's file watcher broadcasts reload events, and the browser refetches `/api/session` to reconcile the canonical transcript. Best-effort `chat-preview` events may show assistant text earlier.
 
-### 8. Worker Lifecycle
+Terminal state events update model, thinking level, and idle/running status without consulting stale RPC or status-file state. RPC workers continue to emit their existing streaming events and status snapshots.
 
-After 10 minutes of idle time (no user-initiated actions), the reaper goroutine closes idle workers to free resources.
+Running state does not change session recency ordering; persisted session activity remains authoritative.
 
-### 9. Cancelling a Chat
+## 5. Errors
 
-`POST /api/chat/cancel?id=<id>` aborts the running worker, removes the terminal's session-status file, broadcasts a `reload` event, and returns `{"ok": true, "status": "cancelled"}`.
+| Condition | Result |
+|---|---|
+| Empty request | 400 `message or image required` |
+| Image too large | 413 `image attachment too large` |
+| Unsupported image | 415 `only image attachments are supported` |
+| Session not found | 404 `not found` |
+| Chat disabled | 409 with the session's disabled reason |
+| Terminal reconnect quarantine | 409 `terminal owner is reconnecting` |
+| Terminal stale behind disk | 409; quit and resume the terminal session |
+| Terminal rejection | 409 or 500, depending on the classified owner error |
+| Terminal timeout or disconnect | 504/502; no fallback or replay |
+| RPC failure | 500 |
 
-### 10. Model Switch Side Effect
+## 6. Cancellation and controls
 
-`handleSetModel` updates the worker model via RPC. On success, the worker automatically refreshes its thinking level (`refreshThinkingLevel`) so the UI stays consistent.
+Cancellation, command discovery, model selection, thinking level, rename, labels, and worker status use the same owner-selection rule. Once a request selects the terminal, it cannot fall through to RPC on failure.
 
-### 11. Server queue API
+Model and thinking controls call Pi's public extension APIs in terminal-owned sessions. RPC-owned sessions use their existing worker methods.
 
-The server still owns persistent queue state and its autonomous drainer:
+## 7. Queue behavior
 
-- `GET /api/chat/queue?id=<sessionID>` → `{items, paused}`
-- `POST /api/chat/queue?id=<sessionID>` with `{message, displayText}`
+The server owns persistent queue state:
+
+- `GET /api/chat/queue?id=<sessionID>`
+- `POST /api/chat/queue?id=<sessionID>`
 - `DELETE /api/chat/queue?id=<sessionID>&position=N`
-- `PATCH /api/chat/queue?id=<sessionID>` with `{paused}`
+- `PATCH /api/chat/queue?id=<sessionID>`
 
-Queue mutations broadcast a named `queue` SSE event. The React products in this beta do not expose the removed live-Svelte steering and queue panel.
+The drainer serializes each session and keeps the head item until its selected owner acknowledges it. An ambiguous terminal failure pauses draining without removing or replaying the item. Queue changes broadcast the `queue` SSE event.
 
----
+## 8. RPC lifecycle
 
-**E2E coverage:** `e2e/tests/react-products.spec.ts` drives chat through both React products with the stub `pi` worker in `e2e/lib/stub-pi/pi`. See [docs/dev/e2e-testing.md](../dev/e2e-testing.md).
+Fallback workers are reaped after ten idle minutes. Creation, release, and reaping are serialized per session. Worker close waits for the child process to exit so a terminal cannot become ready while the RPC process can still write.
+
+See [Terminal Session Ownership](../architecture/terminal-ownership.md) for the security and failure model.

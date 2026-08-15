@@ -4,14 +4,16 @@ This directory contains the architecture documentation for **pi-web**, a local w
 
 ## Documents
 
-| Document | Description |
-|----------|-------------|
-| [system-overview.md](./system-overview.md) | High-level system architecture, component diagram, and tech stack |
-| [backend.md](./backend.md) | Go backend: packages, responsibilities, and key types |
-| [device-pairing.md](./device-pairing.md) | Public device gate, credentials, local administration, and SQLite storage |
-| [host-hub.md](./host-hub.md) | Main's same-origin Work/Personal node enrollment, relay, and streaming boundary |
-| [frontend.md](./frontend.md) | Frontend architecture: React products, typed client, and isolated static export |
-| [data-flow.md](./data-flow.md) | Session file format, data model, and storage layout |
+| Document                                                           | Description                                                                                          |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| [system-overview.md](./system-overview.md)                         | High-level system architecture, component diagram, and tech stack                                    |
+| [backend.md](./backend.md)                                         | Go backend: packages, responsibilities, and key types                                                |
+| [device-pairing.md](./device-pairing.md)                           | Public device gate, credentials, local administration, and SQLite storage                            |
+| [host-hub.md](./host-hub.md)                                       | Main's same-origin Work/Personal node enrollment, relay, and streaming boundary                      |
+| [terminal-ownership.md](./terminal-ownership.md)                    | Single terminal-or-RPC runtime ownership, local bridge security, and failure semantics               |
+| [frontend.md](./frontend.md)                                       | Frontend architecture: React products, typed client, and isolated static export                      |
+| [data-flow.md](./data-flow.md)                                     | Session file format, data model, and storage layout                                                  |
+| [../pi-product-expansion-plan.md](../pi-product-expansion-plan.md) | Approved minimal plan for models, extension services, Agents, Discuss, BTW, mobile PWA, and Electron |
 
 ## Architecture at a Glance
 
@@ -33,8 +35,8 @@ This directory contains the architecture documentation for **pi-web**, a local w
 │  │Middleware  │ │  (server)  │ │ (events)   │ │ (fsnotify/poll)  │  │
 │  └────────────┘ └────────────┘ └────────────┘ └──────────────────┘  │
 │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────────────────┐  │
-│  │  Sessions  │ │  Workers   │ │   RPC      │ │  Share (gh)      │  │
-│  │  (cache)   │ │  (manager) │ │  (pi CLI)  │ │  (gist create)   │  │
+│  │  Sessions  │ │ Terminal   │ │ RPC fallback│ │  Share (gh)      │  │
+│  │  (cache)   │ │  bridge    │ │  (pi CLI)  │ │  (gist create)   │  │
 │  └────────────┘ └────────────┘ └────────────┘ └──────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
@@ -52,7 +54,7 @@ This directory contains the architecture documentation for **pi-web**, a local w
 
 2. **Live updates via SSE**: The browser opens an EventSource connection. The server watches session files via `fsnotify` (with polling fallback) and pushes `reload` events; session pages fetch `/api/session` to reconcile canonical JSONL entries. Browser chat can also receive best-effort `chat-preview` SSE events before JSONL reconciliation.
 
-3. **Chat via RPC workers**: Each session gets a dedicated `pi --mode rpc` subprocess. Workers are cached and reaped after 10 minutes of idle time.
+3. **One runtime owner per session**: An active terminal Pi owns its session through the authenticated terminal bridge. Only sessions without a terminal lease may use a dedicated `pi --mode rpc` subprocess. Ownership transfer waits for the old RPC process to exit, and ambiguous terminal delivery never falls back or replays. See [Terminal Session Ownership](terminal-ownership.md).
 
 4. **Separate live products and export**:
    - **Desktop and mobile**: Independent React/Vite outputs selected by cookie or conservative user-agent classification

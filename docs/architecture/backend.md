@@ -51,6 +51,10 @@ pi-web/
 │   │   └── git.go              # git branch info, rename, PR URL detection
 │   ├── updater/
 │   │   └── updater.go          # Background version checker + changelog fetch
+│   ├── terminalbridge/
+│   │   ├── key.go              # Dedicated loopback listener + rotating discovery file
+│   │   ├── router.go           # Terminal leases, heartbeat quarantine, owner selection
+│   │   └── key_{unix,windows}.go # Owner-only Unix permissions / Windows DACL
 │   ├── rpc/
 │   │   ├── client.go           # JSONL RPC command builders
 │   │   ├── worker.go           # pi --mode rpc subprocess worker
@@ -139,7 +143,7 @@ type Server struct {
     clientsMu     sync.RWMutex
     fileMod       map[string]time.Time  // last seen modtime per session
     fileModMu     sync.RWMutex
-    chatSender    ChatSender      // workers.Manager
+    chatSender    ChatSender      // terminalbridge.Router with workers.Manager fallback
     cache         *sessions.Cache // modtime-aware parse cache
     auth          *auth.Middleware
     pairing       *pairing.Store
@@ -227,9 +231,15 @@ type Session struct {
 }
 ```
 
+### `terminalbridge.Router`
+
+Selects exactly one runtime owner for each session. A connected and validated TUI terminal receives prompts, cancellation, model and thinking changes, commands, rename, labels, and status requests. With no terminal lease or fresh terminal heartbeat, the router delegates to `workers.Manager`. Once it chooses a terminal for an operation, timeout or disconnect is returned as an error and is never replayed through RPC.
+
+The bridge listens on a separate ephemeral loopback port, not the browser or hub HTTP listener. A private discovery file contains the port and a per-process 256-bit token. The handshake rejects non-loopback peers, unexpected Host values, browser Origin metadata, wrong subprotocol tokens, duplicate owners, stale session UUIDs, and terminal leaves behind the JSONL file. See [Terminal Session Ownership](terminal-ownership.md).
+
 ### `workers.Manager`
 
-Manages `pi --mode rpc` subprocesses per session.
+Manages fallback `pi --mode rpc` subprocesses per session. `Release` serializes against creation and reaping, closes the worker, and waits for the process to exit before a terminal lease can be published.
 
 ```go
 type Manager struct {
