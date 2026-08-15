@@ -91,7 +91,7 @@ PI_WEB_PUBLIC_URL=https://personal-pi.tajwar.org
 PI_WEB_REMOTE_AUTH=external
 ```
 
-The matching templates live under [`deploy/cloudflare`](../../deploy/cloudflare). The macOS, Linux, and Windows service loaders read these variables on restart.
+The matching templates live in the repository's [`deploy/cloudflare` directory](https://github.com/tajquitgenius/pi-web/tree/main/deploy/cloudflare). The macOS, Linux, and Windows service loaders read these variables on restart.
 
 ## Enroll Work and Personal with Main
 
