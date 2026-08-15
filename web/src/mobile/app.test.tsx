@@ -958,7 +958,7 @@ describe('mobile routing and labels', () => {
     );
   });
 
-  it('opens from a rightward swipe across the main surface and closes from a leftward swipe', () => {
+  it('opens from a rightward swipe across the main surface and closes from a leftward swipe', async () => {
     const view = render(<MobileApp client={makeClient()} path="/" search="" />);
     const app = view.container.querySelector('.mobile-app');
     expect(app).not.toBeNull();
@@ -989,7 +989,9 @@ describe('mobile routing and labels', () => {
       changedTouches: [{ identifier: 3, clientX: 170, clientY: 184 }],
     });
 
-    expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument(),
+    );
   });
 
   it('does not open after vertical-intent or cancelled gestures', () => {

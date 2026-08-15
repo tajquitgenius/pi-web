@@ -1,5 +1,14 @@
 import { ExternalLink, Folder, Menu, MessageSquare, Plus, Server, Settings, X } from 'lucide-react';
-import { createContext, useContext, useRef, type ReactNode, type TouchEvent } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type TouchEvent,
+} from 'react';
 import type { HostContext, SessionSummary } from '../live-shared';
 import { t } from '../shared/i18n.js';
 import { useMobileDialog } from './dialog';
@@ -88,7 +97,28 @@ export function MobileNavigationDrawer({
 }: MobileNavigationDrawerProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeSwipeStart = useRef<{ identifier: number; x: number; y: number } | null>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [entering, setEntering] = useState(true);
+  const [closing, setClosing] = useState(false);
   useMobileDialog(dialogRef, onClose);
+  useEffect(
+    () => () => {
+      window.clearTimeout(closeTimer.current);
+    },
+    [],
+  );
+
+  const animateClosed = () => {
+    setDragging(false);
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    closeTimer.current = window.setTimeout(onClose, 180);
+  };
 
   const currentView = new URLSearchParams(currentSearch).get('view');
   const threadsCurrent = currentPath === '/' && currentView !== 'projects';
@@ -100,6 +130,9 @@ export function MobileNavigationDrawer({
     closeSwipeStart.current = touch
       ? { identifier: touch.identifier, x: touch.clientX, y: touch.clientY }
       : null;
+    setEntering(false);
+    setDragging(false);
+    setDragX(0);
   };
 
   const moveCloseSwipe = (event: TouchEvent<HTMLElement>) => {
@@ -116,6 +149,14 @@ export function MobileNavigationDrawer({
     const deltaY = Math.abs(touch.clientY - start.y);
     if ((deltaY > 12 && deltaY > Math.abs(deltaX)) || deltaX > 12) {
       closeSwipeStart.current = null;
+      setDragging(false);
+      setDragX(0);
+      return;
+    }
+    if (deltaX < -8 && Math.abs(deltaX) > deltaY) {
+      event.preventDefault();
+      setDragging(true);
+      setDragX(deltaX);
     }
   };
 
@@ -129,7 +170,12 @@ export function MobileNavigationDrawer({
     if (!touch) return;
     const deltaX = touch.clientX - start.x;
     const deltaY = Math.abs(touch.clientY - start.y);
-    if (deltaX <= -56 && Math.abs(deltaX) > deltaY * 1.25) onClose();
+    if (deltaX <= -56 && Math.abs(deltaX) > deltaY * 1.25) {
+      animateClosed();
+    } else {
+      setDragging(false);
+      setDragX(0);
+    }
   };
 
   const navigate = (url: string) => {
@@ -139,7 +185,7 @@ export function MobileNavigationDrawer({
 
   return (
     <div
-      className="mobile-navigation-backdrop"
+      className={`mobile-navigation-backdrop${closing ? ' is-closing' : ''}`}
       role="presentation"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -147,7 +193,11 @@ export function MobileNavigationDrawer({
     >
       <aside
         ref={dialogRef}
-        className="mobile-navigation-drawer"
+        className={`mobile-navigation-drawer${entering ? ' is-entering' : ''}${dragging ? ' is-dragging' : ''}${closing ? ' is-closing' : ''}`}
+        style={{ '--mobile-drawer-drag-x': `${dragX}px` } as CSSProperties}
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget) setEntering(false);
+        }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="mobile-navigation-title"
@@ -157,6 +207,8 @@ export function MobileNavigationDrawer({
         onTouchEnd={finishCloseSwipe}
         onTouchCancel={() => {
           closeSwipeStart.current = null;
+          setDragging(false);
+          setDragX(0);
         }}
       >
         <header className="mobile-navigation-header">

@@ -612,6 +612,15 @@ describe('mobile conversation redesign', () => {
       value: 741,
       writable: true,
     });
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.classList.contains('mobile-session-screen')) {
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+        Object.defineProperty(visualViewport, 'height', { configurable: true, value: 800 });
+      }
+      return 0;
+    });
 
     renderConversation(makeClient());
     await screen.findByRole('textbox', { name: 'Message' });
@@ -620,6 +629,32 @@ describe('mobile conversation redesign', () => {
     expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false');
     expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('800px');
     expect(screenRoot.style.getPropertyValue('--mobile-viewport-top')).toBe('0px');
+    await waitFor(() => expect(window.innerHeight).toBe(800));
+  });
+
+  it('cancels a pending viewport heal when the composer regains focus', async () => {
+    const visualViewport = new EventTarget() as VisualViewport;
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 741 },
+      offsetTop: { configurable: true, value: 0 },
+    });
+    vi.stubGlobal('visualViewport', visualViewport);
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('iPhone');
+    vi.spyOn(window.screen, 'height', 'get').mockReturnValue(800);
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 741,
+      writable: true,
+    });
+    const viewportRead = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(0);
+
+    renderConversation(makeClient());
+    const message = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.focus(message);
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+
+    expect(viewportRead).not.toHaveBeenCalled();
   });
 
   it('keeps the full-height composer anchor through the iOS dismissal shrink', async () => {
