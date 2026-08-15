@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+  type TouchEvent,
+} from 'react';
 import type { PiWebClient, SessionSummary } from '../live-shared';
 import { ConversationScreen } from './conversation-screen';
 import { PairingScreen } from './pairing-screen';
@@ -45,6 +53,11 @@ export function MobileApp({
   const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([]);
   const [recentsLoading, setRecentsLoading] = useState(false);
   const [recentsError, setRecentsError] = useState(false);
+  const navigationSwipeStart = useRef<{
+    identifier: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -93,6 +106,44 @@ export function MobileApp({
       active = false;
     };
   }, [client, navigationOpen, route.path]);
+
+  const startNavigationSwipe = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches.length === 1 ? event.touches[0] : null;
+    navigationSwipeStart.current =
+      !navigationOpen && touch && touch.clientX <= 24
+        ? { identifier: touch.identifier, x: touch.clientX, y: touch.clientY }
+        : null;
+  };
+
+  const moveNavigationSwipe = (event: TouchEvent<HTMLDivElement>) => {
+    const start = navigationSwipeStart.current;
+    if (!start) return;
+    const touch = Array.from(event.touches).find(
+      (candidate) => candidate.identifier === start.identifier,
+    );
+    if (!touch) {
+      navigationSwipeStart.current = null;
+      return;
+    }
+    const deltaX = touch.clientX - start.x;
+    const deltaY = Math.abs(touch.clientY - start.y);
+    if ((deltaY > 12 && deltaY > Math.abs(deltaX)) || deltaX < -12) {
+      navigationSwipeStart.current = null;
+    }
+  };
+
+  const finishNavigationSwipe = (event: TouchEvent<HTMLDivElement>) => {
+    const start = navigationSwipeStart.current;
+    navigationSwipeStart.current = null;
+    if (!start) return;
+    const touch = Array.from(event.changedTouches).find(
+      (candidate) => candidate.identifier === start.identifier,
+    );
+    if (!touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = Math.abs(touch.clientY - start.y);
+    if (deltaX >= 56 && deltaX > deltaY * 1.25) setNavigationOpen(true);
+  };
 
   const internalLink = (url: string, children: ReactNode, className?: string, key?: string) => (
     <a
@@ -164,7 +215,15 @@ export function MobileApp({
 
   return (
     <MobileNavigationProvider value={navigation}>
-      <div className="mobile-app">
+      <div
+        className="mobile-app"
+        onTouchStart={startNavigationSwipe}
+        onTouchMove={moveNavigationSwipe}
+        onTouchEnd={finishNavigationSwipe}
+        onTouchCancel={() => {
+          navigationSwipeStart.current = null;
+        }}
+      >
         {screen}
         {navigationOpen && (
           <MobileNavigationDrawer

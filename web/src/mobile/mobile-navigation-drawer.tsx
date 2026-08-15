@@ -1,15 +1,5 @@
-import {
-  Clock3,
-  ExternalLink,
-  Folder,
-  Menu,
-  MessageSquare,
-  Plus,
-  Server,
-  Settings,
-  X,
-} from 'lucide-react';
-import { createContext, useContext, useRef, type ReactNode } from 'react';
+import { ExternalLink, Folder, Menu, MessageSquare, Plus, Server, Settings, X } from 'lucide-react';
+import { createContext, useContext, useRef, type ReactNode, type TouchEvent } from 'react';
 import type { HostContext, SessionSummary } from '../live-shared';
 import { t } from '../shared/i18n.js';
 import { useMobileDialog } from './dialog';
@@ -97,12 +87,50 @@ export function MobileNavigationDrawer({
   onClose,
 }: MobileNavigationDrawerProps) {
   const dialogRef = useRef<HTMLElement>(null);
+  const closeSwipeStart = useRef<{ identifier: number; x: number; y: number } | null>(null);
   useMobileDialog(dialogRef, onClose);
 
   const currentView = new URLSearchParams(currentSearch).get('view');
   const threadsCurrent = currentPath === '/' && currentView !== 'projects';
   const projectsCurrent = currentPath === '/' && currentView === 'projects';
   const settingsCurrent = currentPath === '/settings';
+
+  const startCloseSwipe = (event: TouchEvent<HTMLElement>) => {
+    const touch = event.touches.length === 1 ? event.touches[0] : null;
+    closeSwipeStart.current = touch
+      ? { identifier: touch.identifier, x: touch.clientX, y: touch.clientY }
+      : null;
+  };
+
+  const moveCloseSwipe = (event: TouchEvent<HTMLElement>) => {
+    const start = closeSwipeStart.current;
+    if (!start) return;
+    const touch = Array.from(event.touches).find(
+      (candidate) => candidate.identifier === start.identifier,
+    );
+    if (!touch) {
+      closeSwipeStart.current = null;
+      return;
+    }
+    const deltaX = touch.clientX - start.x;
+    const deltaY = Math.abs(touch.clientY - start.y);
+    if ((deltaY > 12 && deltaY > Math.abs(deltaX)) || deltaX > 12) {
+      closeSwipeStart.current = null;
+    }
+  };
+
+  const finishCloseSwipe = (event: TouchEvent<HTMLElement>) => {
+    const start = closeSwipeStart.current;
+    closeSwipeStart.current = null;
+    if (!start) return;
+    const touch = Array.from(event.changedTouches).find(
+      (candidate) => candidate.identifier === start.identifier,
+    );
+    if (!touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = Math.abs(touch.clientY - start.y);
+    if (deltaX <= -56 && Math.abs(deltaX) > deltaY * 1.25) onClose();
+  };
 
   const navigate = (url: string) => {
     onNavigate(url);
@@ -124,6 +152,12 @@ export function MobileNavigationDrawer({
         aria-modal="true"
         aria-labelledby="mobile-navigation-title"
         tabIndex={-1}
+        onTouchStart={startCloseSwipe}
+        onTouchMove={moveCloseSwipe}
+        onTouchEnd={finishCloseSwipe}
+        onTouchCancel={() => {
+          closeSwipeStart.current = null;
+        }}
       >
         <header className="mobile-navigation-header">
           <div className="mobile-navigation-brand">
@@ -190,7 +224,6 @@ export function MobileNavigationDrawer({
 
         <section className="mobile-navigation-section" aria-labelledby="mobile-navigation-recents">
           <div className="mobile-navigation-section-heading">
-            <Clock3 aria-hidden="true" size={17} />
             <h3 id="mobile-navigation-recents">{t('index.recents')}</h3>
           </div>
           {recentsLoading && recentSessions.length === 0 ? (
@@ -230,7 +263,6 @@ export function MobileNavigationDrawer({
             aria-labelledby="mobile-navigation-hosts"
           >
             <div className="mobile-navigation-section-heading">
-              <Server aria-hidden="true" size={17} />
               <h3 id="mobile-navigation-hosts">{t('host.otherComputers')}</h3>
             </div>
             <div className="mobile-navigation-recents">

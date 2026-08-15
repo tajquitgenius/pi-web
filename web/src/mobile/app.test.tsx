@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -956,6 +956,71 @@ describe('mobile routing and labels', () => {
     await waitFor(() =>
       expect(view.container.querySelector(`[data-mobile-route="${route}"]`)).toBeInTheDocument(),
     );
+  });
+
+  it('opens from a rightward edge swipe and closes from a leftward swipe', () => {
+    const view = render(<MobileApp client={makeClient()} path="/" search="" />);
+    const app = view.container.querySelector('.mobile-app');
+    expect(app).not.toBeNull();
+
+    fireEvent.touchStart(app!, {
+      touches: [{ identifier: 1, clientX: 20, clientY: 180 }],
+    });
+    fireEvent.touchEnd(app!, {
+      changedTouches: [{ identifier: 1, clientX: 88, clientY: 185 }],
+    });
+
+    const drawer = screen.getByRole('dialog', { name: 'Navigation' });
+    fireEvent.touchStart(drawer, {
+      touches: [{ identifier: 2, clientX: 240, clientY: 180 }],
+    });
+    fireEvent.touchMove(drawer, {
+      touches: [{ identifier: 2, clientX: 236, clientY: 225 }],
+    });
+    fireEvent.touchEnd(drawer, {
+      changedTouches: [{ identifier: 2, clientX: 170, clientY: 184 }],
+    });
+    expect(drawer).toBeInTheDocument();
+
+    fireEvent.touchStart(drawer, {
+      touches: [{ identifier: 3, clientX: 240, clientY: 180 }],
+    });
+    fireEvent.touchEnd(drawer, {
+      changedTouches: [{ identifier: 3, clientX: 170, clientY: 184 }],
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();
+  });
+
+  it('does not open after off-edge, vertical-intent, or cancelled gestures', () => {
+    const view = render(<MobileApp client={makeClient()} path="/" search="" />);
+    const app = view.container.querySelector('.mobile-app');
+    expect(app).not.toBeNull();
+
+    fireEvent.touchStart(app!, {
+      touches: [{ identifier: 1, clientX: 40, clientY: 180 }],
+    });
+    fireEvent.touchEnd(app!, {
+      changedTouches: [{ identifier: 1, clientX: 110, clientY: 184 }],
+    });
+    fireEvent.touchStart(app!, {
+      touches: [{ identifier: 2, clientX: 20, clientY: 180 }],
+    });
+    fireEvent.touchMove(app!, {
+      touches: [{ identifier: 2, clientX: 24, clientY: 220 }],
+    });
+    fireEvent.touchEnd(app!, {
+      changedTouches: [{ identifier: 2, clientX: 92, clientY: 184 }],
+    });
+    fireEvent.touchStart(app!, {
+      touches: [{ identifier: 3, clientX: 20, clientY: 180 }],
+    });
+    fireEvent.touchCancel(app!);
+    fireEvent.touchEnd(app!, {
+      changedTouches: [{ identifier: 3, clientX: 92, clientY: 184 }],
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();
   });
 
   it('loads Recents when the drawer opens from a direct conversation route', async () => {

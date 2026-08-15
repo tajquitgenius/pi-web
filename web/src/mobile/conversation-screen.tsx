@@ -649,6 +649,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const [preview, setPreview] = useState('');
   const previewRef = useRef('');
   const previewBaselineRef = useRef<Set<string> | null>(null);
+  const keyboardViewportBaselineRef = useRef(0);
   const refreshGenerationRef = useRef(0);
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [draft, setDraft] = useState('');
@@ -890,20 +891,46 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     const root = screenRef.current;
     const viewport = window.visualViewport;
     if (!root || !viewport) return;
+    let orientationResetTimer: number | undefined;
     const update = () => {
+      const visibleBottom = viewport.height + viewport.offsetTop;
+      const currentViewportHeight = Math.max(window.innerHeight, visibleBottom);
+      const composerFocused = document.activeElement === textareaRef.current;
+      if (!composerFocused || keyboardViewportBaselineRef.current === 0) {
+        keyboardViewportBaselineRef.current = currentViewportHeight;
+      } else {
+        keyboardViewportBaselineRef.current = Math.max(
+          keyboardViewportBaselineRef.current,
+          currentViewportHeight,
+        );
+      }
+      const keyboardOpen =
+        composerFocused && keyboardViewportBaselineRef.current - visibleBottom > 120;
       root.style.setProperty('--mobile-viewport-height', `${viewport.height}px`);
       root.style.setProperty('--mobile-viewport-top', `${viewport.offsetTop}px`);
-      root.dataset.keyboardOpen = window.innerHeight - viewport.height > 120 ? 'true' : 'false';
+      root.dataset.keyboardOpen = keyboardOpen ? 'true' : 'false';
       if (followingLatestRef.current) {
         requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
       }
     };
+    const resetForOrientation = () => {
+      window.clearTimeout(orientationResetTimer);
+      orientationResetTimer = window.setTimeout(() => {
+        keyboardViewportBaselineRef.current = 0;
+        update();
+      }, 250);
+    };
     update();
     viewport.addEventListener('resize', update);
     viewport.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', resetForOrientation);
     return () => {
+      window.clearTimeout(orientationResetTimer);
       viewport.removeEventListener('resize', update);
       viewport.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', resetForOrientation);
     };
   }, [loading]);
 
@@ -916,6 +943,9 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         '--mobile-composer-height',
         `${composer.getBoundingClientRect().height}px`,
       );
+      if (followingLatestRef.current) {
+        requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
+      }
     };
     update();
     if (typeof ResizeObserver === 'undefined') return;
@@ -1148,25 +1178,21 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       className="mobile-screen mobile-session-screen"
       data-mobile-route="session"
     >
-      <header className="mobile-conversation-header">
-        <div className="mobile-conversation-header-main" onPointerDown={dismissKeyboard}>
-          <MobileNavigationTrigger className="mobile-icon-button" />
-          <div className="mobile-conversation-title">
-            <h1>{details.name || sessionId}</h1>
-          </div>
-          <button
-            type="button"
-            className="mobile-icon-button"
-            aria-label={t('conversation.threadActions')}
-            onClick={() => {
-              dismissKeyboard();
-              setToolsSheet('actions');
-            }}
-          >
-            <MoreHorizontal aria-hidden="true" size={21} />
-          </button>
-        </div>
-      </header>
+      <h1 className="mobile-visually-hidden">{details.name || sessionId}</h1>
+      <div className="mobile-conversation-floating-controls" onPointerDown={dismissKeyboard}>
+        <MobileNavigationTrigger className="mobile-conversation-floating-button" />
+        <button
+          type="button"
+          className="mobile-conversation-floating-button"
+          aria-label={t('conversation.threadActions')}
+          onClick={() => {
+            dismissKeyboard();
+            setToolsSheet('actions');
+          }}
+        >
+          <MoreHorizontal aria-hidden="true" size={21} />
+        </button>
+      </div>
       <MobileConnectivityNotice state={connection} onRetry={retrySession} />
 
       <div

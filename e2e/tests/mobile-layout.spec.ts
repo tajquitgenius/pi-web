@@ -71,11 +71,25 @@ test.describe("mobile layout bounds", () => {
         const send = composer.querySelector<HTMLButtonElement>(
           ".mobile-send-button",
         )!;
+        const feed = document.querySelector<HTMLElement>(
+          ".mobile-conversation-feed",
+        )!;
+        const floatingControls = document.querySelector<HTMLElement>(
+          ".mobile-conversation-floating-controls",
+        )!;
+        const feedBox = feed.getBoundingClientRect();
+        const composerStyle = getComputedStyle(composer);
         return {
           fontSize: Number.parseFloat(getComputedStyle(textarea).fontSize),
           hasKeyboardInset: composer.hasAttribute("data-keyboard-inset"),
           sendBottom: send.getBoundingClientRect().bottom,
           viewportBottom: window.innerHeight,
+          feedTop: feedBox.top,
+          feedBottom: feedBox.bottom,
+          composerPosition: composerStyle.position,
+          composerBackground: composerStyle.backgroundColor,
+          composerBorderTop: composerStyle.borderTopWidth,
+          controlsPosition: getComputedStyle(floatingControls).position,
         };
       });
       expect(composerLayout.fontSize).toBeGreaterThanOrEqual(16);
@@ -83,6 +97,18 @@ test.describe("mobile layout bounds", () => {
       expect(composerLayout.sendBottom).toBeLessThanOrEqual(
         composerLayout.viewportBottom,
       );
+      expect(composerLayout.feedTop).toBeGreaterThanOrEqual(-1);
+      expect(composerLayout.feedTop).toBeLessThanOrEqual(1);
+      expect(composerLayout.feedBottom).toBeGreaterThanOrEqual(
+        composerLayout.viewportBottom - 1,
+      );
+      expect(composerLayout.feedBottom).toBeLessThanOrEqual(
+        composerLayout.viewportBottom + 1,
+      );
+      expect(composerLayout.composerPosition).toBe("absolute");
+      expect(composerLayout.composerBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(composerLayout.composerBorderTop).toBe("0px");
+      expect(composerLayout.controlsPosition).toBe("absolute");
 
       await page.getByRole("button", { name: "Tools" }).click();
       const tools = page.getByRole("dialog", { name: "Tools" });
@@ -95,4 +121,64 @@ test.describe("mobile layout bounds", () => {
       await expectNoHorizontalOverflow(page);
     });
   }
+
+  test("keeps reconnect recovery floating above the full transcript", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.locator(".mobile-session-row").first().click();
+    await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
+    await page.evaluate(() => {
+      const notice = document.createElement("div");
+      notice.className = "mobile-connectivity-notice is-reconnecting";
+      notice.setAttribute("role", "status");
+      notice.setAttribute("aria-label", "Connection status");
+      notice.innerHTML = '<span>Reconnecting…</span><button type="button">Retry</button>';
+      document.querySelector(".mobile-session-screen")!.append(notice);
+    });
+
+    const notice = page.getByRole("status", { name: "Connection status" });
+    await expect(notice).toBeVisible();
+    const geometry = await page.evaluate(() => {
+      const feed = document.querySelector<HTMLElement>(
+        ".mobile-conversation-feed",
+      )!;
+      const notice = document.querySelector<HTMLElement>(
+        ".mobile-connectivity-notice",
+      )!;
+      const controls = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".mobile-conversation-floating-button",
+        ),
+      );
+      const feedBox = feed.getBoundingClientRect();
+      const noticeBox = notice.getBoundingClientRect();
+      const controlBoxes = controls.map((control) =>
+        control.getBoundingClientRect(),
+      );
+      return {
+        feedTop: feedBox.top,
+        feedBottom: feedBox.bottom,
+        viewportBottom: window.innerHeight,
+        noticeLeft: noticeBox.left,
+        noticeRight: noticeBox.right,
+        leftControlRight: controlBoxes[0]!.right,
+        rightControlLeft: controlBoxes[1]!.left,
+      };
+    });
+    expect(geometry.feedTop).toBeGreaterThanOrEqual(-1);
+    expect(geometry.feedTop).toBeLessThanOrEqual(1);
+    expect(geometry.feedBottom).toBeGreaterThanOrEqual(
+      geometry.viewportBottom - 1,
+    );
+    expect(geometry.feedBottom).toBeLessThanOrEqual(
+      geometry.viewportBottom + 1,
+    );
+    expect(geometry.noticeLeft).toBeGreaterThanOrEqual(
+      geometry.leftControlRight,
+    );
+    expect(geometry.noticeRight).toBeLessThanOrEqual(
+      geometry.rightControlLeft,
+    );
+    await expect(notice.getByRole("button", { name: "Retry" })).toBeVisible();
+  });
 });

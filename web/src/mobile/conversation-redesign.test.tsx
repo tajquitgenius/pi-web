@@ -2,7 +2,12 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatWorkerStatus, PiWebClient, SessionDetails } from '../live-shared';
+import type {
+  ChatWorkerStatus,
+  PiWebClient,
+  SessionDetails,
+  SSESubscriptionHandlers,
+} from '../live-shared';
 import { ConversationScreen } from './conversation-screen';
 import { MobileNavigationProvider } from './mobile-navigation-drawer';
 
@@ -89,7 +94,39 @@ afterEach(() => {
 });
 
 describe('mobile conversation redesign', () => {
-  it('keeps runtime controls in Tools and thread actions in the header', async () => {
+  it('shows reconnect recovery without replacing the conversation', async () => {
+    let handlers: SSESubscriptionHandlers | undefined;
+    renderConversation(
+      makeClient(details, {
+        subscribe: vi.fn((_topic, nextHandlers) => {
+          handlers = nextHandlers;
+          return { close: vi.fn() };
+        }),
+      }),
+    );
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    act(() => {
+      handlers?.onOpen?.(new Event('open'));
+      handlers?.onError?.(new Event('error'));
+    });
+
+    expect(screen.getByRole('status', { name: 'Connection status' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Retry connection' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBeVisible();
+  });
+
+  it('keeps the thread name accessible without reserving a navigation header', async () => {
+    const { container } = renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Mobile session' })).toBeInTheDocument();
+    expect(container.querySelector('.mobile-conversation-header')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Thread actions' })).toBeVisible();
+  });
+
+  it('keeps runtime controls in Tools and thread actions in the floating controls', async () => {
     const user = userEvent.setup();
     renderConversation(makeClient());
     await screen.findByRole('textbox', { name: 'Message' });
@@ -437,34 +474,99 @@ describe('mobile conversation redesign', () => {
     expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument();
   });
 
-  it('uses the visual viewport as the single keyboard geometry source', async () => {
-    const visualViewport = new EventTarget() as VisualViewport;
-    Object.defineProperties(visualViewport, {
-      height: { configurable: true, value: 400 },
-      offsetTop: { configurable: true, value: 12 },
-    });
-    vi.stubGlobal('visualViewport', visualViewport);
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
-
+  it('repins the latest message when the floating composer grows', async () => {
+    let resize: ResizeObserverCallback | undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
     renderConversation(makeClient());
     await screen.findByRole('textbox', { name: 'Message' });
-    const screenRoot = screen.getByRole('main');
+    vi.mocked(Element.prototype.scrollIntoView).mockClear();
 
-    const message = screen.getByRole('textbox', { name: 'Message' });
-    message.focus();
-    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('400px');
-    expect(screenRoot.style.getPropertyValue('--mobile-viewport-top')).toBe('12px');
-    expect(screenRoot).toHaveAttribute('data-keyboard-open', 'true');
-    expect(screen.getByRole('button', { name: 'Send' })).toBeVisible();
+    act(() => resize?.([], {} as ResizeObserver));
 
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'end' });
+  });
+
+  it('resets the keyboard baseline after an unfocused viewport resize', async () => {
+    const visualViewport = new EventTarget() as VisualViewport;
     Object.defineProperties(visualViewport, {
       height: { configurable: true, value: 800 },
       offsetTop: { configurable: true, value: 0 },
     });
+    vi.stubGlobal('visualViewport', visualViewport);
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 800,
+      writable: true,
+    });
+    renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+    const screenRoot = screen.getByRole('main');
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });
+    Object.defineProperty(visualViewport, 'height', { configurable: true, value: 600 });
+    act(() => window.dispatchEvent(new Event('resize')));
+    expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false');
+
+    screen.getByRole('textbox', { name: 'Message' }).focus();
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 350 });
+    Object.defineProperty(visualViewport, 'height', { configurable: true, value: 350 });
+    act(() => visualViewport.dispatchEvent(new Event('resize')));
+    await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'true'));
+  });
+
+  it('detects the iOS keyboard when both layout and visual viewports shrink', async () => {
+    const visualViewport = new EventTarget() as VisualViewport;
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 800 },
+      offsetTop: { configurable: true, value: 0 },
+    });
+    vi.stubGlobal('visualViewport', visualViewport);
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 800,
+      writable: true,
+    });
+
+    renderConversation(makeClient());
+    const message = await screen.findByRole('textbox', { name: 'Message' });
+    const screenRoot = screen.getByRole('main');
+    message.focus();
+    expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false');
+
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 400,
+      writable: true,
+    });
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 400 },
+      offsetTop: { configurable: true, value: 0 },
+    });
+    act(() => visualViewport.dispatchEvent(new Event('resize')));
+
+    await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'true'));
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('400px');
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-top')).toBe('0px');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeVisible();
+    expect(message).toHaveFocus();
+
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 800,
+      writable: true,
+    });
+    Object.defineProperty(visualViewport, 'height', { configurable: true, value: 800 });
     act(() => visualViewport.dispatchEvent(new Event('resize')));
     await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false'));
-    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('800px');
-    expect(message).toHaveFocus();
   });
 
   it('shows a disabled reason once and leaves the composer placeholder empty', async () => {
