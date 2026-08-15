@@ -37,7 +37,12 @@ class FakeWebSocket extends EventTarget {
 
   close(code = 1000, reason = "") {
     this.readyState = 3;
-    this.dispatchEvent(new CloseEvent("close", { code, reason }));
+    const event = new Event("close");
+    Object.defineProperties(event, {
+      code: { value: code },
+      reason: { value: reason },
+    });
+    this.dispatchEvent(event);
   }
 }
 
