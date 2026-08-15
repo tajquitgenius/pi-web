@@ -326,6 +326,18 @@ export default {
   // ── Chat composer ──
   'composer.placeholder': 'Message pi…',
   'composer.send': 'Send',
+  'composer.dictate': 'Dictate message',
+  'composer.stopDictation': 'Stop dictation',
+  'composer.dictationStarting': 'Starting dictation…',
+  'composer.dictationListening': 'Listening…',
+  'composer.dictationPrivacy':
+    'pi-web does not upload or store audio; your browser or device speech service may process it.',
+  'composer.dictationPermissionDenied': 'Microphone permission was denied.',
+  'composer.dictationNoMicrophone': 'No microphone is available.',
+  'composer.dictationNoSpeech': 'No speech was detected. Try again.',
+  'composer.dictationNetworkError': 'Dictation needs a network connection.',
+  'composer.dictationLanguageUnsupported': 'Dictation is unavailable for this language.',
+  'composer.dictationUnavailable': 'Dictation is unavailable. You can still type your message.',
   'composer.steer': 'Steer',
   'composer.queue': 'Queue',
   'composer.queueHint': 'Queue this message for after the current response',

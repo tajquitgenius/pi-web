@@ -170,6 +170,8 @@
 }
 
 .mobile-composer-error,
+.mobile-dictation-error,
+.mobile-dictation-status,
 .mobile-readonly-reason {
   text-align: left;
 }
@@ -193,6 +195,10 @@
   overflow: visible;
   padding: 6px;
   border-radius: 28px;
+}
+
+.mobile-composer-chrome.has-speech-recognition {
+  grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
 }
 
 .mobile-composer textarea,
@@ -240,10 +246,26 @@
   flex: none;
 }
 
+.mobile-dictation-button {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.mobile-dictation-button.is-active {
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-strong) 55%, transparent);
+}
+
 .mobile-send-button,
 .mobile-stop-button {
   grid-column: 3;
   grid-row: 1;
+}
+
+.mobile-composer-chrome.has-speech-recognition .mobile-send-button,
+.mobile-composer-chrome.has-speech-recognition .mobile-stop-button {
+  grid-column: 4;
 }
 
 .mobile-stop-button {
@@ -377,6 +399,7 @@
 
 .mobile-runtime-picker:focus-visible,
 .mobile-tools-trigger:focus-visible,
+.mobile-dictation-button:focus-visible,
 .mobile-tools-list button:focus-visible,
 .mobile-stop-button:focus-visible {
   outline: 2px solid var(--accent-strong);

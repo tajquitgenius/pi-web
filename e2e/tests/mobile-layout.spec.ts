@@ -33,6 +33,25 @@ test.describe("mobile layout bounds", () => {
       page,
     }) => {
       await page.setViewportSize(viewport);
+      await page.addInitScript(() => {
+        class FakeSpeechRecognition {
+          continuous = false;
+          interimResults = false;
+          lang = "";
+          maxAlternatives = 0;
+          onstart = null;
+          onresult = null;
+          onerror = null;
+          onend = null;
+          start() {}
+          stop() {}
+          abort() {}
+        }
+        Object.defineProperty(window, "SpeechRecognition", {
+          configurable: true,
+          value: FakeSpeechRecognition,
+        });
+      });
       await page.goto("/");
       await expect(page.locator(".mobile-session-row").first()).toBeVisible();
       await expectNoHorizontalOverflow(page);
@@ -61,13 +80,16 @@ test.describe("mobile layout bounds", () => {
       await expectNoHorizontalOverflow(page);
       const textareaBox = await textarea.boundingBox();
       expect(textareaBox?.width || 0).toBeGreaterThanOrEqual(
-        Math.min(240, viewport.width - 126),
+        Math.min(240, viewport.width - 174),
       );
       const composerLayout = await page.evaluate(() => {
         const composer =
           document.querySelector<HTMLElement>(".mobile-composer")!;
         const textarea =
           composer.querySelector<HTMLTextAreaElement>("textarea")!;
+        const microphone = composer.querySelector<HTMLButtonElement>(
+          ".mobile-dictation-button",
+        )!;
         const send = composer.querySelector<HTMLButtonElement>(
           ".mobile-send-button",
         )!;
@@ -78,11 +100,19 @@ test.describe("mobile layout bounds", () => {
           ".mobile-conversation-floating-controls",
         )!;
         const feedBox = feed.getBoundingClientRect();
+        const microphoneBox = microphone.getBoundingClientRect();
+        const sendBox = send.getBoundingClientRect();
         const composerStyle = getComputedStyle(composer);
         return {
           fontSize: Number.parseFloat(getComputedStyle(textarea).fontSize),
           hasKeyboardInset: composer.hasAttribute("data-keyboard-inset"),
-          sendBottom: send.getBoundingClientRect().bottom,
+          microphoneWidth: microphoneBox.width,
+          microphoneHeight: microphoneBox.height,
+          microphoneRight: microphoneBox.right,
+          sendLeft: sendBox.left,
+          sendWidth: sendBox.width,
+          sendHeight: sendBox.height,
+          sendBottom: sendBox.bottom,
           viewportBottom: window.innerHeight,
           feedTop: feedBox.top,
           feedBottom: feedBox.bottom,
@@ -94,6 +124,16 @@ test.describe("mobile layout bounds", () => {
       });
       expect(composerLayout.fontSize).toBeGreaterThanOrEqual(16);
       expect(composerLayout.hasKeyboardInset).toBe(false);
+      expect(composerLayout.microphoneWidth).toBeGreaterThanOrEqual(44);
+      expect(composerLayout.microphoneHeight).toBeGreaterThanOrEqual(44);
+      expect(composerLayout.sendWidth).toBeGreaterThanOrEqual(44);
+      expect(composerLayout.sendHeight).toBeGreaterThanOrEqual(44);
+      expect(composerLayout.microphoneRight).toBeLessThanOrEqual(
+        composerLayout.sendLeft,
+      );
+      expect(
+        composerLayout.sendLeft - composerLayout.microphoneRight,
+      ).toBeLessThanOrEqual(4.1);
       expect(composerLayout.sendBottom).toBeLessThanOrEqual(
         composerLayout.viewportBottom,
       );
@@ -122,7 +162,9 @@ test.describe("mobile layout bounds", () => {
     });
   }
 
-  test("keeps reconnect recovery floating above the full transcript", async ({ page }) => {
+  test("keeps reconnect recovery floating above the full transcript", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
     await page.locator(".mobile-session-row").first().click();
@@ -132,7 +174,8 @@ test.describe("mobile layout bounds", () => {
       notice.className = "mobile-connectivity-notice is-reconnecting";
       notice.setAttribute("role", "status");
       notice.setAttribute("aria-label", "Connection status");
-      notice.innerHTML = '<span>Reconnecting…</span><button type="button">Retry</button>';
+      notice.innerHTML =
+        '<span>Reconnecting…</span><button type="button">Retry</button>';
       document.querySelector(".mobile-session-screen")!.append(notice);
     });
 
@@ -176,9 +219,7 @@ test.describe("mobile layout bounds", () => {
     expect(geometry.noticeLeft).toBeGreaterThanOrEqual(
       geometry.leftControlRight,
     );
-    expect(geometry.noticeRight).toBeLessThanOrEqual(
-      geometry.rightControlLeft,
-    );
+    expect(geometry.noticeRight).toBeLessThanOrEqual(geometry.rightControlLeft);
     await expect(notice.getByRole("button", { name: "Retry" })).toBeVisible();
   });
 });

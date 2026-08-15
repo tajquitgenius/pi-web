@@ -37,6 +37,7 @@ describe('i18n', () => {
     resetI18n();
     expect(t('settings.title')).toBe('Ajustes');
     expect(t('composer.send')).toBe('Enviar');
+    expect(t('composer.dictate')).toBe('Dictate message');
   });
 
   it('registers and uses a custom locale from the setting', () => {

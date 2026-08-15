@@ -129,7 +129,9 @@ test.describe("iPhone mobile composer", () => {
         value: viewport,
       });
       (
-        window as typeof window & { __setComposerViewport?: (height: number) => void }
+        window as typeof window & {
+          __setComposerViewport?: (height: number) => void;
+        }
       ).__setComposerViewport = (height: number) => {
         state.height = height;
         Object.defineProperty(window, "innerHeight", {
@@ -142,25 +144,33 @@ test.describe("iPhone mobile composer", () => {
     await openTestConversation(page, sessionsDir, testInfo, "sticky-viewport");
 
     const message = page.getByRole("textbox", { name: "Message", exact: true });
-    const initialRoot = await page.locator(".mobile-session-screen").evaluate((root) => ({
-      bottom: root.getBoundingClientRect().bottom,
-      position: getComputedStyle(root).position,
-      normalFlow: document.documentElement.classList.contains("mobile-conversation-flow"),
-    }));
+    const initialRoot = await page
+      .locator(".mobile-session-screen")
+      .evaluate((root) => ({
+        bottom: root.getBoundingClientRect().bottom,
+        position: getComputedStyle(root).position,
+        normalFlow: document.documentElement.classList.contains(
+          "mobile-conversation-flow",
+        ),
+      }));
     expect(initialRoot.bottom).toBeCloseTo(874, 0);
     expect(initialRoot.position).toBe("relative");
     expect(initialRoot.normalFlow).toBe(true);
 
     await page.getByRole("button", { name: "Tools", exact: true }).click();
-    const sheetOverlay = await page.locator(".mobile-sheet-backdrop").evaluate((overlay) => ({
-      bottom: overlay.getBoundingClientRect().bottom,
-      position: getComputedStyle(overlay).position,
-    }));
+    const sheetOverlay = await page
+      .locator(".mobile-sheet-backdrop")
+      .evaluate((overlay) => ({
+        bottom: overlay.getBoundingClientRect().bottom,
+        position: getComputedStyle(overlay).position,
+      }));
     expect(sheetOverlay.position).toBe("absolute");
     expect(sheetOverlay.bottom).toBeCloseTo(874, 0);
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Open navigation", exact: true })
+      .click();
     const navigationOverlay = await page
       .locator(".mobile-navigation-backdrop")
       .evaluate((overlay) => ({
@@ -174,7 +184,9 @@ test.describe("iPhone mobile composer", () => {
     await message.focus();
     await page.evaluate(() =>
       (
-        window as typeof window & { __setComposerViewport: (height: number) => void }
+        window as typeof window & {
+          __setComposerViewport: (height: number) => void;
+        }
       ).__setComposerViewport(400),
     );
     await expect(page.locator(".mobile-session-screen")).toHaveAttribute(
@@ -189,7 +201,9 @@ test.describe("iPhone mobile composer", () => {
     await message.blur();
     await page.evaluate(() =>
       (
-        window as typeof window & { __setComposerViewport: (height: number) => void }
+        window as typeof window & {
+          __setComposerViewport: (height: number) => void;
+        }
       ).__setComposerViewport(815),
     );
     await expect(page.locator(".mobile-session-screen")).toHaveAttribute(
@@ -197,17 +211,25 @@ test.describe("iPhone mobile composer", () => {
       "false",
     );
     const closed = await page.evaluate(() => {
-      const root = document.querySelector<HTMLElement>(".mobile-session-screen")!;
+      const root = document.querySelector<HTMLElement>(
+        ".mobile-session-screen",
+      )!;
       const composer = document.querySelector<HTMLElement>(".mobile-composer")!;
-      const chrome = document.querySelector<HTMLElement>(".mobile-composer-chrome")!;
+      const chrome = document.querySelector<HTMLElement>(
+        ".mobile-composer-chrome",
+      )!;
       return {
         rootBottom: root.getBoundingClientRect().bottom,
         rootHeight: root.style.getPropertyValue("--mobile-viewport-height"),
         standalone: Boolean(
           (navigator as Navigator & { standalone?: boolean }).standalone,
         ),
-        chromeGap: root.getBoundingClientRect().bottom - chrome.getBoundingClientRect().bottom,
-        expectedGap: Number.parseFloat(getComputedStyle(composer).paddingBottom),
+        chromeGap:
+          root.getBoundingClientRect().bottom -
+          chrome.getBoundingClientRect().bottom,
+        expectedGap: Number.parseFloat(
+          getComputedStyle(composer).paddingBottom,
+        ),
       };
     });
     expect(closed.rootBottom, JSON.stringify(closed)).toBeCloseTo(874, 0);
@@ -216,7 +238,9 @@ test.describe("iPhone mobile composer", () => {
     await message.focus();
     await page.evaluate(() =>
       (
-        window as typeof window & { __setComposerViewport: (height: number) => void }
+        window as typeof window & {
+          __setComposerViewport: (height: number) => void;
+        }
       ).__setComposerViewport(400),
     );
     await expect(page.locator(".mobile-session-screen")).toHaveAttribute(
@@ -224,11 +248,17 @@ test.describe("iPhone mobile composer", () => {
       "true",
     );
     const reopened = await page.evaluate(() => {
-      const root = document.querySelector<HTMLElement>(".mobile-session-screen")!;
-      const chrome = document.querySelector<HTMLElement>(".mobile-composer-chrome")!;
+      const root = document.querySelector<HTMLElement>(
+        ".mobile-session-screen",
+      )!;
+      const chrome = document.querySelector<HTMLElement>(
+        ".mobile-composer-chrome",
+      )!;
       return {
         rootBottom: root.getBoundingClientRect().bottom,
-        chromeGap: root.getBoundingClientRect().bottom - chrome.getBoundingClientRect().bottom,
+        chromeGap:
+          root.getBoundingClientRect().bottom -
+          chrome.getBoundingClientRect().bottom,
       };
     });
     expect(reopened.rootBottom).toBeCloseTo(459, 0);
@@ -319,6 +349,108 @@ test.describe("iPhone mobile composer", () => {
     await expect(composer).toBeEnabled();
   });
 
+  test("keeps native dictation editable until the user explicitly sends it", async ({
+    page,
+    sessionsDir,
+  }, testInfo) => {
+    skipNonMobileWebKit(testInfo);
+    testInfo.annotations.push({
+      type: "acceptance-gap",
+      description:
+        "A fake Web Speech API verifies browser wiring, but only a physical installed iPhone PWA can verify Apple permission prompts and speech services.",
+    });
+    await page.setViewportSize(iphoneViewport);
+    await page.addInitScript(() => {
+      class FakeSpeechRecognition {
+        continuous = false;
+        interimResults = false;
+        lang = "";
+        maxAlternatives = 0;
+        onstart: ((event: Event) => void) | null = null;
+        onresult:
+          | ((
+              event: Event & {
+                results: ArrayLike<ArrayLike<{ transcript: string }>>;
+              },
+            ) => void)
+          | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        onend: ((event: Event) => void) | null = null;
+        constructor() {
+          (
+            window as typeof window & {
+              __speechRecognition?: FakeSpeechRecognition;
+            }
+          ).__speechRecognition = this;
+        }
+        start() {
+          this.onstart?.(new Event("start"));
+        }
+        stop() {
+          this.onend?.(new Event("end"));
+        }
+        abort() {}
+      }
+      Object.defineProperty(window, "SpeechRecognition", {
+        configurable: true,
+        value: FakeSpeechRecognition,
+      });
+    });
+    let chatRequests = 0;
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        new URL(request.url()).pathname.endsWith("/api/chat")
+      ) {
+        chatRequests += 1;
+      }
+    });
+    await openTestConversation(page, sessionsDir, testInfo, "dictation");
+    const composer = page.getByRole("textbox", {
+      name: "Message",
+      exact: true,
+    });
+    await composer.fill("Review");
+    const disclosure = page.getByText(
+      "pi-web does not upload or store audio; your browser or device speech service may process it.",
+      { exact: true },
+    );
+    const microphone = page.getByRole("button", {
+      name: "Dictate message",
+      exact: true,
+    });
+    await expect(disclosure).toBeVisible();
+    const disclosureId = await disclosure.getAttribute("id");
+    expect(disclosureId).toBeTruthy();
+    await expect(microphone).toHaveAttribute("aria-describedby", disclosureId!);
+
+    await microphone.click();
+    await page.evaluate(() => {
+      const recognition = (
+        window as typeof window & {
+          __speechRecognition?: {
+            onresult?: (
+              event: Event & {
+                results: ArrayLike<ArrayLike<{ transcript: string }>>;
+              },
+            ) => void;
+          };
+        }
+      ).__speechRecognition;
+      recognition?.onresult?.(
+        Object.assign(new Event("result"), {
+          resultIndex: 0,
+          results: [[{ transcript: "the release" }]],
+        }),
+      );
+    });
+
+    await expect(composer).toHaveValue("Review the release");
+    expect(chatRequests).toBe(0);
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect.poll(() => chatRequests).toBe(1);
+  });
+
   test("keeps mobile search, icon inputs, inspector controls, and pairing label usable", async ({
     page,
     sessionsDir,
@@ -388,7 +520,9 @@ test.describe("iPhone mobile composer", () => {
       .getByRole("button", { name: "Close inspector", exact: true })
       .click();
 
-    await page.getByRole("button", { name: "Thread actions", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Thread actions", exact: true })
+      .click();
     const actions = page
       .getByRole("dialog")
       .filter({ hasText: "Thread actions" });

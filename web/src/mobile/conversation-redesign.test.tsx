@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ChatWorkerStatus,
@@ -10,6 +11,52 @@ import type {
 } from '../live-shared';
 import { ConversationScreen } from './conversation-screen';
 import { MobileNavigationProvider } from './mobile-navigation-drawer';
+import type {
+  SpeechRecognitionErrorEventLike,
+  SpeechRecognitionResultEventLike,
+} from './speech-recognition';
+
+class FakeSpeechRecognition {
+  static instances: FakeSpeechRecognition[] = [];
+
+  continuous = false;
+  interimResults = false;
+  lang = '';
+  maxAlternatives = 0;
+  onstart: ((event: Event) => void) | null = null;
+  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null = null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null = null;
+  onend: ((event: Event) => void) | null = null;
+  start = vi.fn(() => this.onstart?.(new Event('start')));
+  stop = vi.fn();
+  abort = vi.fn();
+
+  constructor() {
+    FakeSpeechRecognition.instances.push(this);
+  }
+
+  emitResult(...transcripts: string[]) {
+    this.onresult?.(
+      Object.assign(new Event('result'), {
+        resultIndex: 0,
+        results: Object.assign(
+          transcripts.map((transcript) =>
+            Object.assign([{ transcript }], { isFinal: true, length: 1 }),
+          ),
+          { length: transcripts.length },
+        ),
+      }) as SpeechRecognitionResultEventLike,
+    );
+  }
+
+  emitError(error: string) {
+    this.onerror?.(Object.assign(new Event('error'), { error }) as SpeechRecognitionErrorEventLike);
+  }
+
+  end() {
+    this.onend?.(new Event('end'));
+  }
+}
 
 const details: SessionDetails = {
   header: { cwd: '/work/pi-web' },
@@ -62,8 +109,8 @@ function makeClient(
   } as unknown as PiWebClient;
 }
 
-function renderConversation(client: PiWebClient) {
-  return render(
+function renderConversation(client: PiWebClient, strictMode = false) {
+  const conversation = (
     <MobileNavigationProvider value={{ openDrawer: vi.fn(), closeDrawer: vi.fn() }}>
       <ConversationScreen
         client={client}
@@ -75,11 +122,13 @@ function renderConversation(client: PiWebClient) {
           </a>
         )}
       />
-    </MobileNavigationProvider>,
+    </MobileNavigationProvider>
   );
+  return render(strictMode ? <StrictMode>{conversation}</StrictMode> : conversation);
 }
 
 beforeEach(() => {
+  FakeSpeechRecognition.instances = [];
   document.getElementById('pi-session-bootstrap')?.remove();
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -125,6 +174,144 @@ describe('mobile conversation redesign', () => {
     expect(container.querySelector('.mobile-conversation-header')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open navigation' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Thread actions' })).toBeVisible();
+  });
+
+  it('puts dictated text in the editable composer without sending it automatically', async () => {
+    vi.stubGlobal('SpeechRecognition', FakeSpeechRecognition);
+    const client = makeClient();
+    const user = userEvent.setup();
+    renderConversation(client);
+    const composer = await screen.findByRole('textbox', { name: 'Message' });
+    await user.type(composer, 'Plan');
+    const microphone = screen.getByRole('button', { name: 'Dictate message' });
+    const disclosure = screen.getByText(
+      'pi-web does not upload or store audio; your browser or device speech service may process it.',
+    );
+    expect(disclosure).toBeVisible();
+    expect(microphone).toHaveAttribute('aria-describedby', disclosure.id);
+
+    await user.click(microphone);
+    act(() => FakeSpeechRecognition.instances[0]?.emitResult('the release'));
+
+    expect(composer).toHaveValue('Plan the release');
+    expect(client.sendChat).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() =>
+      expect(client.sendChat).toHaveBeenCalledWith('session.jsonl', {
+        message: 'Plan the release',
+        images: [],
+      }),
+    );
+  });
+
+  it('stops dictation on manual edits and ignores late recognition results', async () => {
+    vi.stubGlobal('SpeechRecognition', FakeSpeechRecognition);
+    const user = userEvent.setup();
+    renderConversation(makeClient());
+    const composer = await screen.findByRole('textbox', { name: 'Message' });
+
+    await user.click(screen.getByRole('button', { name: 'Dictate message' }));
+    const recognition = FakeSpeechRecognition.instances[0];
+    const lateResult = recognition.onresult;
+    await user.type(composer, 'Keep this edit');
+
+    expect(recognition.abort).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Dictate message' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    act(() => {
+      lateResult?.(
+        Object.assign(new Event('result'), {
+          resultIndex: 0,
+          results: Object.assign(
+            [Object.assign([{ transcript: 'late overwrite' }], { isFinal: true, length: 1 })],
+            { length: 1 },
+          ),
+        }) as SpeechRecognitionResultEventLike,
+      );
+    });
+    expect(composer).toHaveValue('Keep this edit');
+  });
+
+  it('stops gracefully and retains a final transcript for review', async () => {
+    vi.stubGlobal('SpeechRecognition', FakeSpeechRecognition);
+    const user = userEvent.setup();
+    renderConversation(makeClient());
+    const composer = await screen.findByRole('textbox', { name: 'Message' });
+
+    await user.click(screen.getByRole('button', { name: 'Dictate message' }));
+    const recognition = FakeSpeechRecognition.instances[0];
+    await user.click(screen.getByRole('button', { name: 'Stop dictation' }));
+    expect(recognition.stop).toHaveBeenCalledOnce();
+
+    act(() => {
+      recognition.emitResult('Final words');
+      recognition.end();
+    });
+    expect(composer).toHaveValue('Final words');
+    expect(screen.getByRole('button', { name: 'Dictate message' })).toBeVisible();
+  });
+
+  it('keeps the draft and explains a denied dictation permission', async () => {
+    vi.stubGlobal('SpeechRecognition', FakeSpeechRecognition);
+    const user = userEvent.setup();
+    renderConversation(makeClient());
+    const composer = await screen.findByRole('textbox', { name: 'Message' });
+    await user.type(composer, 'Existing draft');
+    await user.click(screen.getByRole('button', { name: 'Dictate message' }));
+
+    act(() => FakeSpeechRecognition.instances[0]?.emitError('not-allowed'));
+
+    expect(composer).toHaveValue('Existing draft');
+    expect(screen.getByRole('alert')).toHaveTextContent('Microphone permission was denied.');
+    expect(screen.getByRole('button', { name: 'Dictate message' })).toBeVisible();
+  });
+
+  it('returns to idle after aborting under the production StrictMode wrapper', async () => {
+    vi.stubGlobal('SpeechRecognition', FakeSpeechRecognition);
+    const user = userEvent.setup();
+    renderConversation(makeClient(), true);
+    const composer = await screen.findByRole('textbox', { name: 'Message' });
+    await user.click(screen.getByRole('button', { name: 'Dictate message' }));
+
+    await user.type(composer, 'Manual edit');
+
+    expect(FakeSpeechRecognition.instances[0]?.abort).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Dictate message' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('detaches native callbacks before aborting dictation on navigation cleanup', async () => {
+    vi.stubGlobal('SpeechRecognition', FakeSpeechRecognition);
+    const user = userEvent.setup();
+    const view = renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+    await user.click(screen.getByRole('button', { name: 'Dictate message' }));
+    const recognition = FakeSpeechRecognition.instances[0];
+    recognition.abort.mockImplementation(() => {
+      expect(recognition.onstart).toBeNull();
+      expect(recognition.onresult).toBeNull();
+      expect(recognition.onerror).toBeNull();
+      expect(recognition.onend).toBeNull();
+    });
+
+    view.unmount();
+
+    expect(recognition.abort).toHaveBeenCalledOnce();
+  });
+
+  it('hides dictation when the browser does not expose native speech recognition', async () => {
+    renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    expect(screen.queryByRole('button', { name: 'Dictate message' })).not.toBeInTheDocument();
+    expect(document.querySelector('.mobile-composer-chrome')).not.toHaveClass(
+      'has-speech-recognition',
+    );
   });
 
   it('keeps runtime controls in Tools and thread actions in the floating controls', async () => {

@@ -10,6 +10,7 @@ import {
   FileSearch,
   ImagePlus,
   LoaderCircle,
+  Mic,
   MoreHorizontal,
   Plus,
   Square,
@@ -46,6 +47,7 @@ import { InspectorSheet } from './inspector-sheet';
 import { MobileNavigationTrigger } from './mobile-navigation-drawer';
 import { ThreadActionsSheet } from './thread-actions-sheet';
 import { useMobileDialog } from './dialog';
+import { useSpeechDictation } from './use-speech-dictation';
 import { t } from '../shared/i18n.js';
 
 const OLDER_ENTRY_PAGE = 100;
@@ -749,6 +751,13 @@ export function ConversationScreen({
       : { deadline: Date.now() + INITIAL_RELOAD_GRACE_MS, handled: false, opened: false },
   );
   const streamStateRef = useRef({ opened: false, reconnectPending: false });
+  const chatAvailable = details?.chatAvailable ?? false;
+  const dictation = useSpeechDictation({
+    value: draft,
+    enabled: chatAvailable && !sending,
+    sessionId,
+    onChange: setDraft,
+  });
 
   useEffect(() => {
     detailsRef.current = details;
@@ -1139,6 +1148,7 @@ export function ConversationScreen({
 
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
+    dictation.abort();
     const message = draft.trim();
     if ((!message && attachments.length === 0) || sending) return;
     setSending(true);
@@ -1251,7 +1261,6 @@ export function ConversationScreen({
     };
   }, [client, draft, getCommands, listFiles, paletteRetry, sessionId]);
 
-  const chatAvailable = details?.chatAvailable ?? false;
   const disabledReason = details?.chatDisabledReason || t('composer.disabledNotice');
   const cwd = typeof details?.header?.cwd === 'string' ? details.header.cwd : '';
   const project =
@@ -1390,6 +1399,29 @@ export function ConversationScreen({
             {composerError}
           </p>
         )}
+        {dictation.error && (
+          <p className="mobile-dictation-error" role="alert">
+            {dictation.error}
+          </p>
+        )}
+        {dictation.supported && (
+          <p
+            id="mobile-dictation-disclosure"
+            className="mobile-dictation-status"
+            role={dictation.active ? 'status' : undefined}
+          >
+            {dictation.active && (
+              <>
+                <strong>
+                  {dictation.state === 'starting'
+                    ? t('composer.dictationStarting')
+                    : t('composer.dictationListening')}
+                </strong>{' '}
+              </>
+            )}
+            {t('composer.dictationPrivacy')}
+          </p>
+        )}
         {!chatAvailable && (
           <p className="mobile-readonly-reason" role="status">
             {disabledReason}
@@ -1489,7 +1521,9 @@ export function ConversationScreen({
               ))}
           </div>
         )}
-        <div className="mobile-composer-chrome">
+        <div
+          className={`mobile-composer-chrome${dictation.supported ? ' has-speech-recognition' : ''}`}
+        >
           <textarea
             ref={textareaRef}
             aria-label={t('conversation.message')}
@@ -1497,7 +1531,10 @@ export function ConversationScreen({
             value={draft}
             disabled={!chatAvailable}
             rows={1}
-            onChange={(event) => setDraft(event.currentTarget.value)}
+            onChange={(event) => {
+              dictation.abort();
+              setDraft(event.currentTarget.value);
+            }}
           />
           <input
             ref={fileInputRef}
@@ -1522,6 +1559,19 @@ export function ConversationScreen({
               <Plus aria-hidden="true" size={22} />
               <span className="mobile-visually-hidden">{t('conversation.tools')}</span>
             </button>
+            {dictation.supported && (
+              <button
+                type="button"
+                className={`mobile-dictation-button${dictation.active ? ' is-active' : ''}`}
+                aria-label={dictation.active ? t('composer.stopDictation') : t('composer.dictate')}
+                aria-pressed={dictation.active}
+                aria-describedby="mobile-dictation-disclosure"
+                disabled={!chatAvailable || sending}
+                onClick={dictation.toggle}
+              >
+                <Mic aria-hidden="true" size={19} />
+              </button>
+            )}
             {workerStatus.state === 'running' && !draft.trim() && attachments.length === 0 ? (
               <button
                 type="button"
