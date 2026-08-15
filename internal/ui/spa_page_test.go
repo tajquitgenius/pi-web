@@ -39,13 +39,14 @@ func TestAppShellPreservesPWAContract(t *testing.T) {
 		`<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`,
 		`<meta name="apple-mobile-web-app-title" content="Pi Sessions">`,
 		`<meta name="pi-web-theme"`,
+		`<meta name="pi-web-build" content="`,
 		`navigator.windowControlsOverlay`,
 		`<link rel="stylesheet" href="/custom-themes.css">`,
 		`<style id="pi-web-fonts">`,
 		`<link rel="stylesheet" href="/static/desktop/assets/desktop-test.css">`,
 		`<div id="spa-root" data-pi-web-surface="desktop"></div>`,
 		`<script type="module" src="/static/desktop/assets/desktop-test.js"></script>`,
-		`navigator.serviceWorker.register('/sw.js',{scope:'/'})`,
+		`navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'})`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("app shell missing %q\n%s", want, html)

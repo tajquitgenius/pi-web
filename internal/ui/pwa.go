@@ -3,7 +3,9 @@ package ui
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -65,7 +67,34 @@ func RegisterPWAHandlers(mux *http.ServeMux) {
 	}
 
 	serve("/manifest.webmanifest", "application/manifest+json", "no-cache", []byte(manifestJSON))
-	serve("/sw.js", "application/javascript; charset=utf-8", "no-cache", []byte(swJS))
+	mux.HandleFunc("/app-build.json", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(currentAppBuild())
+		}
+	})
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if r.Method == http.MethodGet {
+			build := currentAppBuild()
+			worker := strings.ReplaceAll(swJS, "__PI_WEB_STATIC_CACHE__", "pi-web-static-v7-"+build.Fingerprint)
+			_, _ = w.Write([]byte(worker))
+		}
+	})
 	serve("/offline.html", "text/html; charset=utf-8", "no-cache", []byte(offlineHTML))
 	serve("/icon.svg", "image/svg+xml", "public, max-age=31536000, immutable", []byte(iconSVG))
 	serve("/icon-maskable.svg", "image/svg+xml", "public, max-age=31536000, immutable", []byte(iconMaskableSVG))

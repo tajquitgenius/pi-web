@@ -152,7 +152,7 @@ func isPublicPairingPath(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/pairing", "/manifest.webmanifest", "/sw.js", "/offline.html", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/pi-logo.svg", "/custom-themes.css":
+	case "/pairing", "/manifest.webmanifest", "/app-build.json", "/sw.js", "/offline.html", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/pi-logo.svg", "/custom-themes.css":
 		return true
 	}
 	return strings.HasPrefix(r.URL.Path, "/static/desktop/assets/") || strings.HasPrefix(r.URL.Path, "/static/mobile/assets/")

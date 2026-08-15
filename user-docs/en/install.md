@@ -79,6 +79,14 @@ generic offline message. It never stores sessions, API responses, root or
 session HTML, SSE, push, sounds, or pairing/device data. Reconnect to pi-web to
 continue working; Cloudflare Access (when configured) remains the outer gate.
 
+Each frontend build has a fingerprint derived from its hashed JavaScript and CSS
+files. When an installed app returns to the foreground, it checks that no-store
+fingerprint and reloads once if the server has a newer build. A Home Screen app
+installed before this update mechanism existed cannot run the new check from its
+already-restored old document. If such an older installation stays stale, remove
+it from the Home Screen, open the authenticated site in Safari, and add it to the
+Home Screen once more. Later releases update automatically.
+
 ### Quick install (no build tools needed)
 
 macOS / Linux:

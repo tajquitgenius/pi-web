@@ -89,6 +89,7 @@ func renderAppShell(w io.Writer, surface string, assets appAssets, bootstrap str
 	}{
 		LiveDocumentStart: template.HTML(renderLiveDocumentStart(liveDocumentData{
 			Title:   "Pi Sessions",
+			Build:   currentAppBuild().Fingerprint,
 			Preload: appAssetLinks(assets),
 			Styles:  "",
 		})),

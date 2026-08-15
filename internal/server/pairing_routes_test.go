@@ -83,6 +83,10 @@ func newPairingRouteTestServerInDir(t *testing.T, dir, publicURL, token string, 
 	t.Cleanup(s.Shutdown)
 	mux := http.NewServeMux()
 	s.Register(mux)
+	mux.HandleFunc("/app-build.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = io.WriteString(w, `{"build":"test-build"}`)
+	})
 	return s, s.HTTPHandler(mux)
 }
 
@@ -160,6 +164,10 @@ func TestPublicDeviceGateExposesOnlyPairingSurface(t *testing.T) {
 	}
 	if strings.Contains(page.Header().Get("Location"), "private-session") {
 		t.Fatal("protected page URL was copied into the pairing redirect")
+	}
+	build := pairingRequest(handler, http.MethodGet, "https://pi.example/app-build.json", "", "")
+	if build.Code != http.StatusOK || !strings.Contains(build.Body.String(), `"build":"test-build"`) {
+		t.Fatalf("unpaired app build = (%d, %s), want public fingerprint", build.Code, build.Body.String())
 	}
 	pairingPage := pairingRequest(handler, http.MethodGet, "https://pi.example/pairing", "", "")
 	if pairingPage.Code != http.StatusOK || pairingPage.Body.String() != "pairing shell" {

@@ -35,9 +35,17 @@ The worker controls `/` but treats all live data as network-owned:
   other user/session responses are excluded, including redirects and HTML
   responses returned for static-looking URLs;
 - `skipWaiting()` and `clients.claim()` update the worker immediately because no
-  user or session data is cached.
+  user or session data is cached;
+- one build fingerprint is derived from both products' hashed JavaScript and CSS
+  paths, exposed at no-store `/app-build.json`, embedded in the live shell, and
+  included in the worker's cache name;
+- foreground `pageshow`, focus, and visibility transitions compare that
+  fingerprint, request a worker update, and reload the network-owned shell when
+  the deployed build differs. Requests have a bounded timeout, and session
+  storage limits a persistent mismatch to one reload per target fingerprint.
+  Worker registration uses `updateViaCache: 'none'`.
 
-PWA metadata and hashed product assets are bootstrap-public so an unpaired
+PWA metadata, `/app-build.json`, and hashed product assets are bootstrap-public so an unpaired
 browser can reach `/pairing`; they still pass the exact Host/Origin boundary and
 public-device gate, with the configured Cloudflare/access layer remaining the
 outer security boundary.
@@ -86,9 +94,11 @@ The exact T3 revision, upstream source families, and attributed target files are
 Desktop React ─┐
                ├─ PiWebClient ── typed HTTP/SSE requests
 Mobile React ──┘    └─ getHostContext()
-               └─ browser.ts
-                     ├─ readSessionBootstrap()
-                     └─ surface-cookie helpers
+               ├─ browser.ts
+               │     ├─ readSessionBootstrap()
+               │     └─ surface-cookie helpers
+               └─ release-refresh.ts
+                     └─ foreground build-fingerprint comparison
                            │
                            ▼
                     pi-web HTTP API and SSE
@@ -97,7 +107,7 @@ Mobile React ──┘    └─ getHostContext()
                     one Pi RPC worker/session
 ```
 
-`contracts.ts` defines Pi-owned wire shapes. `client.ts` implements `PiWebClient` and is the sole live HTTP/SSE transport: session listing and paging, session creation, model/default lookup, chat/cancel, worker status, model and thinking-level changes, SSE subscriptions, and device pairing. Product components do not call `fetch` or construct `EventSource` directly. `browser.ts` owns `readSessionBootstrap()` for the optional server-injected session payload and manages the surface override. `PiWebClient.getHostContext()` owns the host-context accessor; it does not own session bootstrap.
+`contracts.ts` defines Pi-owned wire shapes. `client.ts` implements `PiWebClient` and is the sole live HTTP/SSE transport: session listing and paging, session creation, model/default lookup, chat/cancel, worker status, model and thinking-level changes, SSE subscriptions, and device pairing. Product components do not call `fetch` or construct `EventSource` directly. `browser.ts` owns `readSessionBootstrap()` for the optional server-injected session payload and manages the surface override. `release-refresh.ts` handles one browser lifecycle concern outside product components: when a restored document returns to the foreground, it fetches `/app-build.json` with `cache: no-store`, compares the deployed fingerprint with the shell's embedded fingerprint, requests a service-worker update, and reloads only if they differ. `PiWebClient.getHostContext()` owns the host-context accessor; it does not own session bootstrap.
 
 SSE remains a Pi-specific live primitive. The shared map covers global reload/new-session and per-session chat previews, worker snapshots/deltas, annotations, queue changes, and BTW changes. A reload causes a canonical session refetch; a chat preview is transient UI state, not a second conversation store.
 

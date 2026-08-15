@@ -79,6 +79,7 @@ func TestPWAHandlersServeOnlyReadOnlyMetadataAndOfflineDocument(t *testing.T) {
 		cache       string
 	}{
 		{path: "/manifest.webmanifest", contentType: "application/manifest+json", cache: "no-cache"},
+		{path: "/app-build.json", contentType: "application/json", cache: "no-store"},
 		{path: "/sw.js", contentType: "application/javascript", cache: "no-cache"},
 		{path: "/offline.html", contentType: "text/html", cache: "no-cache"},
 		{path: "/icon-192.png", contentType: "image/png", cache: "public, max-age=31536000, immutable"},
@@ -105,7 +106,7 @@ func TestPWAHandlersServeOnlyReadOnlyMetadataAndOfflineDocument(t *testing.T) {
 		})
 	}
 
-	for _, path := range []string{"/manifest.webmanifest", "/sw.js", "/offline.html", "/icon-192.png"} {
+	for _, path := range []string{"/manifest.webmanifest", "/app-build.json", "/sw.js", "/offline.html", "/icon-192.png"} {
 		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(nil))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -135,6 +136,66 @@ func TestPWAInstallIconsHaveDeclaredPNGDimensions(t *testing.T) {
 		}
 		if bounds.Width != test.want || bounds.Height != test.want {
 			t.Fatalf("%s dimensions = %dx%d, want %dx%d", test.path, bounds.Width, bounds.Height, test.want, test.want)
+		}
+	}
+}
+
+func TestAppBuildFingerprintChangesWithHashedSurfaceAssets(t *testing.T) {
+	oldDesktop := surfaceAppAssets[DesktopSurface]
+	oldMobile := surfaceAppAssets[MobileSurface]
+	defer func() {
+		surfaceAppAssets[DesktopSurface] = oldDesktop
+		surfaceAppAssets[MobileSurface] = oldMobile
+	}()
+	SetSurfaceAssets(DesktopSurface, "/static/desktop/assets/desktop-one.js", []string{"/static/desktop/assets/desktop-one.css"})
+	SetSurfaceAssets(MobileSurface, "/static/mobile/assets/mobile-one.js", []string{"/static/mobile/assets/mobile-one.css"})
+	first := currentAppBuild()
+	SetSurfaceAssets(MobileSurface, "/static/mobile/assets/mobile-two.js", []string{"/static/mobile/assets/mobile-one.css"})
+	second := currentAppBuild()
+	SetSurfaceAssets(MobileSurface, "/static/mobile/assets/mobile-two.js", []string{"/static/mobile/assets/mobile-two.css"})
+	cssOnly := currentAppBuild()
+
+	if first.Fingerprint == "" || first.Fingerprint == second.Fingerprint {
+		t.Fatalf("build fingerprints = %q and %q, want distinct nonempty values", first.Fingerprint, second.Fingerprint)
+	}
+	if second.Fingerprint == cssOnly.Fingerprint {
+		t.Fatalf("CSS-only build fingerprints = %q and %q, want distinct values", second.Fingerprint, cssOnly.Fingerprint)
+	}
+	if second.MobileAsset != "/static/mobile/assets/mobile-two.js" {
+		t.Fatalf("mobile asset = %q", second.MobileAsset)
+	}
+}
+
+func TestServiceWorkerCacheIdentityTracksAppBuild(t *testing.T) {
+	oldMobile := surfaceAppAssets[MobileSurface]
+	defer func() { surfaceAppAssets[MobileSurface] = oldMobile }()
+	mux := http.NewServeMux()
+	RegisterPWAHandlers(mux)
+	readWorker := func() string {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sw.js", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /sw.js = %d", rec.Code)
+		}
+		return rec.Body.String()
+	}
+
+	SetSurfaceAssets(MobileSurface, "/static/mobile/assets/mobile-one.js", []string{"/static/mobile/assets/mobile-one.css"})
+	first := readWorker()
+	SetSurfaceAssets(MobileSurface, "/static/mobile/assets/mobile-two.js", []string{"/static/mobile/assets/mobile-one.css"})
+	second := readWorker()
+	SetSurfaceAssets(MobileSurface, "/static/mobile/assets/mobile-two.js", []string{"/static/mobile/assets/mobile-two.css"})
+	cssOnly := readWorker()
+
+	if first == second {
+		t.Fatal("service worker bytes did not change with app build")
+	}
+	if second == cssOnly {
+		t.Fatal("service worker bytes did not change with CSS-only build")
+	}
+	for _, worker := range []string{first, second, cssOnly} {
+		if strings.Contains(worker, "__PI_WEB_STATIC_CACHE__") || !strings.Contains(worker, "pi-web-static-v7-") {
+			t.Fatalf("service worker cache identity was not materialized: %q", worker[:min(len(worker), 120)])
 		}
 	}
 }

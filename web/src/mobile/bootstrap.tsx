@@ -1,11 +1,15 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createPiWebClient } from '../live-shared';
+import { createPiWebClient, installReleaseRefresh } from '../live-shared';
 import { MobileApp } from './app';
 import './mobile.css';
 import './home-redesign.css';
 import './conversation-redesign.css';
 import './navigation-drawer.css';
+
+installReleaseRefresh({
+  runningBuild: document.querySelector<HTMLMetaElement>('meta[name="pi-web-build"]')?.content || '',
+});
 
 const target = document.getElementById('spa-root');
 if (target) {

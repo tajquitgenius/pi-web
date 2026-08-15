@@ -8,6 +8,7 @@ import (
 
 type liveDocumentData struct {
 	Title     string
+	Build     string
 	Preload   template.HTML
 	Styles    template.HTML
 	BodyAttrs template.HTMLAttr
@@ -114,6 +115,11 @@ func renderLiveDocumentStart(data liveDocumentData) string {
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n")
 	b.WriteString("<meta charset=\"UTF-8\">\n")
 	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content\">\n")
+	if data.Build != "" {
+		b.WriteString("<meta name=\"pi-web-build\" content=\"")
+		b.WriteString(template.HTMLEscapeString(data.Build))
+		b.WriteString("\">\n")
+	}
 	b.WriteString("<title>")
 	b.WriteString(template.HTMLEscapeString(data.Title))
 	b.WriteString("</title>\n")
@@ -254,7 +260,7 @@ func themeBootScript(defaultTheme string) template.HTML {
 }
 
 func liveServiceWorkerScript() template.HTML {
-	return template.HTML(`<script>if('serviceWorker' in navigator && window.isSecureContext){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){});});}</script>`)
+	return template.HTML(`<script>if('serviceWorker' in navigator && window.isSecureContext){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'}).catch(function(){});});}</script>`)
 }
 
 func liveDocumentEnd() template.HTML { return template.HTML("</body>\n</html>") }

@@ -41,6 +41,7 @@ func TestPublicBootstrapAssetsNeverRefreshDeviceCookie(t *testing.T) {
 	for _, path := range []string{
 		"/pairing",
 		"/manifest.webmanifest",
+		"/app-build.json",
 		"/sw.js",
 		"/static/desktop/assets/app.js",
 		"/static/mobile/assets/app.js",

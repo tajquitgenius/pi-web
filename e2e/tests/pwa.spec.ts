@@ -70,6 +70,17 @@ test.describe("PWA", () => {
       ]),
     );
 
+    const shellBuild = await page
+      .locator('meta[name="pi-web-build"]')
+      .getAttribute("content");
+    const appBuild = await page.evaluate(async () => {
+      const response = await fetch("/app-build.json", { cache: "no-store" });
+      return { body: await response.json(), cacheControl: response.headers.get("cache-control") };
+    });
+    expect(shellBuild).toMatch(/^[a-f0-9]{16}$/);
+    expect(appBuild.body.build).toBe(shellBuild);
+    expect(appBuild.cacheControl).toContain("no-store");
+
     await page.evaluate(async () => {
       await navigator.serviceWorker.ready;
     });
@@ -103,7 +114,7 @@ test.describe("PWA", () => {
     expect(cacheNamesAfterInstall).not.toContain("pi-web-static-v5");
     expect(cacheNamesAfterInstall).toContain("unrelated-app-cache");
     expect(cacheNamesAfterInstall).toEqual(
-      expect.arrayContaining([expect.stringMatching(/^pi-web-static-v\d+$/)]),
+      expect.arrayContaining([expect.stringMatching(/^pi-web-static-v\d+-[a-f0-9]{16}$/)]),
     );
 
     const worker = await page.evaluate(async () => {
@@ -146,6 +157,36 @@ test.describe("PWA", () => {
     ).toBeVisible();
   });
 
+  test("reloads a restored document when the deployed shell bundle changes", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator('[data-desktop-route="workspace"]')).toBeVisible();
+    await page.waitForTimeout(1_100);
+
+    let servedNewBuild = 0;
+    let reloads = 0;
+    let triggered = false;
+    page.on("request", (request) => {
+      if (triggered && request.isNavigationRequest()) reloads += 1;
+    });
+    await page.route(/\/app-build\.json$/, async (route) => {
+      servedNewBuild += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ build: "next-build" }),
+      });
+    });
+
+    triggered = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
+    await expect.poll(() => reloads).toBe(1);
+    await expect(page.locator('[data-desktop-route="workspace"]')).toBeVisible();
+    await page.waitForTimeout(1_200);
+
+    expect(servedNewBuild).toBeGreaterThanOrEqual(2);
+    expect(reloads).toBe(1);
+  });
+
   test("keeps live and protected responses out of Cache Storage", async ({
     page,
   }) => {
@@ -155,6 +196,7 @@ test.describe("PWA", () => {
     );
 
     const requests = [
+      "/app-build.json",
       "/api/sessions",
       "/session?id=notes.jsonl",
       "/pairing",

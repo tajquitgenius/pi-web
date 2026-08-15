@@ -2,7 +2,7 @@
 // It may cache only immutable build assets, install metadata/icons, and the
 // generic offline document. No API, HTML shell, session, SSE, push, sound, or
 // pairing response is ever written to Cache Storage.
-const STATIC_CACHE = 'pi-web-static-v6';
+const STATIC_CACHE = '__PI_WEB_STATIC_CACHE__';
 const STATIC_CACHE_PREFIX = 'pi-web-static-';
 const OFFLINE_DOCUMENT = '/offline.html';
 const STATIC_PREFIXES = ['/static/desktop/assets/', '/static/mobile/assets/'];
