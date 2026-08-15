@@ -18,13 +18,15 @@ describe('foreground release refresh', () => {
     const reload = vi.fn();
     const updateServiceWorker = vi.fn(() => new Promise<void>(() => undefined));
     const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ build: 'new-build' }), {
+      new Response(JSON.stringify({ build: 'bbbbbbbbbbbbbbbb' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
     );
     const uninstall = installReleaseRefresh({
-      runningBuild: 'old-build',
+      runningBuild: 'aaaaaaaaaaaaaaaa',
+      product: 'mobile',
+      displayMode: 'standalone',
       windowEvents,
       documentEvents,
       visibilityState: () => 'visible',
@@ -37,10 +39,27 @@ describe('foreground release refresh', () => {
     windowEvents.dispatchEvent(new Event('pageshow'));
     await flushChecks();
 
-    expect(fetchImpl).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
       '/app-build.json',
-      expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      }),
     );
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, '/api/client-build-observation', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'X-Pi-Web-Deployed-Build': 'bbbbbbbbbbbbbbbb',
+        'X-Pi-Web-Display-Mode': 'standalone',
+        'X-Pi-Web-Product': 'mobile',
+        'X-Pi-Web-Running-Build': 'aaaaaaaaaaaaaaaa',
+      },
+    });
     await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
     expect(updateServiceWorker).toHaveBeenCalledOnce();
     expect(updateServiceWorker.mock.invocationCallOrder[0]).toBeLessThan(

@@ -1,5 +1,10 @@
+export type ReleaseProduct = 'desktop' | 'mobile';
+export type ReleaseDisplayMode = 'browser' | 'standalone';
+
 export interface ReleaseRefreshOptions {
   runningBuild: string;
+  product?: ReleaseProduct;
+  displayMode?: ReleaseDisplayMode;
   windowEvents?: EventTarget;
   documentEvents?: EventTarget;
   visibilityState?: () => DocumentVisibilityState;
@@ -18,6 +23,17 @@ interface AppBuildResponse {
 
 const RELOAD_TARGET_KEY = 'pi-web-release-reload-target';
 
+function currentDisplayMode(): ReleaseDisplayMode {
+  try {
+    const standalone =
+      globalThis.matchMedia?.('(display-mode: standalone)').matches === true ||
+      Boolean((globalThis.navigator as Navigator & { standalone?: boolean }).standalone);
+    return standalone ? 'standalone' : 'browser';
+  } catch {
+    return 'browser';
+  }
+}
+
 async function updateRegisteredWorker(): Promise<void> {
   if (!('serviceWorker' in globalThis.navigator)) return;
   const registration = await globalThis.navigator.serviceWorker.getRegistration();
@@ -26,6 +42,8 @@ async function updateRegisteredWorker(): Promise<void> {
 
 export function installReleaseRefresh({
   runningBuild,
+  product,
+  displayMode = currentDisplayMode(),
   windowEvents = globalThis.window,
   documentEvents = globalThis.document,
   visibilityState = () => globalThis.document.visibilityState,
@@ -71,6 +89,27 @@ export function installReleaseRefresh({
   let checking = false;
   let lastCheck = Number.NEGATIVE_INFINITY;
   let activeController: AbortController | null = null;
+  let observedPair = '';
+
+  const observeBuild = (deployedBuild: string) => {
+    if (!product) return;
+    const pair = `${runningBuild}:${deployedBuild}`;
+    if (observedPair === pair) return;
+    observedPair = pair;
+    void fetchImpl('/api/client-build-observation', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'X-Pi-Web-Deployed-Build': deployedBuild,
+        'X-Pi-Web-Display-Mode': displayMode,
+        'X-Pi-Web-Product': product,
+        'X-Pi-Web-Running-Build': runningBuild,
+      },
+    }).catch(() => {
+      if (observedPair === pair) observedPair = '';
+    });
+  };
 
   const check = () => {
     if (disposed || checking || visibilityState() !== 'visible') return;
@@ -97,6 +136,7 @@ export function installReleaseRefresh({
         if (!response.ok) return;
         const payload = (await response.json()) as AppBuildResponse;
         if (typeof payload.build !== 'string' || !payload.build) return;
+        observeBuild(payload.build);
         if (payload.build === runningBuild) {
           clearTarget();
           return;

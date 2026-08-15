@@ -9,6 +9,7 @@ import './navigation-drawer.css';
 
 installReleaseRefresh({
   runningBuild: document.querySelector<HTMLMetaElement>('meta[name="pi-web-build"]')?.content || '',
+  product: 'mobile',
 });
 
 const target = document.getElementById('spa-root');

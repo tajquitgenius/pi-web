@@ -42,7 +42,12 @@ The worker controls `/` but treats all live data as network-owned:
 - foreground `pageshow`, focus, and visibility transitions compare that
   fingerprint, request a worker update, and reload the network-owned shell when
   the deployed build differs. Requests have a bounded timeout, and session
-  storage limits a persistent mismatch to one reload per target fingerprint.
+  storage limits a persistent mismatch to one reload per target fingerprint;
+- after a build check, paired clients send a protected observation containing
+  only running/deployed fingerprints, product, and display mode. The server
+  validates those fixed-shape values and logs `current` or `stale`; the public
+  build endpoint never logs, and observations contain no IPs, cookies, device
+  identifiers, pairing data, or user/session URLs.
   Worker registration uses `updateViaCache: 'none'`.
 
 PWA metadata, `/app-build.json`, and hashed product assets are bootstrap-public so an unpaired

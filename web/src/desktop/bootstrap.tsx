@@ -6,6 +6,7 @@ import './desktop.css';
 
 installReleaseRefresh({
   runningBuild: document.querySelector<HTMLMetaElement>('meta[name="pi-web-build"]')?.content || '',
+  product: 'desktop',
 });
 
 const target = document.getElementById('spa-root');

@@ -381,6 +381,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/set-thinking-level", s.auth.Wrap(s.handleSetThinkingLevel))
 	mux.HandleFunc("/api/models", s.auth.Wrap(s.handleAvailableModels))
 	mux.HandleFunc("/api/session-defaults", s.auth.Wrap(s.handleSessionDefaults))
+	mux.HandleFunc("/api/client-build-observation", s.auth.Wrap(s.handleClientBuildObservation))
 	mux.HandleFunc("/api/worker-status", s.auth.Wrap(s.handleWorkerStatus))
 	mux.HandleFunc("/api/commands", s.auth.Wrap(s.handleCommands))
 	mux.HandleFunc("/share", s.auth.Wrap(s.handleShare))
