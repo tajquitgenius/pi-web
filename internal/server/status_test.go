@@ -200,6 +200,33 @@ func TestThreadStaysRunningUntilLastBackgroundAgentTerminates(t *testing.T) {
 	}
 }
 
+func TestHistoricalBackgroundTerminalIsIdleOnStartup(t *testing.T) {
+	sessionsDir := t.TempDir()
+	sessionDir := filepath.Join(sessionsDir, "--repo--")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "parent.jsonl"
+	contents := `{"type":"session","version":3,"id":"parent","timestamp":"2026-08-14T00:00:00Z","cwd":"/repo"}` + "\n" +
+		`{"type":"custom","customType":"background-agent-run-created","data":{"run":{"id":"agent-1","status":"running"}}}` + "\n" +
+		`{"type":"custom","customType":"background-agent-run-terminal","data":{"run":{"id":"agent-1","status":"completed"}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, sessionID), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{
+		sessionsDir: sessionsDir,
+		chatSender: &fakeSender{status: workers.WorkerStatus{
+			State: workers.WorkerStateIdle,
+			Model: "settled-parent",
+		}},
+		now: time.Now,
+	}
+	if s.computeRunningStatus(sessionID) {
+		t.Fatal("historical terminal event must not receive a fresh completion grace on startup")
+	}
+}
+
 func TestLastBackgroundTerminalDoesNotBounceIdleBeforeAutomaticContinuation(t *testing.T) {
 	sessionsDir := t.TempDir()
 	sessionDir := filepath.Join(sessionsDir, "--repo--")
@@ -226,6 +253,9 @@ func TestLastBackgroundTerminalDoesNotBounceIdleBeforeAutomaticContinuation(t *t
 	}
 	client := s.addClient(globalSessID)
 	defer s.removeClient(client)
+	if !s.computeRunningStatus(sessionID) {
+		t.Fatal("created background run must be active before its terminal append")
+	}
 
 	file, err := os.OpenFile(sessionPath, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
