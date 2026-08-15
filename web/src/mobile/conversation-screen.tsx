@@ -5,6 +5,8 @@ import {
   ImagePlus,
   LoaderCircle,
   Send,
+  FileSearch,
+  MoreHorizontal,
   Settings2,
   Square,
   X,
@@ -17,6 +19,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type FormEvent,
   type ReactNode,
 } from 'react';
@@ -34,9 +37,14 @@ import type {
 import { configureSessionMarkdown, safeMarkedParse } from '../session/render/markdown.js';
 import { escapeHtml, formatToolCall } from '../session/render/session-format.js';
 import { getPath, stitchOrphanRoots } from '../session/tree/session-tree.js';
+import { getMobileCapability, type MobileCommand, type MobileFile } from './capabilities';
+import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
+import { InspectorSheet } from './inspector-sheet';
+import { ThreadActionsSheet } from './thread-actions-sheet';
 import { t } from '../shared/i18n.js';
 
 const OLDER_ENTRY_PAGE = 100;
+const INITIAL_RELOAD_GRACE_MS = 250;
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
 configureSessionMarkdown({ marked, hljs: null, escapeHtml });
@@ -488,27 +496,66 @@ function RuntimeSheet({
 
 export function ConversationScreen({ client, sessionId, internalLink }: ConversationScreenProps) {
   const host = useMemo(() => client.getHostContext(), [client]);
-  const [details, setDetails] = useState<SessionDetails | null>(null);
-  const detailsRef = useRef<SessionDetails | null>(null);
+  const bootstrapRef = useRef<ReturnType<typeof readSessionBootstrap> | undefined>(undefined);
+  if (bootstrapRef.current === undefined) bootstrapRef.current = readSessionBootstrap();
+  const bootstrap = bootstrapRef.current;
+  const embeddedDetails = bootstrap?.id === sessionId ? bootstrap.data : null;
+  const [details, setDetails] = useState<SessionDetails | null>(embeddedDetails);
+  const detailsRef = useRef<SessionDetails | null>(embeddedDetails);
   const [workerStatus, setWorkerStatus] = useState<ChatWorkerStatus>({ state: 'idle' });
   const [preview, setPreview] = useState('');
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [focused, setFocused] = useState(false);
+  const [palette, setPalette] = useState<'files' | 'commands' | null>(null);
+  const [paletteFiles, setPaletteFiles] = useState<MobileFile[]>([]);
+  const [paletteCommands, setPaletteCommands] = useState<MobileCommand[]>([]);
+  const [paletteLoading, setPaletteLoading] = useState(false);
+  const [paletteError, setPaletteError] = useState('');
+  const [paletteRetry, setPaletteRetry] = useState(0);
   const [sending, setSending] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(embeddedDetails === null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
+  const [connection, setConnection] = useState<MobileConnectionState>('connecting');
   const [composerError, setComposerError] = useState('');
   const [runtimeOpen, setRuntimeOpen] = useState(false);
-  const [runtimeProvider, setRuntimeProvider] = useState('');
-  const [runtimeModel, setRuntimeModel] = useState('');
-  const [runtimeThinking, setRuntimeThinking] = useState<ThinkingLevel>('off');
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [runtimeProvider, setRuntimeProvider] = useState(embeddedDetails?.modelProvider || '');
+  const [runtimeModel, setRuntimeModel] = useState(embeddedDetails?.model || '');
+  const [runtimeThinking, setRuntimeThinking] = useState<ThinkingLevel>(
+    embeddedDetails?.thinkingLevel || 'off',
+  );
   const feedRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const didInitialScroll = useRef(false);
+  const startupReloadRef = useRef(
+    embeddedDetails === null
+      ? null
+      : { deadline: Date.now() + INITIAL_RELOAD_GRACE_MS, handled: false, opened: false },
+  );
+  const streamStateRef = useRef({ opened: false, reconnectPending: false });
+  const [keyboardInset, setKeyboardInset] = useState(0);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const updateKeyboardInset = () => {
+      setKeyboardInset(
+        Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
+      );
+    };
+    updateKeyboardInset();
+    viewport.addEventListener('resize', updateKeyboardInset);
+    viewport.addEventListener('scroll', updateKeyboardInset);
+    return () => {
+      viewport.removeEventListener('resize', updateKeyboardInset);
+      viewport.removeEventListener('scroll', updateKeyboardInset);
+    };
+  }, []);
 
   useEffect(() => {
     detailsRef.current = details;
@@ -516,6 +563,8 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
 
   const refreshSession = useCallback(async () => {
     if (!sessionId) return;
+    setConnection('connecting');
+    setError('');
     const current = detailsRef.current;
     const result =
       current && current.from > 0
@@ -525,11 +574,19 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           })
         : await client.getSession(sessionId, { paginate: true });
     setDetails(result);
+    setConnection('connected');
     setRuntimeProvider(result.modelProvider || '');
     setRuntimeModel(result.model || '');
     if (result.thinkingLevel) setRuntimeThinking(result.thinkingLevel);
     setPendingPrompt('');
   }, [client, sessionId]);
+
+  const retrySession = () => {
+    void refreshSession().catch((refreshError) => {
+      setConnection('offline');
+      setError(errorMessage(refreshError, t('session.loadFailed')));
+    });
+  };
 
   useEffect(() => {
     if (!sessionId) {
@@ -538,7 +595,6 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       return;
     }
     let active = true;
-    const bootstrap = readSessionBootstrap();
     const initial =
       bootstrap?.id === sessionId && bootstrap.data
         ? Promise.resolve(bootstrap.data)
@@ -547,13 +603,17 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       .then((result) => {
         if (!active) return;
         setDetails(result);
+        setConnection('connected');
         setRuntimeProvider(result.modelProvider || '');
         setRuntimeModel(result.model || '');
         if (result.thinkingLevel) setRuntimeThinking(result.thinkingLevel);
         document.title = `${result.name || sessionId} · ${host.instanceName} · pi-web`;
       })
       .catch((loadError) => {
-        if (active) setError(errorMessage(loadError, t('session.loadFailed')));
+        if (active) {
+          setConnection('offline');
+          setError(errorMessage(loadError, t('session.loadFailed')));
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -568,15 +628,29 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         if (status.model) setRuntimeModel(status.model);
         if (status.thinkingLevel) setRuntimeThinking(status.thinkingLevel);
       })
-      .catch(() => {});
+      .catch((statusError) => {
+        if (!active) return;
+        setWorkerStatus({
+          state: 'error',
+          error: errorMessage(statusError, 'Pi worker status is unavailable.'),
+        });
+      });
 
     const subscription = client.subscribe(sessionId, {
       onEvent(name, payload) {
         if (!active) return;
         if (name === 'reload') {
-          void refreshSession().catch((refreshError) =>
-            setComposerError(errorMessage(refreshError, t('session.loadFailed'))),
-          );
+          const startup = startupReloadRef.current;
+          if (startup && !startup.handled && (!startup.opened || Date.now() < startup.deadline)) {
+            startup.handled = true;
+            setPreview('');
+            return;
+          }
+          if (startup) startup.handled = true;
+          void refreshSession().catch((refreshError) => {
+            setConnection('reconnecting');
+            setComposerError(errorMessage(refreshError, t('session.loadFailed')));
+          });
           setPreview('');
         } else if (name === 'chat-preview') {
           const stream = payload as { content?: unknown; done?: unknown };
@@ -604,6 +678,25 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           if (status.modelProvider) setRuntimeProvider(status.modelProvider);
           if (status.model) setRuntimeModel(status.model);
         }
+      },
+      onOpen() {
+        if (!active) return;
+        const reopened = streamStateRef.current.opened && streamStateRef.current.reconnectPending;
+        streamStateRef.current.opened = true;
+        streamStateRef.current.reconnectPending = false;
+        if (startupReloadRef.current) startupReloadRef.current.opened = true;
+        setConnection('connected');
+        if (reopened) {
+          void refreshSession().catch((refreshError) => {
+            setConnection('reconnecting');
+            setComposerError(errorMessage(refreshError, t('session.loadFailed')));
+          });
+        }
+      },
+      onError() {
+        if (!active) return;
+        if (streamStateRef.current.opened) streamStateRef.current.reconnectPending = true;
+        setConnection('reconnecting');
       },
     });
 
@@ -681,8 +774,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
     const message = draft.trim();
-    if ((!message && attachments.length === 0) || sending || workerStatus.state === 'running')
-      return;
+    if ((!message && attachments.length === 0) || sending) return;
     setSending(true);
     setComposerError('');
     setPendingPrompt(message);
@@ -720,8 +812,84 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     event.currentTarget.value = '';
   };
 
+  const listFiles = getMobileCapability(client, 'listFiles');
+  const getCommands = getMobileCapability(client, 'getCommands');
+
+  useEffect(() => {
+    const token = draft.split(/\s/).at(-1) || '';
+    const type = token.startsWith('@') ? 'files' : token.startsWith('/') ? 'commands' : null;
+    if (!type || (type === 'files' && !listFiles) || (type === 'commands' && !getCommands)) {
+      setPalette(null);
+      setPaletteError('');
+      return;
+    }
+    let active = true;
+    setPalette(type);
+    setPaletteError('');
+    setPaletteLoading(true);
+    const search = token.slice(1);
+    const request =
+      type === 'files'
+        ? listFiles?.call(client, sessionId, search || undefined)
+        : getCommands?.call(client, sessionId);
+    Promise.resolve(request)
+      .then((result) => {
+        if (!active) return;
+        if (type === 'files') {
+          const values = (result as { files?: unknown } | undefined)?.files;
+          setPaletteFiles(
+            Array.isArray(values)
+              ? values
+                  .map((file): MobileFile | null => {
+                    if (typeof file === 'string') return { path: file };
+                    if (!file || typeof file !== 'object') return null;
+                    const value = file as MobileFile;
+                    return typeof value.path === 'string'
+                      ? { ...value, kind: value.isDir ? 'directory' : value.kind }
+                      : null;
+                  })
+                  .filter((file): file is MobileFile => file !== null)
+              : [],
+          );
+        } else {
+          const values = (result as { commands?: unknown } | undefined)?.commands;
+          setPaletteCommands(
+            Array.isArray(values)
+              ? values
+                  .map((command): MobileCommand | null => {
+                    if (typeof command === 'string') return { name: command, command };
+                    if (!command || typeof command !== 'object') return null;
+                    const value = command as MobileCommand;
+                    const name = value.name || value.command;
+                    return name ? { ...value, name } : null;
+                  })
+                  .filter((command): command is MobileCommand => command !== null)
+              : [],
+          );
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setPaletteFiles([]);
+        setPaletteCommands([]);
+        setPaletteError(
+          type === 'files' ? 'Could not load file suggestions.' : 'Could not load Pi commands.',
+        );
+      })
+      .finally(() => {
+        if (active) setPaletteLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, draft, getCommands, listFiles, paletteRetry, sessionId]);
+
   const expandedComposer =
-    focused || draft.includes('\n') || draft.length > 80 || attachments.length > 0;
+    focused ||
+    draft.includes('\n') ||
+    draft.length > 80 ||
+    attachments.length > 0 ||
+    palette !== null;
   const chatAvailable = details?.chatAvailable ?? false;
   const disabledReason = details?.chatDisabledReason || t('composer.disabledNotice');
   const cwd = typeof details?.header?.cwd === 'string' ? details.header.cwd : '';
@@ -736,6 +904,15 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const runtimeModelLabel =
     runtimeModel || workerStatus.modelName || workerStatus.model || details?.model || 'Model';
   const runtimeLabel = `${runtimeProviderLabel} · ${runtimeModelLabel} · ${runtimeThinking}`;
+  const runtimeStateLabel =
+    workerStatus.state === 'running'
+      ? 'Pi is working'
+      : workerStatus.state === 'error'
+        ? `Pi runtime unavailable${workerStatus.error ? `: ${workerStatus.error}` : ''}`
+        : 'Pi is ready';
+  const composerStyle = {
+    '--mobile-keyboard-inset': `${keyboardInset}px`,
+  } as CSSProperties;
 
   if (loading) {
     return (
@@ -752,6 +929,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     return (
       <main className="mobile-screen mobile-centered-screen" data-mobile-route="session">
         <div className="mobile-empty-state" role="alert">
+          <MobileConnectivityNotice state={connection} onRetry={retrySession} />
           <h1>{error || t('session.loadFailed')}</h1>
           {internalLink('/', t('session.backToSessions'), 'mobile-primary-link')}
         </div>
@@ -775,16 +953,38 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           <p>
             {project} · {host.instanceName}
           </p>
+          <span className={`mobile-runtime-state is-${workerStatus.state}`} role="status">
+            {runtimeStateLabel}
+          </span>
         </div>
-        <button
-          type="button"
-          className="mobile-icon-button"
-          aria-label="Session model and thinking settings"
-          onClick={() => setRuntimeOpen(true)}
-        >
-          <Settings2 aria-hidden="true" size={20} />
-        </button>
+        <div className="mobile-conversation-actions">
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label="Open files, diff, and details"
+            onClick={() => setInspectorOpen(true)}
+          >
+            <FileSearch aria-hidden="true" size={19} />
+          </button>
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label="Open thread actions"
+            onClick={() => setActionsOpen(true)}
+          >
+            <MoreHorizontal aria-hidden="true" size={20} />
+          </button>
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label="Session model and thinking settings"
+            onClick={() => setRuntimeOpen(true)}
+          >
+            <Settings2 aria-hidden="true" size={20} />
+          </button>
+        </div>
       </header>
+      <MobileConnectivityNotice state={connection} onRetry={retrySession} />
 
       <div
         className="mobile-conversation-feed"
@@ -842,6 +1042,8 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
 
       <form
         className={`mobile-composer${expandedComposer ? ' is-expanded' : ''}`}
+        style={composerStyle}
+        data-keyboard-inset={keyboardInset}
         data-collapsed-height="64"
         data-expanded-height="156"
         onSubmit={sendMessage}
@@ -877,12 +1079,75 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
             ))}
           </div>
         )}
+        {palette && (
+          <div
+            className="mobile-composer-palette"
+            role="listbox"
+            aria-label={palette === 'files' ? 'Project file suggestions' : 'Pi command suggestions'}
+          >
+            {paletteLoading && <span className="mobile-palette-status">Loading…</span>}
+            {!paletteLoading && paletteError && (
+              <span className="mobile-palette-status" role="alert">
+                {paletteError}
+                <button type="button" onClick={() => setPaletteRetry((value) => value + 1)}>
+                  {t('common.retry')}
+                </button>
+              </span>
+            )}
+            {!paletteLoading &&
+              !paletteError &&
+              palette === 'files' &&
+              paletteFiles.length === 0 && (
+                <span className="mobile-palette-status">No matching files</span>
+              )}
+            {!paletteLoading &&
+              !paletteError &&
+              palette === 'commands' &&
+              paletteCommands.length === 0 && (
+                <span className="mobile-palette-status">No matching Pi commands</span>
+              )}
+            {palette === 'files' &&
+              paletteFiles.map((file) => (
+                <button
+                  key={file.path}
+                  type="button"
+                  role="option"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    const token = draft.split(/\s/).at(-1) || '';
+                    setDraft(`${draft.slice(0, -token.length)}@${file.path} `);
+                    setPalette(null);
+                  }}
+                >
+                  <span>{file.path}</span>
+                  <small>{file.kind === 'directory' ? 'folder' : 'file'}</small>
+                </button>
+              ))}
+            {palette === 'commands' &&
+              paletteCommands.map((command) => (
+                <button
+                  key={command.name}
+                  type="button"
+                  role="option"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    const token = draft.split(/\s/).at(-1) || '';
+                    setDraft(`${draft.slice(0, -token.length)}/${command.name} `);
+                    setPalette(null);
+                  }}
+                >
+                  <span>/{command.name}</span>
+                  <small>{command.description || command.source || 'Pi command'}</small>
+                </button>
+              ))}
+          </div>
+        )}
         <div className="mobile-composer-chrome">
           <textarea
             aria-label="Message"
             placeholder={chatAvailable ? t('composer.placeholder') : disabledReason}
             value={draft}
-            disabled={!chatAvailable || workerStatus.state === 'running'}
+            disabled={!chatAvailable}
             rows={1}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -894,7 +1159,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
                 type="button"
                 className="mobile-composer-icon"
                 aria-label="Attach images"
-                disabled={!chatAvailable || workerStatus.state === 'running'}
+                disabled={!chatAvailable}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <ImagePlus aria-hidden="true" size={19} />
@@ -911,7 +1176,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
               <button
                 type="button"
                 className="mobile-runtime-pill"
-                aria-label={`Provider account, model, and thinking: ${runtimeLabel}. Open settings`}
+                aria-label={`${runtimeLabel}. ${runtimeStateLabel}. Open settings`}
                 onClick={() => setRuntimeOpen(true)}
               >
                 <span className={`mobile-status-dot is-${workerStatus.state}`} />
@@ -919,7 +1184,17 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
                 <ChevronDown aria-hidden="true" size={14} />
               </button>
             </div>
-            {workerStatus.state === 'running' ? (
+            <button
+              type="submit"
+              className="mobile-send-button"
+              aria-label={
+                workerStatus.state === 'running' ? t('composer.steer') : t('composer.send')
+              }
+              disabled={!chatAvailable || sending || (!draft.trim() && attachments.length === 0)}
+            >
+              <Send aria-hidden="true" size={18} />
+            </button>
+            {workerStatus.state === 'running' && (
               <button
                 type="button"
                 className="mobile-cancel-button"
@@ -928,19 +1203,43 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
               >
                 <Square aria-hidden="true" size={16} fill="currentColor" />
               </button>
-            ) : (
-              <button
-                type="submit"
-                className="mobile-send-button"
-                aria-label={t('composer.send')}
-                disabled={!chatAvailable || sending || (!draft.trim() && attachments.length === 0)}
-              >
-                <Send aria-hidden="true" size={18} />
-              </button>
             )}
           </div>
         </div>
       </form>
+
+      {inspectorOpen && (
+        <InspectorSheet
+          client={client}
+          sessionId={sessionId}
+          projectPath={cwd}
+          model={runtimeModel || details.model}
+          provider={runtimeProvider || details.modelProvider}
+          thinking={runtimeThinking}
+          entryCount={details.total}
+          entries={details.entries}
+          onClose={() => setInspectorOpen(false)}
+        />
+      )}
+
+      {actionsOpen && (
+        <ThreadActionsSheet
+          client={client}
+          sessionId={sessionId}
+          sessionName={details.name || sessionId}
+          leafEntryId={entries.at(-1)?.id}
+          onClose={() => setActionsOpen(false)}
+          onRenamed={(name) => {
+            setDetails((current) => (current ? { ...current, name } : current));
+            setActionsOpen(false);
+          }}
+          onNavigate={(nextId) => {
+            setActionsOpen(false);
+            window.history.pushState({}, '', `/session?id=${encodeURIComponent(nextId)}`);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }}
+        />
+      )}
 
       {runtimeOpen && (
         <RuntimeSheet

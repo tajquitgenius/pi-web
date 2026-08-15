@@ -12,15 +12,15 @@ Pi-web ships two live React products and one isolated static-export renderer. De
 | React mobile | `web/src/mobile/bootstrap.tsx` | `web/dist-mobile` | `/static/mobile/*` |
 | Static conversation export | `web/src/export/export-entry.js` | `web/dist-export/export.js` | Inlined into exported HTML |
 
-`web/assets_embed.go` embeds the two live Vite outputs. `internal/frontend/assets.go` reads each manifest and registers its hashed entry, CSS, and chunks in a separate URL namespace. The Makefile copies `dist-export/export.js` to `internal/ui/embedded/export/export.js` before compiling Go.
+`web/assets_embed.go` embeds the two live Vite outputs. `internal/frontend/assets.go` reads each manifest and registers its hashed entry, CSS, and chunks in a separate URL namespace. The export Vite config's `sync-embedded-export` `writeBundle` hook copies `web/dist-export/export.js` to `internal/ui/embedded/export/export.js`; the Makefile only invokes that npm build before compiling Go.
 
 There is no generic `web/dist`, `/static/assets/*` namespace, live Svelte entry, or rollback shell.
 
 ## Live request flow
 
 ```txt
-GET /, /session, or /settings
-  → server handler
+GET /, /session, /settings, or /pairing
+  → server handler (pairing_routes.handlePairingShell delegates to handleAppShell)
   → ui.RenderAppShell(request, optional session bootstrap)
   → ui.SelectSurface(request)
        pi-web-surface=desktop → desktop
@@ -40,31 +40,69 @@ The Go shell owns values that must exist before React starts:
 - the selected surface name
 - service-worker registration
 
+`GET /pairing` is a live app-shell request too: `pairing_routes.go`'s `handlePairingShell` delegates to `handleAppShell`, and surface selection then chooses the React product. Mobile owns its own `/pairing` screen; desktop has a separate Pi-owned pairing screen.
+
 ## React product ownership
 
-`web/src/desktop/` owns the wide-screen application, including its server rail, thread list, conversation, details pane, persistent composer, and new-task flow.
+`web/src/desktop/` owns the wide-screen product: its host rail, project and session sidebar, conversation, details pane, persistent composer, and new-task flow. The T3-derived layer is a presentation and interaction adaptation, not a port of T3's runtime.
 
-`web/src/mobile/` owns its navigation and screen composition for sessions, conversations, settings, and public-device pairing. Mobile is a separate product rather than a responsive wrapper around desktop.
+`web/src/mobile/` owns a separate browser-mobile product for session lists, conversations, settings, and public-device pairing. It has its own routes, components, and CSS. It is not a responsive wrapper around desktop and must not import desktop components or styles.
 
-The desktop interaction and layout patterns derived from T3 Code remain attributed in [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
+Both products are Pi-only at runtime. They use Pi session IDs and project paths, Pi model and thinking-level records, Pi JSONL entries, and one Pi RPC worker per session. Peer hosts remain independent links: a product can navigate to another pi-web host, but it never merges that host's sessions, workers, or credentials into the current product.
 
-## Shared live boundary
+The exact T3 revision, upstream source families, and attributed target files are recorded in [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
+
+## PiWebClient is the live runtime seam
 
 `web/src/live-shared/` is the only intended sharing boundary between the React products:
 
 ```txt
 Desktop React ─┐
-               ├─ PiWebClient contracts
-Mobile React ──┘    ├─ HTTP requests
-                    ├─ host and peer bootstrap
-                    ├─ session bootstrap parsing
-                    ├─ SSE subscriptions
-                    └─ surface-cookie helpers
+               ├─ PiWebClient ── typed HTTP/SSE requests
+Mobile React ──┘    └─ getHostContext()
+               └─ browser.ts
+                     ├─ readSessionBootstrap()
+                     └─ surface-cookie helpers
+                           │
+                           ▼
+                    pi-web HTTP API and SSE
+                           │
+                           ▼
+                    one Pi RPC worker/session
 ```
 
-`contracts.ts` defines the wire shapes. `client.ts` owns HTTP and SSE translation. `browser.ts` reads server-injected data and manages the surface override. Product components consume this boundary instead of importing one another.
+`contracts.ts` defines Pi-owned wire shapes. `client.ts` implements `PiWebClient` and is the sole live HTTP/SSE transport: session listing and paging, session creation, model/default lookup, chat/cancel, worker status, model and thinking-level changes, SSE subscriptions, and device pairing. Product components do not call `fetch` or construct `EventSource` directly. `browser.ts` owns `readSessionBootstrap()` for the optional server-injected session payload and manages the surface override. `PiWebClient.getHostContext()` owns the host-context accessor; it does not own session bootstrap.
+
+SSE remains a Pi-specific live primitive. The shared map covers global reload/new-session and per-session chat previews, worker snapshots/deltas, annotations, queue changes, and BTW changes. A reload causes a canonical session refetch; a chat preview is transient UI state, not a second conversation store.
 
 Credentials never belong in URLs. Browser login posts the optional token and then uses the host-only cookie; programmatic clients may use `Authorization: Bearer` or `X-Pi-Token`. Any `token` query parameter is rejected.
+
+## T3 goals translated into Pi capabilities
+
+The React layer carries over user goals only when Pi can complete the action:
+
+| User goal | Pi translation | Ownership boundary |
+|---|---|---|
+| Fixed workspace shell and project/thread navigation | Host rail, absolute project paths, Pi session IDs, local sidebar grouping and resizing | Desktop product; mobile has its own navigation |
+| Draft-first new task | Create a Pi session with Pi defaults/model/thinking, then send the first prompt | `PiWebClient.createSession` and `sendChat` |
+| Conversation timeline and composer | Render Pi JSONL entries, markdown, thinking, tool calls/results, user-attached images, and stream previews | `getSession`, `sendChat`, cancel, and session SSE |
+| Runtime controls | Pi model catalog, model selection, thinking levels, and explicit cancellation; `sendChat` starts a prompt while idle and is the Pi steer operation while a worker is running, where a surface exposes that action | Pi worker methods only |
+| Running-session updates | Global and per-session Pi SSE topics | `PiWebClient.subscribe` |
+| Host connections | Existing device pairing and top-level links to separately secured pi-web hosts | Pi-web auth and host context |
+
+This table describes supported translations, not a promise of T3 feature parity. Pi-native pairing and isolated share export remain first-class product features. Schedules and push notifications are retained backend/Pi services; this frontend architecture does not claim corresponding React screens.
+
+## Explicit exclusions
+
+The adaptation must not reintroduce T3 concepts that Pi cannot support or that violate the runtime boundary. In particular, it excludes:
+
+- T3 provider frameworks, provider instances, traits, `EnvironmentId`, runtime/interaction modes, provider approvals, structured user-input prompts, and plan/build acceptance protocols
+- environment federation, SSH/WSL/cloud relay, worktree orchestration, hosted connection services, or cross-host session merging
+- Electron webviews, browser automation/CDP, preview-port discovery, PTY terminals, Ghostty integration, or terminal process ownership
+- multi-agent fleets, subagent spawning, agent approval workflows, and T3 orchestration state machines
+- Clerk, provider credential collection, hosted pull-request backends, and source-control provider integrations
+
+When a T3 surface depends on one of these concepts, preserve the user goal with a Pi action instead: show the current working-tree diff, send review notes as an ordinary Pi prompt, show an artifact or external link, or defer the surface. Do not create a Pi-shaped wrapper around an unsupported T3 protocol.
 
 ## Static export boundary
 
@@ -80,7 +118,7 @@ sessions.Session
   → self-contained HTML snapshot
 ```
 
-The export entry reaches a small, read-only Svelte component graph under `web/src/components/session/`, plus focused modules under `web/src/session/{data,navigation,render,tree,ui}/` and shared icons, localization, keyboard navigation, and navigation helpers. It has no React bootstrap, network client, fetch, SSE, chat composer, worker state, service worker, pairing flow, live annotations, or live-only chrome.
+The export entry reaches a small, read-only Svelte component graph under `web/src/components/session/`, plus focused modules under `web/src/session/{data,navigation,render,tree,ui}/` and shared icons, keyboard navigation, and navigation helpers. It has no React bootstrap, network client, fetch, SSE, chat composer, worker state, service worker, pairing flow, live annotations, or live-only chrome.
 
 `web/src/export/export-boundary.test.js` walks relative imports from the export entry and rejects live-only module families. Go export tests also assert that the generated HTML is self-contained and does not expose live controls.
 

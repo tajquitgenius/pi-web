@@ -10,7 +10,15 @@ import type {
 } from '../live-shared';
 import { SessionComposer, Transcript } from './Conversation';
 import { DesktopApp } from './DesktopApp';
-import { groupSessions, SIDEBAR_COLLAPSED_KEY } from './desktop-model';
+import { NewTaskPage } from './NewTask';
+import { normalizeDiff } from './desktop-capabilities';
+import {
+  DETAILS_OPEN_KEY,
+  groupSessions,
+  RIGHT_PANEL_WIDTH_KEY,
+  SIDEBAR_COLLAPSED_KEY,
+  SIDEBAR_WIDTH_KEY,
+} from './desktop-model';
 
 const models: PiModel[] = [
   { provider: 'openai-codex-secondary', id: 'gpt-5.6-sol', name: 'GPT 5.6 Sol' },
@@ -48,6 +56,13 @@ function summary(id: string, name: string, project: string, lastActivity: string
   };
 }
 
+function asyncStub<Method extends (...args: never[]) => Promise<unknown>>() {
+  return vi.fn((...args: Parameters<Method>) => {
+    void args;
+    return Promise.resolve(undefined) as ReturnType<Method>;
+  });
+}
+
 function createClient(overrides: Partial<PiWebClient> = {}) {
   const handlers = new Map<string, SSESubscriptionHandlers>();
   const client: PiWebClient = {
@@ -68,6 +83,48 @@ function createClient(overrides: Partial<PiWebClient> = {}) {
     })),
     setModel: vi.fn(async () => ({ ok: true })),
     setThinkingLevel: vi.fn(async (_sessionId, level) => ({ ok: true, thinkingLevel: level })),
+    getPiSession: asyncStub<NonNullable<PiWebClient['getPiSession']>>(),
+    listProjects: asyncStub<PiWebClient['listProjects']>(),
+    updateProject: asyncStub<PiWebClient['updateProject']>(),
+    listRecentLocations: asyncStub<PiWebClient['listRecentLocations']>(),
+    listFiles: asyncStub<PiWebClient['listFiles']>(),
+    getFile: asyncStub<PiWebClient['getFile']>(),
+    getCommands: asyncStub<PiWebClient['getCommands']>(),
+    forkSession: asyncStub<PiWebClient['forkSession']>(),
+    cloneSession: asyncStub<PiWebClient['cloneSession']>(),
+    renameSession: asyncStub<PiWebClient['renameSession']>(),
+    labelSession: asyncStub<PiWebClient['labelSession']>(),
+    getGitInfo: asyncStub<PiWebClient['getGitInfo']>(),
+    getGitDiff: asyncStub<PiWebClient['getGitDiff']>(),
+    renameGitBranch: asyncStub<PiWebClient['renameGitBranch']>(),
+    listReviewComments: asyncStub<PiWebClient['listReviewComments']>(),
+    saveReviewComment: asyncStub<PiWebClient['saveReviewComment']>(),
+    deleteReviewComment: asyncStub<PiWebClient['deleteReviewComment']>(),
+    listAnnotations: asyncStub<PiWebClient['listAnnotations']>(),
+    saveAnnotation: asyncStub<PiWebClient['saveAnnotation']>(),
+    deleteAnnotation: asyncStub<PiWebClient['deleteAnnotation']>(),
+    getScratchpad: asyncStub<PiWebClient['getScratchpad']>(),
+    saveScratchpad: asyncStub<PiWebClient['saveScratchpad']>(),
+    getQueue: asyncStub<PiWebClient['getQueue']>(),
+    addQueueItem: asyncStub<PiWebClient['addQueueItem']>(),
+    removeQueueItem: asyncStub<PiWebClient['removeQueueItem']>(),
+    setQueuePaused: asyncStub<PiWebClient['setQueuePaused']>(),
+    getSettings: asyncStub<PiWebClient['getSettings']>(),
+    saveSettings: asyncStub<PiWebClient['saveSettings']>(),
+    getBtw: asyncStub<PiWebClient['getBtw']>(),
+    createBtw: asyncStub<PiWebClient['createBtw']>(),
+    listSchedules: asyncStub<PiWebClient['listSchedules']>(),
+    createSchedule: asyncStub<PiWebClient['createSchedule']>(),
+    getSchedule: asyncStub<PiWebClient['getSchedule']>(),
+    updateSchedule: asyncStub<PiWebClient['updateSchedule']>(),
+    deleteSchedule: asyncStub<PiWebClient['deleteSchedule']>(),
+    runSchedule: asyncStub<PiWebClient['runSchedule']>(),
+    listScheduleRuns: asyncStub<PiWebClient['listScheduleRuns']>(),
+    getMetrics: asyncStub<PiWebClient['getMetrics']>(),
+    getVersion: asyncStub<PiWebClient['getVersion']>(),
+    checkForUpdate: asyncStub<PiWebClient['checkForUpdate']>(),
+    installUpdate: asyncStub<PiWebClient['installUpdate']>(),
+    restartServer: asyncStub<PiWebClient['restartServer']>(),
     getHostContext: vi.fn(() => ({
       instanceName: 'Development Mac',
       currentUrl: 'http://localhost:31415',
@@ -130,6 +187,94 @@ afterEach(() => {
 });
 
 describe('desktop product shell', () => {
+  it('opens a T3-style command palette and filters navigation actions', async () => {
+    const { client } = createClient();
+    const navigate = vi.fn();
+    render(<DesktopApp client={client} navigateImpl={navigate} path="/" search="" />);
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' });
+    expect(palette).toBeInTheDocument();
+    fireEvent.change(within(palette).getByRole('textbox', { name: 'Search commands' }), {
+      target: { value: 'settings' },
+    });
+    expect(within(palette).getByRole('option', { name: /Settings/ })).toBeInTheDocument();
+    expect(within(palette).queryByRole('option', { name: /New task/ })).toBeNull();
+
+    fireEvent.click(within(palette).getByRole('option', { name: /Settings/ }));
+    expect(navigate).toHaveBeenCalledWith('/settings');
+    expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull();
+  });
+
+  it('traps palette focus, restores its opener, and toggles with Ctrl-K while open', async () => {
+    const opener = document.createElement('button');
+    opener.type = 'button';
+    opener.textContent = 'Open palette';
+    document.body.append(opener);
+    opener.focus();
+    const { client } = createClient();
+    render(<DesktopApp client={client} path="/" search="" />);
+    opener.focus();
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' });
+    const input = within(palette).getByRole('textbox', { name: 'Search commands' });
+    const options = within(palette).getAllByRole('option');
+    expect(input).toHaveFocus();
+
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+    expect(options.at(-1)).toHaveFocus();
+    fireEvent.keyDown(options.at(-1) as HTMLElement, { key: 'Tab' });
+    expect(input).toHaveFocus();
+
+    fireEvent.keyDown(input, { key: 'k', ctrlKey: true });
+    expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull();
+    expect(opener).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(await screen.findByRole('dialog', { name: 'Command palette' })).toBeInTheDocument();
+  });
+
+  it('shows a filtered shortcut reference instead of closing the palette', async () => {
+    const { client } = createClient();
+    render(<DesktopApp client={client} path="/" search="" />);
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' });
+    fireEvent.click(within(palette).getByRole('option', { name: /keyboard shortcuts/i }));
+
+    expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument();
+    expect(within(palette).getByText('Keyboard shortcuts')).toBeInTheDocument();
+    expect(within(palette).getAllByRole('option')).toHaveLength(3);
+    expect(within(palette).getByRole('option', { name: /Toggle sidebar/ })).toHaveTextContent(
+      'Ctrl B',
+    );
+  });
+
+  it('loads Pi slash commands into the palette and sends one through PiWebClient', async () => {
+    const getCommands = vi.fn(async () => ({
+      commands: [
+        { name: 'skill:memory', description: 'Recall saved project memory', source: 'skill' },
+      ],
+      workerReady: true,
+    }));
+    const sendChat = vi.fn(async () => ({ ok: true, status: 'queued' }));
+    const { client } = createClient();
+    Object.assign(client, { getCommands, sendChat });
+    render(<DesktopApp client={client} path="/session" search="?id=selected.jsonl" />);
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' });
+    await waitFor(() => expect(getCommands).toHaveBeenCalledWith('selected.jsonl', true));
+    fireEvent.change(within(palette).getByRole('textbox', { name: 'Search commands' }), {
+      target: { value: 'skill:memory' },
+    });
+    fireEvent.click(within(palette).getByRole('option', { name: /Recall saved project memory/ }));
+
+    expect(sendChat).toHaveBeenCalledWith('selected.jsonl', { message: '/skill:memory' });
+  });
+
   it('owns a fixed pane structure and installs no-body-scroll hooks', async () => {
     const { client } = createClient();
     render(<DesktopApp client={client} path="/" search="" />);
@@ -173,6 +318,43 @@ describe('desktop product shell', () => {
     expect(groups[0].sessions.map((session) => session.id)).toEqual(['running', 'newer']);
   });
 
+  it('toggles the sidebar and command palette with keyboard shortcuts', async () => {
+    const { client } = createClient();
+    render(<DesktopApp client={client} path="/" search="" />);
+
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(screen.getByTestId('desktop-product-shell')).toHaveAttribute(
+      'data-sidebar-collapsed',
+      'true',
+    );
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    expect(await screen.findByRole('dialog', { name: 'Command palette' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull();
+  });
+
+  it('keeps a mobile sidebar backdrop and a reopen control in the shell structure', () => {
+    const { client } = createClient();
+    render(<DesktopApp client={client} path="/" search="" />);
+
+    expect(screen.getByTestId('mobile-sidebar-backdrop')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('mobile-sidebar-backdrop'));
+    expect(screen.getByRole('button', { name: 'Reopen sidebar' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen sidebar' }));
+    expect(screen.getByTestId('mobile-sidebar-backdrop')).toBeInTheDocument();
+  });
+
+  it('opens the context panel with Ctrl-Shift-P', async () => {
+    const { client } = createClient();
+    render(<DesktopApp client={client} path="/session" search="?id=selected.jsonl" />);
+    await screen.findByText('Selected thread');
+
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true, shiftKey: true });
+    expect(
+      screen.getByRole('complementary', { name: 'Session context panel' }),
+    ).toBeInTheDocument();
+  });
+
   it('navigates between workspace routes without replacing the product shell', async () => {
     const { client } = createClient();
     const navigate = vi.fn();
@@ -183,6 +365,95 @@ describe('desktop product shell', () => {
     expect(navigate).toHaveBeenCalledWith('/settings');
     expect(await screen.findByRole('main')).toHaveAttribute('data-desktop-route', 'settings');
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+  });
+
+  it('runs thread rename, label, fork, clone, and copy actions through PiWebClient', async () => {
+    const thread = summary('thread.jsonl', 'Review task', '/work/project', '2026-01-01T00:00:00Z');
+    const listSessions = vi.fn(async () => ({ sessions: [thread], total: 1 }));
+    const getSession = vi.fn(async () => ({
+      ...emptyDetails,
+      entries: [{ id: 'leaf-1', type: 'message', message: { role: 'user', content: 'Hi' } }],
+    }));
+    const renameSession = vi.fn(async () => ({ ok: true, name: 'Renamed task' }));
+    const labelSession = vi.fn(async () => ({ ok: true, entryId: 'leaf-1', label: 'review' }));
+    const forkSession = vi.fn(async () => ({ ok: true, id: 'forked.jsonl' }));
+    const cloneSession = vi.fn(async () => ({ ok: true, id: 'cloned.jsonl' }));
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const navigate = vi.fn();
+    const { client } = createClient();
+    Object.assign(client, {
+      getSession,
+      listSessions,
+      renameSession,
+      labelSession,
+      forkSession,
+      cloneSession,
+    });
+    render(<DesktopApp client={client} navigateImpl={navigate} path="/" search="" />);
+
+    await screen.findByRole('link', { name: /Review task/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Thread name' }), {
+      target: { value: 'Renamed task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save thread name' }));
+    await waitFor(() => expect(renameSession).toHaveBeenCalledWith('thread.jsonl', 'Renamed task'));
+    expect(await screen.findByRole('status')).toHaveTextContent('Thread renamed.');
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Entry label' }), {
+      target: { value: 'review' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save entry label' }));
+    await waitFor(() =>
+      expect(labelSession).toHaveBeenCalledWith('thread.jsonl', 'leaf-1', 'review'),
+    );
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /Fork from latest entry/ }));
+    await waitFor(() => expect(forkSession).toHaveBeenCalledWith('thread.jsonl', 'leaf-1'));
+    expect(navigate).toHaveBeenCalledWith('/session?id=forked.jsonl');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Clone this thread/ }));
+    await waitFor(() => expect(cloneSession).toHaveBeenCalledWith('thread.jsonl'));
+    expect(navigate).toHaveBeenCalledWith('/session?id=cloned.jsonl');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy session ID' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('thread.jsonl'));
+    expect(await screen.findByText('Session ID copied')).toBeInTheDocument();
+  });
+
+  it('keeps thread action context out of the model control accessible name', async () => {
+    const thread = summary('thread.jsonl', 'pi model', '/work/project', '2026-01-01T00:00:00Z');
+    const { client } = createClient({
+      listSessions: vi.fn(async () => ({ sessions: [thread], total: 1 })),
+    });
+    render(<DesktopApp client={client} path="/" search="" />);
+
+    await screen.findByRole('link', { name: /pi model/ });
+    expect(screen.getAllByLabelText('Model')).toHaveLength(1);
+    const actions = screen.getByRole('button', { name: 'Thread actions' });
+    expect(actions).toHaveAttribute('aria-describedby');
+    expect(screen.getByText('Actions for pi model')).toHaveClass('sr-only');
+  });
+
+  it('reports failed thread actions instead of pretending they succeeded', async () => {
+    const thread = summary('thread.jsonl', 'Review task', '/work/project', '2026-01-01T00:00:00Z');
+    const { client } = createClient();
+    Object.assign(client, {
+      listSessions: vi.fn(async () => ({ sessions: [thread], total: 1 })),
+      renameSession: vi.fn(async () => ({ ok: false, name: '' })),
+    });
+    render(<DesktopApp client={client} path="/" search="" />);
+
+    await screen.findByRole('link', { name: /Review task/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Thread actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save thread name' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not rename this thread.');
   });
 
   it('creates a one-time pairing code from local settings', async () => {
@@ -230,6 +501,61 @@ describe('desktop product shell', () => {
 });
 
 describe('new task and session controls', () => {
+  it('preserves a user-entered project path when sessions arrive later', () => {
+    const { client } = createClient();
+    const navigate = vi.fn();
+    const { rerender } = render(
+      <NewTaskPage
+        client={client}
+        models={models}
+        modelsLoading={false}
+        navigate={navigate}
+        sessions={[]}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Project path'), {
+      target: { value: '/typed/project' },
+    });
+    rerender(
+      <NewTaskPage
+        client={client}
+        models={models}
+        modelsLoading={false}
+        navigate={navigate}
+        sessions={[summary('recent', 'Recent task', '/recent/project', '2026-04-01T00:00:00Z')]}
+      />,
+    );
+
+    expect(screen.getByLabelText('Project path')).toHaveValue('/typed/project');
+  });
+
+  it('defaults an untouched project path to the most recent session', () => {
+    const { client } = createClient();
+    const navigate = vi.fn();
+    const { rerender } = render(
+      <NewTaskPage
+        client={client}
+        models={models}
+        modelsLoading={false}
+        navigate={navigate}
+        sessions={[]}
+      />,
+    );
+
+    rerender(
+      <NewTaskPage
+        client={client}
+        models={models}
+        modelsLoading={false}
+        navigate={navigate}
+        sessions={[summary('recent', 'Recent task', '/recent/project', '2026-04-01T00:00:00Z')]}
+      />,
+    );
+
+    expect(screen.getByLabelText('Project path')).toHaveValue('/recent/project');
+  });
+
   it('blocks task creation and explains when this host has no authenticated model', async () => {
     const { client } = createClient({
       getSessionDefaults: vi.fn(async () => {
@@ -316,6 +642,161 @@ describe('new task and session controls', () => {
 });
 
 describe('conversation and pairing', () => {
+  it('loads files, diff, and scratchpad in the resizable session panel', async () => {
+    const capabilities = {
+      listFiles: vi.fn(async () => ({ files: ['src/App.tsx', 'README.md'] })),
+      getFile: vi.fn(async () => ({
+        path: 'src/App.tsx',
+        kind: 'text' as const,
+        content: 'export const app = true;',
+        size: 24,
+        modifiedAt: '2026-01-01T00:00:00Z',
+        revision: 'rev-1',
+      })),
+      getGitDiff: vi.fn(async () => ({ branch: 'main', diff: '+++ b/src/App.tsx\n+changed' })),
+      getScratchpad: vi.fn(async () => ({ content: 'Keep the UI compact.' })),
+      saveScratchpad: vi.fn(async () => ({ ok: true })),
+    };
+    const { client } = createClient();
+    Object.assign(client, capabilities);
+    render(<DesktopApp client={client} path="/session" search="?id=selected.jsonl" />);
+
+    await screen.findByText('Selected thread');
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle session details' }));
+    expect(
+      screen.getByRole('complementary', { name: 'Session context panel' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    expect(await screen.findByText('src/App.tsx')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'src/App.tsx' }));
+    expect(await screen.findByText('export const app = true;')).toBeInTheDocument();
+    expect(capabilities.getFile).toHaveBeenCalledWith('selected.jsonl', 'src/App.tsx');
+    expect(capabilities.listFiles).toHaveBeenCalledWith('selected.jsonl');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Diff' }));
+    expect(await screen.findByText(/\+changed/)).toBeInTheDocument();
+    expect(capabilities.getGitDiff).toHaveBeenCalledWith('selected.jsonl');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Scratchpad' }));
+    expect(await screen.findByDisplayValue('Keep the UI compact.')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Scratchpad' }), {
+      target: { value: 'Updated note' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save scratchpad' }));
+    await waitFor(() =>
+      expect(capabilities.saveScratchpad).toHaveBeenCalledWith('/work/project', 'Updated note'),
+    );
+  });
+
+  it('does not preview directories and refreshes active panel data on reload', async () => {
+    const listFiles = vi.fn(async () => ({
+      files: [
+        { path: 'src', isDir: true, isDirectory: true },
+        { path: 'README.md', isDir: false },
+      ],
+    }));
+    const getFile = vi.fn(async () => ({
+      path: 'README.md',
+      kind: 'text' as const,
+      content: 'readme',
+      size: 6,
+      modifiedAt: '',
+      revision: 'rev-1',
+    }));
+    const getGitDiff = vi.fn(async () => ({ isRepo: true, branch: 'main', diff: 'diff' }));
+    const { client, handlers } = createClient();
+    Object.assign(client, { listFiles, getFile, getGitDiff });
+    render(<DesktopApp client={client} path="/session" search="?id=selected.jsonl" />);
+    await screen.findByText('Selected thread');
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle session details' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    await screen.findByText('src/');
+    fireEvent.click(screen.getByRole('button', { name: 'src/' }));
+    expect(await screen.findByText('Directories cannot be previewed.')).toBeInTheDocument();
+    expect(getFile).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Diff' }));
+    await screen.findByText('diff');
+    const callsBeforeReload = getGitDiff.mock.calls.length;
+    act(() => handlers.get('selected.jsonl')?.onEvent('reload', undefined));
+    await waitFor(() => expect(getGitDiff.mock.calls.length).toBeGreaterThan(callsBeforeReload));
+  });
+
+  it('supports keyboard resizing with complete separator ARIA and persistence', async () => {
+    const { client } = createClient();
+    render(<DesktopApp client={client} path="/session" search="?id=selected.jsonl" />);
+    await screen.findByText('Selected thread');
+
+    const sidebarResizer = screen.getByRole('separator', { name: 'Resize thread sidebar' });
+    expect(sidebarResizer).toHaveAttribute('aria-orientation', 'vertical');
+    fireEvent.keyDown(sidebarResizer, { key: 'End' });
+    expect(sidebarResizer).toHaveAttribute('aria-valuenow', '440');
+    expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('440');
+    fireEvent.keyDown(sidebarResizer, { key: 'ArrowLeft' });
+    expect(sidebarResizer).toHaveAttribute('aria-valuenow', '424');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle session details' }));
+    const panelResizer = screen.getByRole('separator', { name: 'Resize session panel' });
+    expect(panelResizer).toHaveAttribute('tabindex', '0');
+    fireEvent.keyDown(panelResizer, { key: 'End' });
+    expect(panelResizer).toHaveAttribute('aria-valuenow', '280');
+    expect(localStorage.getItem(RIGHT_PANEL_WIDTH_KEY)).toBe('280');
+    fireEvent.keyDown(panelResizer, { key: 'ArrowLeft' });
+    expect(panelResizer).toHaveAttribute('aria-valuenow', '296');
+  });
+
+  it('distinguishes a non-repository from a clean Git working tree', async () => {
+    expect(normalizeDiff({ isRepo: false, diff: '' }).isRepo).toBe(false);
+
+    const getGitDiff = vi.fn(async () => ({ isRepo: false, diff: '' }));
+    const { client } = createClient({ getGitDiff });
+    const firstRender = render(
+      <DesktopApp client={client} path="/session" search="?id=selected.jsonl" />,
+    );
+    await screen.findByText('Selected thread');
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle session details' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diff' }));
+    expect(await screen.findByText('This project is not a Git repository.')).toBeInTheDocument();
+    expect(screen.queryByText('Working tree is clean.')).toBeNull();
+
+    firstRender.unmount();
+    localStorage.removeItem(DETAILS_OPEN_KEY);
+    const cleanClient = createClient({
+      getGitDiff: vi.fn(async () => ({ isRepo: true, diff: '' })),
+    }).client;
+    render(<DesktopApp client={cleanClient} path="/session" search="?id=selected.jsonl" />);
+    await screen.findByText('Selected thread');
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle session details' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diff' }));
+    expect(await screen.findByText('Working tree is clean.')).toBeInTheDocument();
+    expect(screen.queryByText('This project is not a Git repository.')).toBeNull();
+  });
+
+  it('renders Pi timeline events for custom updates, branch summaries, and labels', () => {
+    const details: SessionDetails = {
+      ...emptyDetails,
+      entries: [
+        {
+          id: 'custom-1',
+          type: 'custom_message',
+          customType: 'checklist',
+          content: [{ type: 'text', text: 'Repository checked.' }],
+        },
+        { id: 'branch-1', type: 'branch_summary', summary: 'Continue from the stable branch.' },
+        { id: 'label-1', type: 'label', label: 'Ready for review' },
+      ],
+      total: 3,
+    };
+    render(<Transcript details={details} />);
+
+    expect(screen.getByText('checklist')).toBeInTheDocument();
+    expect(screen.getByText('Repository checked.')).toBeInTheDocument();
+    expect(screen.getByText('Branch summary')).toBeInTheDocument();
+    expect(screen.getByText('Continue from the stable branch.')).toBeInTheDocument();
+    expect(screen.getByText('Ready for review')).toBeInTheDocument();
+  });
+
   it('keeps thinking and tool activity collapsed by default', () => {
     const details: SessionDetails = {
       ...emptyDetails,

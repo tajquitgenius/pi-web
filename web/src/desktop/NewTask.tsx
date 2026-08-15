@@ -163,7 +163,10 @@ export function NewTaskPage({
             <span>Project path</span>
             <input
               aria-label="Project path"
-              onChange={(event) => setPath(event.currentTarget.value)}
+              onChange={(event) => {
+                pathInitialized.current = true;
+                setPath(event.currentTarget.value);
+              }}
               placeholder="/path/to/project"
               required
               spellCheck={false}

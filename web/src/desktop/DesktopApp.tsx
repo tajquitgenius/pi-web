@@ -1,4 +1,4 @@
-import { AlertCircle, Home } from 'lucide-react';
+import { AlertCircle, Home, PanelLeftOpen } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type {
   PiModel,
@@ -7,14 +7,19 @@ import type {
   SessionSummary,
   StatusSnapshot,
 } from '../live-shared';
+import { CommandPalette } from './CommandPalette';
 import { SessionPage } from './Conversation';
 import {
   DETAILS_OPEN_KEY,
+  RIGHT_PANEL_TAB_KEY,
+  RIGHT_PANEL_WIDTH_KEY,
   readStoredBoolean,
+  readStoredPanelTab,
   readStoredWidth,
   SIDEBAR_COLLAPSED_KEY,
   SIDEBAR_WIDTH_KEY,
 } from './desktop-model';
+import type { RightPanelTab } from './RightPanel';
 import { NewTaskPage } from './NewTask';
 import { PairingPage } from './Pairing';
 import { SettingsPage } from './Settings';
@@ -69,6 +74,11 @@ function WorkspaceProduct({
   const [detailsOpen, setDetailsOpen] = useState(() =>
     readStoredBoolean(localStorage, DETAILS_OPEN_KEY, false),
   );
+  const [panelTab, setPanelTab] = useState<RightPanelTab>(() => readStoredPanelTab(localStorage));
+  const [panelWidth, setPanelWidth] = useState(() =>
+    readStoredWidth(localStorage, 336, 280, 520, RIGHT_PANEL_WIDTH_KEY),
+  );
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const activeSessionId =
     route.path === '/session' ? (new URLSearchParams(route.search).get('id') ?? '') : '';
@@ -115,8 +125,17 @@ function WorkspaceProduct({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key.toLocaleLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen((current) => !current);
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, select, [contenteditable="true"]')
+      )
+        return;
       if (event.key.toLocaleLowerCase() === 'b') {
         event.preventDefault();
         setSidebarCollapsed((current) => {
@@ -129,6 +148,15 @@ function WorkspaceProduct({
       } else if (event.key.toLocaleLowerCase() === 't') {
         event.preventDefault();
         navigate('/');
+      } else if (event.key.toLocaleLowerCase() === 'p' && event.shiftKey) {
+        event.preventDefault();
+        setDetailsOpen((current) => {
+          const next = !current;
+          try {
+            localStorage.setItem(DETAILS_OPEN_KEY, String(next));
+          } catch {}
+          return next;
+        });
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -159,6 +187,20 @@ function WorkspaceProduct({
       return next;
     });
   };
+  const changePanelTab = (tab: RightPanelTab) => {
+    setPanelTab(tab);
+    setDetailsOpen(true);
+    try {
+      localStorage.setItem(RIGHT_PANEL_TAB_KEY, tab);
+      localStorage.setItem(DETAILS_OPEN_KEY, 'true');
+    } catch {}
+  };
+  const changePanelWidth = (width: number) => {
+    setPanelWidth(width);
+    try {
+      localStorage.setItem(RIGHT_PANEL_WIDTH_KEY, String(width));
+    } catch {}
+  };
 
   const selectedSummary = useMemo(
     () => sessions.find((session) => session.id === activeSessionId),
@@ -186,6 +228,10 @@ function WorkspaceProduct({
         key={activeSessionId}
         models={models}
         onDetailsToggle={toggleDetails}
+        onPanelTabChange={changePanelTab}
+        onPanelWidthChange={changePanelWidth}
+        panelTab={panelTab}
+        panelWidth={panelWidth}
         selectedSummary={selectedSummary}
         sessionId={activeSessionId}
       />
@@ -223,20 +269,52 @@ function WorkspaceProduct({
       />
       <ProjectSidebar
         activeSessionId={activeSessionId}
+        client={client}
         collapsed={sidebarCollapsed}
         host={host}
         loading={sessionsLoading}
         navigate={navigate}
+        onRefresh={loadSessions}
         onToggle={toggleSidebar}
         onWidthChange={changeSidebarWidth}
         runningSessionIds={runningSessionIds}
         sessions={sessions}
         width={sidebarWidth}
       />
+      {!sidebarCollapsed ? (
+        <div
+          aria-hidden="true"
+          className="desktop-mobile-sidebar-backdrop"
+          data-testid="mobile-sidebar-backdrop"
+          onClick={toggleSidebar}
+          role="presentation"
+        />
+      ) : (
+        <button
+          aria-label="Reopen sidebar"
+          className="desktop-mobile-sidebar-reopen"
+          onClick={toggleSidebar}
+          title="Show projects and threads"
+          type="button"
+        >
+          <PanelLeftOpen aria-hidden="true" size={16} />
+        </button>
+      )}
       <div className="desktop-workspace-panes" data-testid="workspace-panes">
         {content}
       </div>
       {sessionsError ? <div className="desktop-global-error">{sessionsError}</div> : null}
+      {paletteOpen ? (
+        <CommandPalette
+          activeSessionId={activeSessionId}
+          client={client}
+          navigate={navigate}
+          onClose={() => setPaletteOpen(false)}
+          onToggleDetails={toggleDetails}
+          onToggleSidebar={toggleSidebar}
+          sessions={sessions}
+        />
+      ) : null}
     </div>
   );
 }
