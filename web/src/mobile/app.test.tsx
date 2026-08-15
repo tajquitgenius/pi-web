@@ -958,16 +958,16 @@ describe('mobile routing and labels', () => {
     );
   });
 
-  it('opens from a rightward edge swipe and closes from a leftward swipe', () => {
+  it('opens from a rightward swipe across the main surface and closes from a leftward swipe', () => {
     const view = render(<MobileApp client={makeClient()} path="/" search="" />);
     const app = view.container.querySelector('.mobile-app');
     expect(app).not.toBeNull();
 
     fireEvent.touchStart(app!, {
-      touches: [{ identifier: 1, clientX: 20, clientY: 180 }],
+      touches: [{ identifier: 1, clientX: 170, clientY: 180 }],
     });
     fireEvent.touchEnd(app!, {
-      changedTouches: [{ identifier: 1, clientX: 88, clientY: 185 }],
+      changedTouches: [{ identifier: 1, clientX: 238, clientY: 185 }],
     });
 
     const drawer = screen.getByRole('dialog', { name: 'Navigation' });
@@ -992,19 +992,13 @@ describe('mobile routing and labels', () => {
     expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();
   });
 
-  it('does not open after off-edge, vertical-intent, or cancelled gestures', () => {
+  it('does not open after vertical-intent or cancelled gestures', () => {
     const view = render(<MobileApp client={makeClient()} path="/" search="" />);
     const app = view.container.querySelector('.mobile-app');
     expect(app).not.toBeNull();
 
     fireEvent.touchStart(app!, {
-      touches: [{ identifier: 1, clientX: 40, clientY: 180 }],
-    });
-    fireEvent.touchEnd(app!, {
-      changedTouches: [{ identifier: 1, clientX: 110, clientY: 184 }],
-    });
-    fireEvent.touchStart(app!, {
-      touches: [{ identifier: 2, clientX: 20, clientY: 180 }],
+      touches: [{ identifier: 2, clientX: 170, clientY: 180 }],
     });
     fireEvent.touchMove(app!, {
       touches: [{ identifier: 2, clientX: 24, clientY: 220 }],
@@ -1018,6 +1012,42 @@ describe('mobile routing and labels', () => {
     fireEvent.touchCancel(app!);
     fireEvent.touchEnd(app!, {
       changedTouches: [{ identifier: 3, clientX: 92, clientY: 184 }],
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();
+  });
+
+  it('does not claim rightward swipes that begin on an interactive control', () => {
+    render(<MobileApp client={makeClient()} path="/" search="" />);
+    const button = screen.getByRole('button', { name: 'New task' });
+
+    fireEvent.touchStart(button, {
+      touches: [{ identifier: 4, clientX: 250, clientY: 50 }],
+    });
+    fireEvent.touchEnd(button, {
+      changedTouches: [{ identifier: 4, clientX: 325, clientY: 53 }],
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();
+  });
+
+  it('leaves a rightward swipe inside a horizontal scroller to that scroller', () => {
+    const view = render(<MobileApp client={makeClient()} path="/" search="" />);
+    const app = view.container.querySelector('.mobile-app');
+    expect(app).not.toBeNull();
+    const scroller = document.createElement('pre');
+    scroller.style.overflowX = 'auto';
+    Object.defineProperties(scroller, {
+      clientWidth: { configurable: true, value: 120 },
+      scrollWidth: { configurable: true, value: 360 },
+    });
+    app!.appendChild(scroller);
+
+    fireEvent.touchStart(scroller, {
+      touches: [{ identifier: 4, clientX: 120, clientY: 240 }],
+    });
+    fireEvent.touchEnd(scroller, {
+      changedTouches: [{ identifier: 4, clientX: 195, clientY: 244 }],
     });
 
     expect(screen.queryByRole('dialog', { name: 'Navigation' })).not.toBeInTheDocument();

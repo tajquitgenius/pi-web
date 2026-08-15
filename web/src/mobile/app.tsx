@@ -109,8 +109,30 @@ export function MobileApp({
 
   const startNavigationSwipe = (event: TouchEvent<HTMLDivElement>) => {
     const touch = event.touches.length === 1 ? event.touches[0] : null;
+    let gestureOwnedByContent = false;
+    if (event.target instanceof Element) {
+      gestureOwnedByContent = Boolean(
+        event.target.closest(
+          'a, button, input, textarea, select, summary, [contenteditable="true"], [role="button"], [role="dialog"], [role="link"], [role="slider"]',
+        ),
+      );
+      for (
+        let element: Element | null = event.target;
+        element && element !== event.currentTarget;
+        element = element.parentElement
+      ) {
+        const style = getComputedStyle(element);
+        if (
+          /^(auto|scroll|overlay)$/.test(style.overflowX) &&
+          element.scrollWidth > element.clientWidth
+        ) {
+          gestureOwnedByContent = true;
+          break;
+        }
+      }
+    }
     navigationSwipeStart.current =
-      !navigationOpen && touch && touch.clientX <= 24
+      !navigationOpen && touch && !gestureOwnedByContent
         ? { identifier: touch.identifier, x: touch.clientX, y: touch.clientY }
         : null;
   };
