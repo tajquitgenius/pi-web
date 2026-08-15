@@ -2,9 +2,11 @@ import {
   AlertCircle,
   Bot,
   Brain,
+  Check,
   CheckCircle2,
   ChevronRight,
   Circle,
+  Copy,
   FileText,
   LoaderCircle,
   Paperclip,
@@ -27,6 +29,7 @@ import {
   type ReactNode,
 } from 'react';
 import { readEmbeddedSession } from '../live-shared';
+import { t } from '../shared/i18n.js';
 import type {
   PiModel,
   PiWebClient,
@@ -70,6 +73,38 @@ function contentText(content: unknown): string {
     .filter((block) => block.type === 'text')
     .map((block) => textValue(block.text))
     .join('\n');
+}
+
+function entryTimestamp(timestamp: unknown): string {
+  if (typeof timestamp !== 'string') return '';
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return '';
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(parsed);
+}
+
+async function copyText(value: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // Try the browser's legacy clipboard path below.
+    }
+  }
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 function InlineText({ text }: { text: string }) {
@@ -201,6 +236,94 @@ function ToolCallView({ block, result }: ToolCallViewProps) {
   );
 }
 
+function AssistantMessage({
+  entry,
+  index,
+  message,
+  blocks,
+  toolResults,
+}: {
+  entry: SessionEntry;
+  index: number;
+  message: Record<string, unknown>;
+  blocks: Record<string, unknown>[];
+  toolResults: Map<string, Record<string, unknown>>;
+}) {
+  const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
+  const timestamp = entryTimestamp(entry.timestamp);
+  const copyLabel =
+    copyState === 'success'
+      ? t('conversation.responseCopied')
+      : copyState === 'error'
+        ? t('conversation.copyFailed')
+        : t('conversation.copyResponse');
+
+  return (
+    <article className="desktop-message desktop-assistant-message" key={entryId(entry, index)}>
+      <div className="desktop-assistant-glyph">
+        <Bot aria-hidden="true" size={15} />
+      </div>
+      <div className="desktop-assistant-content">
+        <div className="desktop-message-role">Assistant</div>
+        {blocks.map((block, blockIndex) => {
+          if (block.type === 'text' && textValue(block.text).trim()) {
+            return <RichText key={blockIndex} text={textValue(block.text)} />;
+          }
+          if (block.type === 'thinking' && textValue(block.thinking).trim()) {
+            return (
+              <details className="desktop-thinking-block" key={blockIndex}>
+                <summary>
+                  <Brain aria-hidden="true" size={13} />
+                  Thinking
+                  <ChevronRight aria-hidden="true" size={12} />
+                </summary>
+                <p>{textValue(block.thinking)}</p>
+              </details>
+            );
+          }
+          if (block.type === 'toolCall') {
+            const callId = textValue(block.id);
+            return (
+              <ToolCallView
+                block={block}
+                key={callId || blockIndex}
+                result={toolResults.get(callId)}
+              />
+            );
+          }
+          return null;
+        })}
+        {message.stopReason === 'aborted' ? (
+          <div className="desktop-turn-notice">Response cancelled</div>
+        ) : null}
+        {message.stopReason === 'error' ? (
+          <div className="desktop-turn-notice error">
+            {textValue(message.errorMessage) || 'The response failed.'}
+          </div>
+        ) : null}
+        <div className="desktop-message-metadata">
+          {timestamp ? <time>{timestamp}</time> : null}
+          <button
+            aria-label={copyLabel}
+            onClick={async () => {
+              const copied = await copyText(contentText(message.content));
+              setCopyState(copied ? 'success' : 'error');
+            }}
+            title={copyLabel}
+            type="button"
+          >
+            {copyState === 'success' ? (
+              <Check aria-hidden="true" size={12} />
+            ) : (
+              <Copy aria-hidden="true" size={12} />
+            )}
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 interface TranscriptProps {
   details: SessionDetails;
   streamingText?: string;
@@ -260,53 +383,14 @@ export function Transcript({
             }
             if (role === 'assistant') {
               return (
-                <article
-                  className="desktop-message desktop-assistant-message"
+                <AssistantMessage
+                  blocks={blocks}
+                  entry={entry}
+                  index={index}
                   key={entryId(entry, index)}
-                >
-                  <div className="desktop-assistant-glyph">
-                    <Bot aria-hidden="true" size={15} />
-                  </div>
-                  <div className="desktop-assistant-content">
-                    <div className="desktop-message-role">Assistant</div>
-                    {blocks.map((block, blockIndex) => {
-                      if (block.type === 'text' && textValue(block.text).trim()) {
-                        return <RichText key={blockIndex} text={textValue(block.text)} />;
-                      }
-                      if (block.type === 'thinking' && textValue(block.thinking).trim()) {
-                        return (
-                          <details className="desktop-thinking-block" key={blockIndex}>
-                            <summary>
-                              <Brain aria-hidden="true" size={13} />
-                              Thinking
-                              <ChevronRight aria-hidden="true" size={12} />
-                            </summary>
-                            <p>{textValue(block.thinking)}</p>
-                          </details>
-                        );
-                      }
-                      if (block.type === 'toolCall') {
-                        const callId = textValue(block.id);
-                        return (
-                          <ToolCallView
-                            block={block}
-                            key={callId || blockIndex}
-                            result={toolResults.get(callId)}
-                          />
-                        );
-                      }
-                      return null;
-                    })}
-                    {message?.stopReason === 'aborted' ? (
-                      <div className="desktop-turn-notice">Response cancelled</div>
-                    ) : null}
-                    {message?.stopReason === 'error' ? (
-                      <div className="desktop-turn-notice error">
-                        {textValue(message.errorMessage) || 'The response failed.'}
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
+                  message={message ?? {}}
+                  toolResults={toolResults}
+                />
               );
             }
             if (role === 'bashExecution') {

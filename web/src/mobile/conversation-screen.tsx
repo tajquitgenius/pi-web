@@ -4,7 +4,9 @@ import {
   ArrowUp,
   Bot,
   Brain,
+  Check,
   ChevronDown,
+  Copy,
   FileSearch,
   ImagePlus,
   LoaderCircle,
@@ -114,6 +116,31 @@ function textContent(content: EntryMessage['content']): string {
     .filter((block) => block.type === 'text' && block.text)
     .map((block) => block.text)
     .join('\n');
+}
+
+async function copyText(value: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // Try the browser's legacy clipboard path below.
+    }
+  }
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 function MobileMarkdown({ text }: { text: string }) {
@@ -265,6 +292,7 @@ function ConversationEntry({
 }) {
   const message = entry.message;
   const timestamp = entryTimestamp(entry.timestamp);
+  const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
   if (entry.type === 'message' && message?.role === 'user') {
     const blocks = contentBlocks(message.content);
     const text = textContent(message.content);
@@ -290,6 +318,12 @@ function ConversationEntry({
 
   if (entry.type === 'message' && message?.role === 'assistant') {
     const blocks = contentBlocks(message.content);
+    const copyLabel =
+      copyState === 'success'
+        ? t('conversation.responseCopied')
+        : copyState === 'error'
+          ? t('conversation.copyFailed')
+          : t('conversation.copyResponse');
     return (
       <article className="mobile-message mobile-assistant-message" data-message-role="assistant">
         <div className="mobile-message-role">{t('conversation.assistant')}</div>
@@ -326,7 +360,24 @@ function ConversationEntry({
             {message.errorMessage || t('conversation.responseFailed')}
           </p>
         )}
-        {timestamp && <time>{timestamp}</time>}
+        <div className="mobile-message-metadata">
+          {timestamp && <time>{timestamp}</time>}
+          <button
+            type="button"
+            aria-label={copyLabel}
+            title={copyLabel}
+            onClick={async () => {
+              const copied = await copyText(textContent(message.content));
+              setCopyState(copied ? 'success' : 'error');
+            }}
+          >
+            {copyState === 'success' ? (
+              <Check aria-hidden="true" size={14} />
+            ) : (
+              <Copy aria-hidden="true" size={14} />
+            )}
+          </button>
+        </div>
       </article>
     );
   }

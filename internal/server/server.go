@@ -92,6 +92,10 @@ type Server struct {
 	sessionDefaults       func(ctx context.Context) (sessions.InitialSettings, error)
 	lastKnown             map[string]struct{} // session ids currently broadcast as running
 	lastKnownMu           sync.Mutex
+	parentRunning         map[string]struct{}
+	parentRunningMu       sync.Mutex
+	backgroundRuns        map[string]*backgroundRunTracker
+	backgroundRunsMu      sync.Mutex
 	push                  *PushManager
 	stopCh                chan struct{}
 	stopOnce              sync.Once
@@ -188,6 +192,8 @@ func New(deps Deps) (*Server, error) {
 		models:                deps.Models,
 		sessionDefaults:       deps.SessionDefaults,
 		lastKnown:             make(map[string]struct{}),
+		parentRunning:         make(map[string]struct{}),
+		backgroundRuns:        make(map[string]*backgroundRunTracker),
 		stopCh:                make(chan struct{}),
 		taskCtx:               taskCtx,
 		taskCancel:            taskCancel,

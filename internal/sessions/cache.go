@@ -214,7 +214,7 @@ func (c *Cache) Resolve(sessionsDir, id string) (ResolvedSession, error) {
 	path, ok := c.FindPath(id)
 	if !ok {
 		var err error
-		path, err = findPathByFilename(sessionsDir, id)
+		path, err = FindPathByID(sessionsDir, id)
 		if err != nil {
 			return ResolvedSession{}, err
 		}
