@@ -109,6 +109,20 @@ html {
   background: var(--body-bg);
 }
 
+html.mobile-conversation-flow,
+html.mobile-conversation-flow body,
+html.mobile-conversation-flow #spa-root {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
+html.mobile-conversation-flow .mobile-app {
+  height: auto;
+  min-height: 100vh;
+  overflow: visible;
+}
+
 body {
   color: var(--text);
   background: var(--body-bg);
@@ -947,11 +961,8 @@ textarea:disabled {
 /* Conversation */
 
 .mobile-session-screen {
-  position: fixed;
-  top: var(--mobile-viewport-top, 0px);
-  right: 0;
-  bottom: auto;
-  left: 0;
+  position: relative;
+  top: 0;
   height: var(--mobile-viewport-height, 100dvh);
   flex-direction: column;
 }

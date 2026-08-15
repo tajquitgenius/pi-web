@@ -142,10 +142,14 @@ test.describe("iPhone mobile composer", () => {
     await openTestConversation(page, sessionsDir, testInfo, "sticky-viewport");
 
     const message = page.getByRole("textbox", { name: "Message", exact: true });
-    const initialRootBottom = await page
-      .locator(".mobile-session-screen")
-      .evaluate((root) => root.getBoundingClientRect().bottom);
-    expect(initialRootBottom).toBeCloseTo(874, 0);
+    const initialRoot = await page.locator(".mobile-session-screen").evaluate((root) => ({
+      bottom: root.getBoundingClientRect().bottom,
+      position: getComputedStyle(root).position,
+      normalFlow: document.documentElement.classList.contains("mobile-conversation-flow"),
+    }));
+    expect(initialRoot.bottom).toBeCloseTo(874, 0);
+    expect(initialRoot.position).toBe("relative");
+    expect(initialRoot.normalFlow).toBe(true);
     await message.focus();
     await page.evaluate(() =>
       (

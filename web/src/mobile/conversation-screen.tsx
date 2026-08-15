@@ -891,21 +891,26 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   }, [details?.entries]);
 
   useLayoutEffect(() => {
+    document.documentElement.classList.add('mobile-conversation-flow');
+    return () => document.documentElement.classList.remove('mobile-conversation-flow');
+  }, []);
+
+  useLayoutEffect(() => {
     const root = screenRef.current;
     const viewport = window.visualViewport;
     if (!root || !viewport) return;
     let orientationResetTimer: number | undefined;
-    let viewportHealTimer: number | undefined;
-    let lastHealedViewportHeight = 0;
     const standalone =
       window.matchMedia?.('(display-mode: standalone)').matches === true ||
       Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
     const standaloneIPhone = standalone && /iPhone|iPod/.test(navigator.userAgent);
-    const cancelViewportHeal = () => {
-      window.clearTimeout(viewportHealTimer);
-      viewportHealTimer = undefined;
+    const resetDocumentScroll = () => {
+      if (standaloneIPhone && (window.scrollX !== 0 || window.scrollY !== 0)) {
+        window.scrollTo(0, 0);
+      }
     };
     const update = () => {
+      resetDocumentScroll();
       const visibleBottom = viewport.height + viewport.offsetTop;
       const currentViewportHeight = Math.max(window.innerHeight, visibleBottom);
       const composerFocused = document.activeElement === textareaRef.current;
@@ -925,9 +930,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         keyboardScreenSeedHeightRef.current > 0 &&
         Math.abs(keyboardScreenSeedHeightRef.current - currentViewportHeight) < 1;
       if (keyboardOpen) {
-        cancelViewportHeal();
         keyboardWasOpenRef.current = true;
-        lastHealedViewportHeight = 0;
       } else {
         const closedDeficit = baseline - currentViewportHeight;
         if (currentViewportHeight >= baseline) {
@@ -960,51 +963,12 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       root.style.setProperty('--mobile-viewport-height', `${viewportHeight}px`);
       root.style.setProperty('--mobile-viewport-top', `${viewportTop}px`);
       root.dataset.keyboardOpen = keyboardOpen ? 'true' : 'false';
-      if (
-        standaloneIPhone &&
-        !keyboardOpen &&
-        screenDeficit > 4 &&
-        screenDeficit <= 120 &&
-        lastHealedViewportHeight !== currentViewportHeight &&
-        viewportHealTimer === undefined
-      ) {
-        const measuredHeight = currentViewportHeight;
-        viewportHealTimer = window.setTimeout(() => {
-          viewportHealTimer = undefined;
-          const liveVisibleBottom = viewport.height + viewport.offsetTop;
-          const liveViewportHeight = Math.max(window.innerHeight, liveVisibleBottom);
-          const liveDeficit = window.screen.height - liveViewportHeight;
-          const keyboardIsOpening =
-            document.activeElement === textareaRef.current &&
-            keyboardViewportBaselineRef.current - liveVisibleBottom > 120;
-          if (
-            keyboardIsOpening ||
-            liveDeficit <= 4 ||
-            liveDeficit > 120 ||
-            Math.abs(liveViewportHeight - measuredHeight) >= 1
-          ) {
-            return;
-          }
-          lastHealedViewportHeight = measuredHeight;
-          const feed = feedRef.current;
-          const scrollTop = feed?.scrollTop ?? 0;
-          const previousDisplay = root.style.display;
-          root.style.display = 'none';
-          void root.offsetHeight;
-          root.style.display = previousDisplay;
-          if (feed) feed.scrollTop = scrollTop;
-          update();
-        }, 140);
-      }
       if (followingLatestRef.current) {
         requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
       }
     };
     const resetForOrientation = () => {
       window.clearTimeout(orientationResetTimer);
-      window.clearTimeout(viewportHealTimer);
-      viewportHealTimer = undefined;
-      lastHealedViewportHeight = 0;
       orientationResetTimer = window.setTimeout(() => {
         keyboardViewportBaselineRef.current = 0;
         keyboardViewportDeficitRef.current = 0;
@@ -1014,18 +978,19 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       }, 250);
     };
     update();
-    textareaRef.current?.addEventListener('focus', cancelViewportHeal);
     viewport.addEventListener('resize', update);
     viewport.addEventListener('scroll', update);
     window.addEventListener('resize', update);
+    window.addEventListener('scroll', resetDocumentScroll, { passive: true });
+    document.addEventListener('focusin', resetDocumentScroll);
     window.addEventListener('orientationchange', resetForOrientation);
     return () => {
       window.clearTimeout(orientationResetTimer);
-      window.clearTimeout(viewportHealTimer);
-      textareaRef.current?.removeEventListener('focus', cancelViewportHeal);
       viewport.removeEventListener('resize', update);
       viewport.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', resetDocumentScroll);
+      document.removeEventListener('focusin', resetDocumentScroll);
       window.removeEventListener('orientationchange', resetForOrientation);
     };
   }, [loading]);
