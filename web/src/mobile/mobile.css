@@ -123,6 +123,16 @@ html.mobile-conversation-flow .mobile-app {
   overflow: visible;
 }
 
+html.mobile-conversation-flow .mobile-sheet-backdrop,
+html.mobile-conversation-flow .mobile-navigation-backdrop {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: auto;
+  left: 0;
+  height: var(--mobile-viewport-height, 100vh);
+}
+
 body {
   color: var(--text);
   background: var(--body-bg);

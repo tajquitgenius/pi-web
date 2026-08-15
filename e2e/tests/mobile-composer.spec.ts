@@ -150,6 +150,27 @@ test.describe("iPhone mobile composer", () => {
     expect(initialRoot.bottom).toBeCloseTo(874, 0);
     expect(initialRoot.position).toBe("relative");
     expect(initialRoot.normalFlow).toBe(true);
+
+    await page.getByRole("button", { name: "Tools", exact: true }).click();
+    const sheetOverlay = await page.locator(".mobile-sheet-backdrop").evaluate((overlay) => ({
+      bottom: overlay.getBoundingClientRect().bottom,
+      position: getComputedStyle(overlay).position,
+    }));
+    expect(sheetOverlay.position).toBe("absolute");
+    expect(sheetOverlay.bottom).toBeCloseTo(874, 0);
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    const navigationOverlay = await page
+      .locator(".mobile-navigation-backdrop")
+      .evaluate((overlay) => ({
+        bottom: overlay.getBoundingClientRect().bottom,
+        position: getComputedStyle(overlay).position,
+      }));
+    expect(navigationOverlay.position).toBe("absolute");
+    expect(navigationOverlay.bottom).toBeCloseTo(874, 0);
+    await page.keyboard.press("Escape");
+
     await message.focus();
     await page.evaluate(() =>
       (

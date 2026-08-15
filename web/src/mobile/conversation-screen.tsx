@@ -961,6 +961,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         : viewport.height;
       const viewportTop = standalone && !keyboardOpen ? 0 : viewport.offsetTop;
       root.style.setProperty('--mobile-viewport-height', `${viewportHeight}px`);
+      document.documentElement.style.setProperty('--mobile-viewport-height', `${viewportHeight}px`);
       root.style.setProperty('--mobile-viewport-top', `${viewportTop}px`);
       root.dataset.keyboardOpen = keyboardOpen ? 'true' : 'false';
       if (followingLatestRef.current) {
@@ -992,6 +993,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       window.removeEventListener('scroll', resetDocumentScroll);
       document.removeEventListener('focusin', resetDocumentScroll);
       window.removeEventListener('orientationchange', resetForOrientation);
+      document.documentElement.style.removeProperty('--mobile-viewport-height');
     };
   }, [loading]);
 
