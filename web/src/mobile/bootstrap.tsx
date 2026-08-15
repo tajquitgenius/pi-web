@@ -10,6 +10,27 @@ import './navigation-drawer.css';
 installReleaseRefresh({
   runningBuild: document.querySelector<HTMLMetaElement>('meta[name="pi-web-build"]')?.content || '',
   product: 'mobile',
+  layoutMetrics: () => {
+    const viewport = window.visualViewport;
+    const root = document.querySelector<HTMLElement>('.mobile-session-screen');
+    const composer = document.querySelector<HTMLElement>('.mobile-composer');
+    const chrome = document.querySelector<HTMLElement>('.mobile-composer-chrome');
+    const rootRect = root?.getBoundingClientRect();
+    const chromeRect = chrome?.getBoundingClientRect();
+    return {
+      screenHeight: window.screen.height,
+      innerHeight: window.innerHeight,
+      visualHeight: viewport?.height ?? window.innerHeight,
+      visualTop: viewport?.offsetTop ?? 0,
+      rootTop: rootRect?.top ?? 0,
+      rootBottom: rootRect?.bottom ?? 0,
+      composerTop: chromeRect?.top ?? 0,
+      composerBottom: chromeRect?.bottom ?? 0,
+      composerPaddingBottom: composer
+        ? Number.parseFloat(getComputedStyle(composer).paddingBottom) || 0
+        : 0,
+    };
+  },
 });
 
 const target = document.getElementById('spa-root');

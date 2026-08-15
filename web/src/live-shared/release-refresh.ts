@@ -1,10 +1,23 @@
 export type ReleaseProduct = 'desktop' | 'mobile';
 export type ReleaseDisplayMode = 'browser' | 'standalone';
 
+export interface ReleaseLayoutMetrics {
+  screenHeight: number;
+  innerHeight: number;
+  visualHeight: number;
+  visualTop: number;
+  rootTop: number;
+  rootBottom: number;
+  composerTop: number;
+  composerBottom: number;
+  composerPaddingBottom: number;
+}
+
 export interface ReleaseRefreshOptions {
   runningBuild: string;
   product?: ReleaseProduct;
   displayMode?: ReleaseDisplayMode;
+  layoutMetrics?: () => ReleaseLayoutMetrics;
   windowEvents?: EventTarget;
   documentEvents?: EventTarget;
   visibilityState?: () => DocumentVisibilityState;
@@ -44,6 +57,7 @@ export function installReleaseRefresh({
   runningBuild,
   product,
   displayMode = currentDisplayMode(),
+  layoutMetrics,
   windowEvents = globalThis.window,
   documentEvents = globalThis.document,
   visibilityState = () => globalThis.document.visibilityState,
@@ -96,6 +110,27 @@ export function installReleaseRefresh({
     const pair = `${runningBuild}:${deployedBuild}`;
     if (observedPair === pair) return;
     observedPair = pair;
+    let metrics: ReleaseLayoutMetrics | undefined;
+    try {
+      metrics = layoutMetrics?.();
+    } catch {
+      metrics = undefined;
+    }
+    const metricHeaders = metrics
+      ? Object.fromEntries(
+          Object.entries({
+            'X-Pi-Web-Screen-Height': metrics.screenHeight,
+            'X-Pi-Web-Inner-Height': metrics.innerHeight,
+            'X-Pi-Web-Visual-Height': metrics.visualHeight,
+            'X-Pi-Web-Visual-Top': metrics.visualTop,
+            'X-Pi-Web-Root-Top': metrics.rootTop,
+            'X-Pi-Web-Root-Bottom': metrics.rootBottom,
+            'X-Pi-Web-Composer-Top': metrics.composerTop,
+            'X-Pi-Web-Composer-Bottom': metrics.composerBottom,
+            'X-Pi-Web-Composer-Padding-Bottom': metrics.composerPaddingBottom,
+          }).map(([name, value]) => [name, String(Math.round(value * 10) / 10)]),
+        )
+      : {};
     void fetchImpl('/api/client-build-observation', {
       method: 'POST',
       cache: 'no-store',
@@ -105,6 +140,7 @@ export function installReleaseRefresh({
         'X-Pi-Web-Display-Mode': displayMode,
         'X-Pi-Web-Product': product,
         'X-Pi-Web-Running-Build': runningBuild,
+        ...metricHeaders,
       },
     }).catch(() => {
       if (observedPair === pair) observedPair = '';
