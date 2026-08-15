@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"pi-web/internal/server"
 	"pi-web/internal/ui"
 )
 
@@ -46,7 +47,21 @@ func validatePublicURL(raw string) (string, error) {
 	return "https://" + u.Host, nil
 }
 
-func validatePublicBind(publicURL, bindHost string) error {
+func parseRemoteAuthMode(raw string) (server.RemoteAuthMode, error) {
+	switch raw {
+	case "", "pairing":
+		return server.RemoteAuthPairing, nil
+	case "external":
+		return server.RemoteAuthExternal, nil
+	default:
+		return server.RemoteAuthPairing, fmt.Errorf("must be pairing or external")
+	}
+}
+
+func validatePublicBind(remoteAuth server.RemoteAuthMode, publicURL, bindHost string) error {
+	if remoteAuth == server.RemoteAuthExternal && publicURL == "" {
+		return fmt.Errorf("external remote auth requires %s to be an absolute HTTPS origin", publicURLEnvVar)
+	}
 	if publicURL != "" && !isLoopbackHost(bindHost) {
 		return fmt.Errorf("refusing public URL with non-loopback bind host %s; externally managed HTTPS requires pi-web to remain on loopback", bindHost)
 	}

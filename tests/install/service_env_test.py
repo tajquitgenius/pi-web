@@ -21,6 +21,7 @@ class ServiceEnvironmentTest(unittest.TestCase):
             (config / "env").write_text(
                 "PI_WEB_INSTANCE_NAME='Personal laptop'\n"
                 "PI_WEB_PUBLIC_URL=https://personal-pi.example.com\n"
+                "PI_WEB_REMOTE_AUTH=external\n"
                 "PI_WEB_PEERS_JSON='[{\"label\":\"Work laptop\",\"url\":\"https://work-pi.example.com\"}]'\n"
                 "PI_WEB_TOKEN=test-token\n"
             )
@@ -32,7 +33,8 @@ class ServiceEnvironmentTest(unittest.TestCase):
                 "python3 -c 'import json, os, sys; "
                 "json.dump({key: os.environ.get(key) for key in "
                 "[\"PI_WEB_INSTANCE_NAME\", \"PI_WEB_PUBLIC_URL\", "
-                "\"PI_WEB_PEERS_JSON\", \"PI_WEB_TOKEN\"]}, open(sys.argv[1], \"w\"))' "
+                "\"PI_WEB_REMOTE_AUTH\", \"PI_WEB_PEERS_JSON\", \"PI_WEB_TOKEN\"]}, "
+                "open(sys.argv[1], \"w\"))' "
                 '"$PI_WEB_ENV_OUTPUT"\n'
             )
             probe.chmod(probe.stat().st_mode | stat.S_IXUSR)
@@ -52,11 +54,20 @@ class ServiceEnvironmentTest(unittest.TestCase):
             values = json.loads(output.read_text())
             self.assertEqual(values["PI_WEB_INSTANCE_NAME"], "Personal laptop")
             self.assertEqual(values["PI_WEB_PUBLIC_URL"], "https://personal-pi.example.com")
+            self.assertEqual(values["PI_WEB_REMOTE_AUTH"], "external")
             self.assertEqual(
                 values["PI_WEB_PEERS_JSON"],
                 '[{"label":"Work laptop","url":"https://work-pi.example.com"}]',
             )
             self.assertEqual(values["PI_WEB_TOKEN"], "test-token")
+
+    def test_linux_and_windows_load_remote_auth_from_the_service_env_file(self):
+        systemd_service = (ROOT / "init" / "pi-web.service").read_text()
+        self.assertIn("EnvironmentFile=-%h/.config/pi-web/env", systemd_service)
+
+        windows_installer = (ROOT / "install.ps1").read_text()
+        self.assertIn("foreach (`$line in Get-Content `$envFile)", windows_installer)
+        self.assertIn("Set-Item -Path ('Env:' + `$name) -Value `$value", windows_installer)
 
 
 if __name__ == "__main__":

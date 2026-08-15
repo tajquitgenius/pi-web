@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { HostContext, PiWebClient } from '../live-shared';
+import { t } from '../shared/i18n.js';
 
 interface PairingPageProps {
   client: PiWebClient;
@@ -19,6 +20,7 @@ interface PairingPageProps {
 
 export function PairingPage({ client, host, navigate }: PairingPageProps) {
   const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
   const [paired, setPaired] = useState(false);
   const [local, setLocal] = useState(false);
   const [code, setCode] = useState('');
@@ -32,6 +34,7 @@ export function PairingPage({ client, host, navigate }: PairingPageProps) {
       .getPairingStatus()
       .then((status) => {
         if (!active) return;
+        setAuthenticated(status.authenticated ?? status.paired);
         setPaired(status.paired);
         setLocal(status.local);
       })
@@ -56,6 +59,7 @@ export function PairingPage({ client, host, navigate }: PairingPageProps) {
     setError('');
     try {
       const result = await client.submitPairing({ code: pairingCode, label: deviceLabel });
+      setAuthenticated(result.paired);
       setPaired(result.paired);
     } catch (reason) {
       setError(
@@ -74,7 +78,7 @@ export function PairingPage({ client, host, navigate }: PairingPageProps) {
           className="desktop-pairing-brand"
           href="/"
           onClick={(event) => {
-            if (!paired) return;
+            if (!authenticated) return;
             event.preventDefault();
             navigate('/');
           }}
@@ -88,7 +92,7 @@ export function PairingPage({ client, host, navigate }: PairingPageProps) {
           <Server aria-hidden="true" size={14} />
           {host.instanceName}
         </div>
-        {paired ? (
+        {authenticated ? (
           <nav aria-label="Primary navigation">
             <a
               href="/"
@@ -118,19 +122,27 @@ export function PairingPage({ client, host, navigate }: PairingPageProps) {
             <LoaderCircle aria-hidden="true" className="desktop-spin" size={20} />
             Checking this device…
           </div>
-        ) : paired ? (
+        ) : authenticated ? (
           <div className="desktop-pairing-complete">
             <span className="desktop-pairing-status-icon">
               <CheckCircle2 aria-hidden="true" size={24} />
             </span>
-            <p className="desktop-card-eyebrow">Device ready</p>
+            <p className="desktop-card-eyebrow">
+              {paired ? 'Device ready' : t('pairing.externalEyebrow')}
+            </p>
             <h1 id="pairing-title">
-              {local ? 'You are on the host computer' : 'This device is paired'}
+              {local
+                ? 'You are on the host computer'
+                : paired
+                  ? 'This device is paired'
+                  : t('pairing.externalTitle')}
             </h1>
             <p>
               {local
                 ? 'Local access is trusted. You can open the workspace or administer paired devices.'
-                : 'The device credential is stored in a secure cookie and never appears in the URL.'}
+                : paired
+                  ? 'The device credential is stored in a secure cookie and never appears in the URL.'
+                  : t('pairing.externalHint')}
             </p>
             <button className="desktop-pairing-submit" onClick={() => navigate('/')} type="button">
               Open workspace <ArrowRight aria-hidden="true" size={15} />

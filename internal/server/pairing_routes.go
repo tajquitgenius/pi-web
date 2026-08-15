@@ -98,7 +98,7 @@ func (s *Server) registerDevicePairingRoutes(mux *http.ServeMux) {
 // the public-host device gate around the complete mux, including static assets.
 func (s *Server) HTTPHandler(next http.Handler) http.Handler {
 	gate := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.isPublicRequest(r) || isPublicPairingPath(r) {
+		if !s.isPublicRequest(r) || s.remoteAuth == RemoteAuthExternal || isPublicPairingPath(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -162,6 +162,10 @@ func (s *Server) handlePairingShell(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.remoteAuth == RemoteAuthExternal && s.isPublicRequest(r) {
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 	s.handleAppShell(w, r, "")
@@ -312,16 +316,24 @@ func (s *Server) handlePairingStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isLoopbackRequestHost(r.Host) {
-		writeJSON(w, 0, map[string]bool{"paired": true, "local": true})
+		writeJSON(w, 0, map[string]bool{"authenticated": true, "paired": true, "local": true})
 		return
 	}
-	if !s.isPublicRequest(r) || s.pairing == nil {
-		writeJSON(w, 0, map[string]bool{"paired": false, "local": false})
+	if !s.isPublicRequest(r) {
+		writeJSON(w, 0, map[string]bool{"authenticated": false, "paired": false, "local": false})
+		return
+	}
+	if s.remoteAuth == RemoteAuthExternal {
+		writeJSON(w, 0, map[string]bool{"authenticated": true, "paired": false, "local": false})
+		return
+	}
+	if s.pairing == nil {
+		writeJSON(w, 0, map[string]bool{"authenticated": false, "paired": false, "local": false})
 		return
 	}
 	cookie, err := r.Cookie(deviceCredentialCookieName)
 	if err != nil {
-		writeJSON(w, 0, map[string]bool{"paired": false, "local": false})
+		writeJSON(w, 0, map[string]bool{"authenticated": false, "paired": false, "local": false})
 		return
 	}
 	_, paired, err := s.pairing.LookupDevice(r.Context(), cookie.Value)
@@ -332,7 +344,7 @@ func (s *Server) handlePairingStatus(w http.ResponseWriter, r *http.Request) {
 	if !paired {
 		s.clearDeviceCredential(w, r)
 	}
-	writeJSON(w, 0, map[string]bool{"paired": paired, "local": false})
+	writeJSON(w, 0, map[string]bool{"authenticated": paired, "paired": paired, "local": false})
 }
 
 func (s *Server) setDeviceCredentialCookie(w http.ResponseWriter, r *http.Request, credential string, expiresAt time.Time) {

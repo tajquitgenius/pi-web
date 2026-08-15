@@ -34,7 +34,7 @@ Phone / personal laptop / work laptop
                  │
  Cloudflare Access (Google)
                  │
-      90-day device pairing
+ pairing (Main) or external mode (peers)
                  │
        Cloudflare Tunnel
                  │
@@ -44,7 +44,7 @@ Phone / personal laptop / work laptop
   local session files + Pi RPC workers
 ```
 
-Run one independent installation per computer. `pi.tajwar.org` remains the canonical Main hub and links to every configured server, including the Work laptop at `work.pi.tajwar.org`. Each link performs a top-level navigation. Pi-web never aggregates sessions, sends cross-origin API requests, or shares credentials between hosts.
+Run one independent installation per computer. `pi.tajwar.org` remains the canonical Main hub and links to every configured server, including the Work laptop at `work-pi.tajwar.org`. Each link performs a top-level navigation. Pi-web never aggregates sessions, sends cross-origin API requests, or shares credentials between hosts.
 
 ## Install
 
@@ -72,8 +72,9 @@ Create or edit `~/.config/pi-web/env` on each computer:
 ```bash
 PI_WEB_INSTANCE_NAME='Main'
 PI_WEB_PUBLIC_URL=https://pi.tajwar.org
-PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work.pi.tajwar.org"},{"label":"Personal","url":"https://personal.pi.tajwar.org"},{"label":"Cloud","url":"https://cloud.pi.tajwar.org"}]'
-# Optional extra defense after Access and device pairing:
+PI_WEB_REMOTE_AUTH=pairing
+PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work-pi.tajwar.org"},{"label":"Personal","url":"https://personal-pi.tajwar.org"}]'
+# Optional extra defense after Access:
 # PI_WEB_TOKEN=replace-with-a-random-token
 ```
 
@@ -93,6 +94,8 @@ Restart pi-web after changing the file:
 
 `PI_WEB_PUBLIC_URL` does not create or manage a tunnel. It declares the exact HTTPS origin that your external tunnel serves, allowing pi-web to validate browser Host and Origin headers. Pi-web continues listening only on loopback.
 
+Device pairing remains the default when `PI_WEB_REMOTE_AUTH` is unset or set to `pairing`. `PI_WEB_REMOTE_AUTH=external` disables the `pi_device` gate. Use it only when a trusted external proxy authenticates every remote request; that proxy becomes the sole remote access and revocation boundary.
+
 See [Cloudflare Access setup](user-docs/en/cloudflare-access.md) for the recommended remote configuration.
 
 ## Commands
@@ -108,7 +111,7 @@ See [Cloudflare Access setup](user-docs/en/cloudflare-access.md) for the recomme
 
 ## Security boundary
 
-A remote user can execute commands and modify files available to the operating-system user running Pi. Keep pi-web on `127.0.0.1`, require the exact-user Google policy in Cloudflare Access, and require pi-web's per-device pairing. `PI_WEB_TOKEN` is an optional extra layer after those two gates, not a prerequisite for public pairing. Never publish port `31415` directly or use `--insecure` for remote access.
+A remote user can execute commands and modify files available to the operating-system user running Pi. Keep pi-web on `127.0.0.1` and require an exact-user policy in Cloudflare Access. Pairing mode adds per-device credentials and revocation. External mode deliberately removes that gate, so the authenticated tunnel becomes the sole remote boundary. `PI_WEB_TOKEN` remains optional defense in depth. Never publish port `31415` directly or use `--insecure` for remote access.
 
 Cloudflare credentials do not belong in pi-web. Install and supervise `cloudflared` separately with Cloudflare's official service.
 

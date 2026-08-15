@@ -10,7 +10,7 @@ ExecStart=/usr/local/bin/pi-web
 Restart=on-failure
 RestartSec=5
 
-# Pass PI_WEB_TOKEN from the environment if set
+# Load pi-web configuration, including PI_WEB_REMOTE_AUTH, when set.
 EnvironmentFile=-%h/.config/pi-web/env
 
 [Install]

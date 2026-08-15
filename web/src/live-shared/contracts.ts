@@ -234,6 +234,7 @@ export interface SSESubscription {
 }
 
 export interface PairingStatus {
+  authenticated?: boolean;
   paired: boolean;
   local: boolean;
 }

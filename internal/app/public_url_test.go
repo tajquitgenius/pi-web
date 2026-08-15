@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"pi-web/internal/server"
 	"pi-web/internal/ui"
 )
 
@@ -48,17 +49,47 @@ func TestValidatePublicURLRejectsNonOrigins(t *testing.T) {
 	}
 }
 
-func TestValidatePublicBindRequiresLoopback(t *testing.T) {
-	if err := validatePublicBind("https://pi.example", "127.0.0.1"); err != nil {
-		t.Fatalf("loopback bind rejected: %v", err)
+func TestParseRemoteAuthMode(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		want server.RemoteAuthMode
+	}{
+		{raw: "", want: server.RemoteAuthPairing},
+		{raw: "pairing", want: server.RemoteAuthPairing},
+		{raw: "external", want: server.RemoteAuthExternal},
+	} {
+		got, err := parseRemoteAuthMode(tt.raw)
+		if err != nil {
+			t.Fatalf("parseRemoteAuthMode(%q): %v", tt.raw, err)
+		}
+		if got != tt.want {
+			t.Fatalf("parseRemoteAuthMode(%q) = %v, want %v", tt.raw, got, tt.want)
+		}
 	}
-	if err := validatePublicBind("https://pi.example", "::1"); err != nil {
-		t.Fatalf("IPv6 loopback bind rejected: %v", err)
+	for _, raw := range []string{"External", "none", " external", "external "} {
+		if _, err := parseRemoteAuthMode(raw); err == nil {
+			t.Fatalf("parseRemoteAuthMode(%q) succeeded, want error", raw)
+		}
 	}
-	if err := validatePublicBind("https://pi.example", "0.0.0.0"); err == nil {
+}
+
+func TestValidatePublicBindRequiresExternalModeToUseHTTPSLoopback(t *testing.T) {
+	if err := validatePublicBind(server.RemoteAuthExternal, "https://pi.example", "127.0.0.1"); err != nil {
+		t.Fatalf("external mode with HTTPS and loopback rejected: %v", err)
+	}
+	if err := validatePublicBind(server.RemoteAuthExternal, "https://pi.example", "::1"); err != nil {
+		t.Fatalf("external mode with IPv6 loopback rejected: %v", err)
+	}
+	if err := validatePublicBind(server.RemoteAuthExternal, "", "127.0.0.1"); err == nil {
+		t.Fatal("external mode without public URL should fail")
+	}
+	if err := validatePublicBind(server.RemoteAuthExternal, "https://pi.example", "0.0.0.0"); err == nil {
+		t.Fatal("external mode with non-loopback bind should fail")
+	}
+	if err := validatePublicBind(server.RemoteAuthPairing, "https://pi.example", "0.0.0.0"); err == nil {
 		t.Fatal("public URL with non-loopback bind should fail")
 	}
-	if err := validatePublicBind("", "0.0.0.0"); err != nil {
+	if err := validatePublicBind(server.RemoteAuthPairing, "", "0.0.0.0"); err != nil {
 		t.Fatalf("non-public bind behavior changed: %v", err)
 	}
 }

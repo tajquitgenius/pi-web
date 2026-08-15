@@ -845,6 +845,20 @@ describe('conversation and pairing', () => {
     expect(within(tool as HTMLElement).getByText('read')).toBeInTheDocument();
   });
 
+  it('shows externally authenticated access without asking the browser to pair', async () => {
+    const { client } = createClient({
+      getPairingStatus: vi.fn(async () => ({
+        authenticated: true,
+        paired: false,
+        local: false,
+      })),
+    });
+    render(<DesktopApp client={client} path="/pairing" search="" />);
+
+    expect(await screen.findByRole('heading', { name: 'Access granted' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pair device' })).not.toBeInTheDocument();
+  });
+
   it('submits pairing code and device label in the body contract, then reveals navigation', async () => {
     const { client } = createClient();
     const navigate = vi.fn();
