@@ -31,9 +31,9 @@ The worker controls `/` but treats all live data as network-owned:
 - Cache Storage may contain only hashed files under
   `/static/desktop/assets/` or `/static/mobile/assets/`, install metadata/icons,
   and that generic offline document;
-- `/`, `/session`, `/api/`, `/events`, `/sounds/`, push, pairing, device, and all
-  other user/session responses are excluded, including redirects and HTML
-  responses returned for static-looking URLs;
+- `/`, `/session`, `/hosts/`, `/_host/`, `/api/`, `/events`, `/sounds/`, push,
+  pairing, device, and all other user/session responses are excluded, including
+  redirects and HTML responses returned for static-looking URLs;
 - `skipWaiting()` and `clients.claim()` update the worker immediately because no
   user or session data is cached;
 - one build fingerprint is derived from both products' hashed JavaScript and CSS
@@ -87,7 +87,7 @@ The Go shell owns values that must exist before React starts:
 
 `web/src/mobile/` owns a separate browser-mobile product for session lists, conversations, settings, and public-device pairing. It has its own routes, components, and CSS. It is not a responsive wrapper around desktop and must not import desktop components or styles. One app-owned navigation drawer links New task, Threads, Projects, Settings, stable Recents, and configured peer hosts; peer controls are absent when no peers are configured. A rightward swipe from the left edge opens it, and a leftward swipe closes it without intercepting vertical scrolling. Conversation runtime controls live in Tools, while navigation and thread actions are separate floating controls above the full-viewport transcript. The accessible thread title is not permanent visual chrome. The floating composer overlays the transcript, whose resting scroll position keeps the latest message unobstructed. The composer follows `VisualViewport` geometry against a pre-keyboard viewport baseline, including iOS modes where both layout and visual viewport heights shrink. It does not use a second keyboard-inset mechanism.
 
-Both products are Pi-only at runtime. They use Pi session IDs and project paths, Pi model and thinking-level records, Pi JSONL entries, and one Pi RPC worker per session. Peer hosts remain independent links: a product can navigate to another pi-web host, but it never merges that host's sessions, workers, or credentials into the current product.
+Both products are Pi-only at runtime. They use Pi session IDs and project paths, Pi model and thinking-level records, Pi JSONL entries, and one Pi RPC worker per session. Main is the browser-facing host hub. Work and Personal remain independent data owners, but their nodes appear at `/hosts/<id>/...` inside Main's origin. `createPiWebClient` applies the matching `/_host/<id>` base to both HTTP and EventSource traffic. A product selects one host at a time and never merges that host's sessions, workers, settings, or credentials with another.
 
 The exact T3 revision, upstream source families, and attributed target files are recorded in [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
 

@@ -9,6 +9,7 @@ This directory contains the architecture documentation for **pi-web**, a local w
 | [system-overview.md](./system-overview.md) | High-level system architecture, component diagram, and tech stack |
 | [backend.md](./backend.md) | Go backend: packages, responsibilities, and key types |
 | [device-pairing.md](./device-pairing.md) | Public device gate, credentials, local administration, and SQLite storage |
+| [host-hub.md](./host-hub.md) | Main's same-origin Work/Personal node enrollment, relay, and streaming boundary |
 | [frontend.md](./frontend.md) | Frontend architecture: React products, typed client, and isolated static export |
 | [data-flow.md](./data-flow.md) | Session file format, data model, and storage layout |
 
@@ -58,3 +59,5 @@ This directory contains the architecture documentation for **pi-web**, a local w
    - **Static export**: A separate self-contained Svelte bundle with no live-server dependency
 
 5. **Security**: Remote deployments keep pi-web on loopback behind an external HTTPS tunnel. `PI_WEB_PUBLIC_URL` declares the exact public origin and activates persistent device pairing there; `PI_WEB_TOKEN` remains optional defense in depth. Any direct non-loopback bind still requires the token.
+
+6. **Main host hub**: `pi.tajwar.org` owns the installed PWA and browser pairing. Work and Personal connect outbound as independently owned nodes; Main relays only explicitly allowed live API and SSE traffic under same-origin host paths.

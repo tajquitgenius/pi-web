@@ -32,11 +32,19 @@ const publicURLEnvVar = "PI_WEB_PUBLIC_URL"
 const remoteAuthEnvVar = "PI_WEB_REMOTE_AUTH"
 const instanceNameEnvVar = "PI_WEB_INSTANCE_NAME"
 const peersJSONEnvVar = "PI_WEB_PEERS_JSON"
+const hubEnvVar = "PI_WEB_HUB"
 const developmentEnvVar = "PI_WEB_DEV"
 
 // Main runs the pi-web application. version is supplied by cmd/pi-web so
 // release builds can set it with -ldflags "-X main.version=...".
 func Main(version string) {
+	if handled, err := runHubCLI(os.Args[1:], os.Stdin, os.Stdout); handled {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	port := flag.String("p", defaultPort, "port to listen on")
 	hostOverride := flag.String("host", "", "host/IP to bind; defaults to 127.0.0.1")
 	publicURLFlag := flag.String("public-url", os.Getenv(publicURLEnvVar), "externally managed absolute HTTPS origin")
@@ -50,8 +58,14 @@ func Main(version string) {
 		os.Exit(0)
 	}
 	developmentMode := os.Getenv(developmentEnvVar) == "1"
+	hubEnabled := os.Getenv(hubEnvVar) == "1"
 
 	agentDir := agentdir.Path()
+	hubNode, err := loadHubNodeConfig(agentDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
 	if err := seedSoundsDir(agentDir); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to seed sounds directory: %v\n", err)
 	}
@@ -129,6 +143,7 @@ func Main(version string) {
 		RunInstall:            runInstall,
 		RunRestart:            runRestart,
 		DisableBackgroundJobs: developmentMode,
+		HubEnabled:            hubEnabled,
 	})
 	if srvErr != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize server: %v\n", srvErr)
@@ -137,7 +152,39 @@ func Main(version string) {
 
 	ui.SetThemeProvider(srv.ThemeSetting)
 	ui.SetFontProvider(srv.FontStyles)
-	ui.SetHostContextProvider(func() ui.HostContext { return hostContext })
+	ui.SetHostContextProvider(func(r *http.Request) ui.HostContext {
+		result := hostContext
+		if r.URL.Path == "/pairing" {
+			result.Peers = []ui.HostPeer{}
+			return result
+		}
+		if hubEnabled {
+			result.Peers = []ui.HostPeer{}
+		} else {
+			result.Peers = append([]ui.HostPeer(nil), hostContext.Peers...)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		nodes, err := srv.HubNodes(ctx)
+		if err != nil {
+			return result
+		}
+		for _, node := range nodes {
+			duplicate := false
+			for _, peer := range result.Peers {
+				if peer.ID == node.ID {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				result.Peers = append(result.Peers, ui.HostPeer{
+					ID: node.ID, Label: node.Label, URL: "/hosts/" + node.ID + "/",
+				})
+			}
+		}
+		return result
+	})
 
 	mux := http.NewServeMux()
 	srv.Register(mux)
@@ -190,6 +237,12 @@ func Main(version string) {
 	if publicURL != "" {
 		fmt.Printf("Public HTTPS -> %s\n", publicURL)
 	}
+	if hubEnabled {
+		fmt.Println("Hub: enabled")
+	}
+	if hubNode != nil {
+		fmt.Printf("Hub node: %s\n", hubNode.Label)
+	}
 	if remoteAuth == server.RemoteAuthExternal {
 		fmt.Println("Remote auth: external proxy; device pairing disabled")
 	} else {
@@ -227,9 +280,10 @@ func Main(version string) {
 	warmModelsCache()
 	warmSessionDefaultsCache()
 
+	applicationHandler := srv.HTTPHandler(mux)
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           srv.HTTPHandler(mux),
+		Handler:           applicationHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		// WriteTimeout intentionally 0 — SSE streams are long-lived.
@@ -238,6 +292,9 @@ func Main(version string) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if hubNode != nil {
+		go runHubNodeConnector(ctx, *hubNode, addr, token, applicationHandler)
+	}
 	go versionChecker.Start(ctx)
 
 	go func() {

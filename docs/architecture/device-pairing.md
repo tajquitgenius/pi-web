@@ -45,6 +45,8 @@ In pairing mode, public SSE streams and web-push subscriptions carry the authent
 
 Pairing codes and device credentials are never accepted from query parameters. Pairing responses do not set credential-bearing redirects, and the pairing code does not appear in QR routes or server logs.
 
+Hub-node enrollment is a separate machine identity described in [host-hub.md](./host-hub.md). Main still authenticates every browser with its ordinary paired-device cookie. A node credential can connect only to the hub transport and cannot administer browser devices or impersonate a browser pairing record.
+
 ## Local API
 
 Code creation and device administration require a literal loopback Host. They bypass the optional `PI_WEB_TOKEN` because the local browser is the trust source for pairing administration.

@@ -49,6 +49,26 @@ afterEach(() => {
 });
 
 describe('mobile surface settings', () => {
+  it('keeps device administration Main-owned on a hub node view', async () => {
+    const client = makeClient();
+    vi.mocked(client.getHostContext).mockReturnValue({
+      instanceName: 'Work',
+      currentUrl: '/hosts/work/',
+      peers: [{ id: 'main', label: 'Main', url: '/' }],
+    });
+    render(
+      <SettingsScreen
+        client={client}
+        internalLink={(url, children) => <a href={url}>{children}</a>}
+      />,
+    );
+    await Promise.resolve();
+
+    expect(client.getPairingStatus).not.toHaveBeenCalled();
+    expect(client.listPairedDevices).not.toHaveBeenCalled();
+    expect(screen.getByText(/only be administered on the host computer/i)).toBeInTheDocument();
+  });
+
   it('marks the stored surface override instead of assuming mobile', () => {
     renderSettings();
 

@@ -58,6 +58,7 @@ interface ConversationScreenProps {
   client: PiWebClient;
   sessionId: string;
   internalLink: (url: string, children: ReactNode, className?: string) => ReactNode;
+  navigate: (url: string) => void;
 }
 
 interface MessageBlock {
@@ -688,7 +689,12 @@ function ToolsSheet({
   );
 }
 
-export function ConversationScreen({ client, sessionId, internalLink }: ConversationScreenProps) {
+export function ConversationScreen({
+  client,
+  sessionId,
+  internalLink,
+  navigate,
+}: ConversationScreenProps) {
   const host = useMemo(() => client.getHostContext(), [client]);
   const bootstrapRef = useRef<ReturnType<typeof readSessionBootstrap> | undefined>(undefined);
   if (bootstrapRef.current === undefined) bootstrapRef.current = readSessionBootstrap();
@@ -1587,8 +1593,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           }}
           onNavigate={(nextId) => {
             setToolsSheet(null);
-            window.history.pushState({}, '', `/session?id=${encodeURIComponent(nextId)}`);
-            window.dispatchEvent(new PopStateEvent('popstate'));
+            navigate(`/session?id=${encodeURIComponent(nextId)}`);
           }}
         />
       )}

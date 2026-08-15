@@ -22,6 +22,7 @@ export interface MobileAppProps {
   client: PiWebClient;
   path: string;
   search: string;
+  routeBase?: string;
   topLevelNavigate?: (url: string) => void;
 }
 
@@ -45,9 +46,22 @@ export function MobileApp({
   client,
   path: initialPath,
   search: initialSearch,
+  routeBase = '',
   topLevelNavigate = (url) => window.location.assign(url),
 }: MobileAppProps) {
-  const [route, setRoute] = useState<RouteState>({ path: initialPath, search: initialSearch });
+  const logicalPath = (path: string) => {
+    if (!routeBase) return path;
+    if (path === routeBase || path === `${routeBase}/`) return '/';
+    return path.startsWith(`${routeBase}/`) ? path.slice(routeBase.length) : path;
+  };
+  const physicalURL = (url: string) => {
+    const destination = new URL(url, window.location.origin);
+    return `${routeBase}${destination.pathname}${destination.search}${destination.hash}`;
+  };
+  const [route, setRoute] = useState<RouteState>({
+    path: logicalPath(initialPath),
+    search: initialSearch,
+  });
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [newTaskRequest, setNewTaskRequest] = useState(0);
   const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([]);
@@ -61,15 +75,15 @@ export function MobileApp({
 
   useEffect(() => {
     const syncRoute = () => {
-      setRoute({ path: window.location.pathname, search: window.location.search });
+      setRoute({ path: logicalPath(window.location.pathname), search: window.location.search });
     };
     window.addEventListener('popstate', syncRoute);
     return () => window.removeEventListener('popstate', syncRoute);
-  }, []);
+  }, [routeBase]);
 
   const navigate = (url: string) => {
-    const next = new URL(url, window.location.href);
-    window.history.pushState({}, '', `${next.pathname}${next.search}${next.hash}`);
+    const next = new URL(url, window.location.origin);
+    window.history.pushState({}, '', physicalURL(url));
     setRoute({ path: next.pathname, search: next.search });
   };
 
@@ -171,7 +185,7 @@ export function MobileApp({
     <a
       key={key}
       className={className}
-      href={url}
+      href={physicalURL(url)}
       onClick={(event) => {
         if (!shouldHandleInternalNavigation(event)) return;
         event.preventDefault();
@@ -203,6 +217,7 @@ export function MobileApp({
         client={client}
         sessionId={sessionId}
         internalLink={internalLink}
+        navigate={navigate}
       />
     );
   } else if (route.path === '/settings') {
@@ -252,6 +267,7 @@ export function MobileApp({
             host={host}
             currentPath={route.path}
             currentSearch={route.search}
+            routeBase={routeBase}
             recentSessions={recentSessions}
             recentsLoading={recentsLoading}
             recentsError={recentsError}

@@ -15,7 +15,17 @@ const STATIC_PATHS = new Set([
   '/icon-512.png',
   '/apple-touch-icon.png',
 ]);
-const DYNAMIC_PREFIXES = ['/api/', '/session', '/events', '/sounds/', '/push/', '/pairing', '/device'];
+const DYNAMIC_PREFIXES = [
+  '/api/',
+  '/session',
+  '/events',
+  '/sounds/',
+  '/push/',
+  '/pairing',
+  '/device',
+  '/hosts/',
+  '/_host/',
+];
 const STATIC_MIME_TYPES = new Set([
   'application/javascript',
   'application/wasm',

@@ -17,9 +17,9 @@ export class PiWebClientError extends Error {
   }
 }
 
-export function createPiWebHttp(fetchImpl: FetchLike = globalThis.fetch): PiWebHttp {
+export function createPiWebHttp(fetchImpl: FetchLike = globalThis.fetch, basePath = ''): PiWebHttp {
   async function request<Response>(path: string, init?: RequestInit): Promise<Response> {
-    const response = await fetchImpl(path, {
+    const response = await fetchImpl(`${basePath}${path}`, {
       ...init,
       headers: {
         Accept: 'application/json',

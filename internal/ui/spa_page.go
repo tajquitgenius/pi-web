@@ -16,6 +16,7 @@ var appTmplStr string
 var appTmpl = template.Must(template.New("app").Parse(appTmplStr))
 
 type HostPeer struct {
+	ID    string `json:"id,omitempty"`
 	Label string `json:"label"`
 	URL   string `json:"url"`
 }
@@ -26,13 +27,13 @@ type HostContext struct {
 	Peers        []HostPeer `json:"peers"`
 }
 
-var hostContextProvider = func() HostContext {
+var hostContextProvider = func(*http.Request) HostContext {
 	return HostContext{Peers: []HostPeer{}}
 }
 
 // SetHostContextProvider installs the read-only multi-host context injected
 // into every SPA shell.
-func SetHostContextProvider(fn func() HostContext) {
+func SetHostContextProvider(fn func(*http.Request) HostContext) {
 	if fn != nil {
 		hostContextProvider = fn
 	}
@@ -56,11 +57,14 @@ func appAssetLinks(assets appAssets) template.HTML {
 // two products can share transport contracts without sharing product UI.
 func RenderAppShell(w io.Writer, r *http.Request, bootstrap string) error {
 	surface := SelectSurface(r)
-	return renderAppShell(w, string(surface), surfaceAppAssets[surface], bootstrap)
+	return renderAppShell(w, r, string(surface), surfaceAppAssets[surface], bootstrap)
 }
 
-func renderAppShell(w io.Writer, surface string, assets appAssets, bootstrap string) error {
-	hostContext := hostContextProvider()
+func renderAppShell(w io.Writer, r *http.Request, surface string, assets appAssets, bootstrap string) error {
+	hostContext := hostContextProvider(r)
+	if r.URL.Path == "/pairing" {
+		hostContext.Peers = []HostPeer{}
+	}
 	if hostContext.Peers == nil {
 		hostContext.Peers = []HostPeer{}
 	}

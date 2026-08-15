@@ -157,6 +157,17 @@ func redeemPairingCode(t *testing.T, handler http.Handler, target string, code p
 	return nil, nil, rec
 }
 
+func TestRemoteHostPairingRouteRedirectsToMain(t *testing.T) {
+	_, handler := newPairingRouteTestServer(t, "https://pi.example", newServerPairingClock())
+	code := createPairingCode(t, handler)
+	cookie, _, _ := redeemPairingCode(t, handler, "https://pi.example/api/pair", code, "iPhone")
+
+	rec := pairingRequest(handler, http.MethodGet, "https://pi.example/hosts/work/pairing", "", "", cookie)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/pairing" {
+		t.Fatalf("remote pairing route = (%d, %q), want redirect to Main pairing", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
 func TestPublicDeviceGateExposesOnlyPairingSurface(t *testing.T) {
 	_, handler := newPairingRouteTestServer(t, "https://pi.example", newServerPairingClock())
 

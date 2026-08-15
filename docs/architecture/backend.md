@@ -36,6 +36,10 @@ pi-web/
 │   ├── pairing/
 │   │   ├── store.go            # Pairing codes, device credentials, rate limits (SQLite)
 │   │   └── key.go              # Owner-only HMAC key creation/loading
+│   ├── hub/
+│   │   ├── store.go            # Node enrollment, credentials, expiry, and revocation
+│   │   ├── protocol.go         # Multiplexed request/response frame contract
+│   │   └── connector.go        # Outbound node connection + local handler adapter
 │   ├── chat/
 │   │   └── request.go          # Multipart chat request parser (text + images)
 │   ├── files/
@@ -56,6 +60,7 @@ pi-web/
 │   ├── server/
 │   │   ├── server.go           # Server type, deps, SSE registry, route registration, SQLite open
 │   │   ├── pairing_routes.go   # Pairing API wiring + whole-mux public device gate
+│   │   ├── hub_routes.go       # Hub enrollment, node registry, relay, and live streaming
 │   │   ├── handlers.go         # index, session, api/session(s), new, fork/clone, rename, locations, models, custom-themes
 │   │   ├── chat.go             # Chat, set-model, set-thinking, worker-status, commands handlers
 │   │   ├── new_session.go      # New-session creation logic

@@ -38,6 +38,7 @@ export interface DesktopAppProps {
   navigateImpl?: (destination: string) => void;
   path?: string;
   search?: string;
+  routeBase?: string;
 }
 
 function destinationLocation(destination: string): RouteLocation {
@@ -74,10 +75,12 @@ function WorkspaceProduct({
   client,
   navigate,
   route,
+  routeBase,
 }: {
   client: PiWebClient;
   navigate: (destination: string) => void;
   route: RouteLocation;
+  routeBase: string;
 }) {
   const host = client.getHostContext();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -284,6 +287,7 @@ function WorkspaceProduct({
         navigate={navigate}
         onToggleSidebar={toggleSidebar}
         path={route.path}
+        routeBase={routeBase}
         sidebarCollapsed={sidebarCollapsed}
       />
       <ProjectSidebar
@@ -297,6 +301,7 @@ function WorkspaceProduct({
         onToggle={toggleSidebar}
         onWidthChange={changeSidebarWidth}
         runningSessionIds={runningSessionIds}
+        routeBase={routeBase}
         sessions={sessions}
         width={sidebarWidth}
       />
@@ -338,9 +343,23 @@ function WorkspaceProduct({
   );
 }
 
-export function DesktopApp({ client, navigateImpl, path, search }: DesktopAppProps) {
+export function DesktopApp({
+  client,
+  navigateImpl,
+  path,
+  search,
+  routeBase = '',
+}: DesktopAppProps) {
+  const logicalPath = useCallback(
+    (pathname: string) => {
+      if (!routeBase) return pathname;
+      if (pathname === routeBase || pathname === `${routeBase}/`) return '/';
+      return pathname.startsWith(`${routeBase}/`) ? pathname.slice(routeBase.length) : pathname;
+    },
+    [routeBase],
+  );
   const [route, setRoute] = useState<RouteLocation>(() => ({
-    path: path ?? window.location.pathname,
+    path: logicalPath(path ?? window.location.pathname),
     search: search ?? window.location.search,
   }));
   const [phoneViewport, setPhoneViewport] = useState(() => isPhoneViewport(window));
@@ -355,25 +374,25 @@ export function DesktopApp({ client, navigateImpl, path, search }: DesktopAppPro
   }, []);
 
   useEffect(() => {
-    if (path !== undefined) setRoute({ path, search: search ?? '' });
-  }, [path, search]);
+    if (path !== undefined) setRoute({ path: logicalPath(path), search: search ?? '' });
+  }, [logicalPath, path, search]);
 
   useEffect(() => {
     if (path !== undefined) return;
     const handlePopState = () =>
-      setRoute({ path: window.location.pathname, search: window.location.search });
+      setRoute({ path: logicalPath(window.location.pathname), search: window.location.search });
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [path]);
+  }, [logicalPath, path]);
 
   const navigate = useCallback(
     (destination: string) => {
       const next = destinationLocation(destination);
       if (navigateImpl) navigateImpl(destination);
-      else window.history.pushState({}, '', destination);
+      else window.history.pushState({}, '', `${routeBase}${destination}`);
       setRoute(next);
     },
-    [navigateImpl],
+    [navigateImpl, routeBase],
   );
 
   useEffect(() => {
@@ -394,7 +413,7 @@ export function DesktopApp({ client, navigateImpl, path, search }: DesktopAppPro
   return (
     <>
       {phoneViewport ? <ReturnToMobileControl /> : null}
-      <WorkspaceProduct client={client} navigate={navigate} route={route} />
+      <WorkspaceProduct client={client} navigate={navigate} route={route} routeBase={routeBase} />
     </>
   );
 }

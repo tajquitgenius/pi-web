@@ -23,6 +23,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// is a genuine 404. Serving index HTML for a missing static module would
 	// surface in the browser as a "module script has MIME text/html" error.
 	if r.URL.Path != "/" {
+		if isRemotePairingPath(r.URL.Path) {
+			http.Redirect(w, r, "/pairing", http.StatusFound)
+			return
+		}
 		if s.renderAppShell != nil && isSPABrowserPath(r) {
 			s.handleAppShell(w, r, "")
 			return
@@ -31,6 +35,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handleAppShell(w, r, "")
+}
+
+func isRemotePairingPath(path string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	return len(parts) == 3 && parts[0] == "hosts" && parts[1] != "" && parts[2] == "pairing"
 }
 
 func isSPABrowserPath(r *http.Request) bool {

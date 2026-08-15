@@ -158,6 +158,7 @@ export interface ChatWorkerStatus {
 }
 
 export interface HostPeer {
+  id?: string;
   label: string;
   url: string;
 }

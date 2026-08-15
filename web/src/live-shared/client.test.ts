@@ -190,6 +190,46 @@ describe('PiWebClient', () => {
     });
   });
 
+  it('presents the selected hub node as current while retaining Main and sibling hosts', () => {
+    const documentImpl = {
+      getElementById: vi.fn(() => ({
+        textContent: JSON.stringify({
+          instanceName: 'Main',
+          currentUrl: 'https://pi.example',
+          peers: [
+            { id: 'work', label: 'Work', url: '/hosts/work/' },
+            { id: 'personal', label: 'Personal', url: '/hosts/personal/' },
+          ],
+        }),
+      })),
+    } as unknown as Document;
+    const client = createPiWebClient({ documentImpl, selectedHostId: 'work' });
+
+    expect(client.getHostContext()).toEqual({
+      instanceName: 'Work',
+      currentUrl: '/hosts/work/',
+      peers: [
+        { id: 'main', label: 'Main', url: '/' },
+        { id: 'personal', label: 'Personal', url: '/hosts/personal/' },
+      ],
+    });
+  });
+
+  it('scopes API and live EventSource traffic to one selected remote host', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ sessions: [], total: 0 }));
+    const client = createPiWebClient({
+      basePath: '/_host/work',
+      fetchImpl,
+      EventSourceImpl: FakeEventSource as unknown as typeof EventSource,
+    });
+
+    await client.listSessions();
+    client.subscribe('__all__', { onEvent: () => {} });
+
+    expect(fetchImpl).toHaveBeenCalledWith('/_host/work/api/sessions', expect.any(Object));
+    expect(FakeEventSource.latest?.url).toBe('/_host/work/events?id=__all__');
+  });
+
   it('maps plain reload and new-session messages exactly once', () => {
     const events: Array<[PiWebSSEEventName, unknown]> = [];
     const client = createPiWebClient({

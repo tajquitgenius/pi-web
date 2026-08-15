@@ -54,9 +54,29 @@ func TestAppShellPreservesPWAContract(t *testing.T) {
 	}
 }
 
+func TestPairingShellDoesNotExposeHostPeers(t *testing.T) {
+	old := hostContextProvider
+	SetHostContextProvider(func(*http.Request) HostContext {
+		return HostContext{
+			InstanceName: "Main",
+			CurrentURL:   "https://pi.example",
+			Peers:        []HostPeer{{ID: "work", Label: "Work laptop", URL: "/hosts/work/"}},
+		}
+	})
+	defer func() { hostContextProvider = old }()
+
+	var b strings.Builder
+	if err := RenderAppShell(&b, httptest.NewRequest("GET", "/pairing", nil), ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "Work laptop") || strings.Contains(b.String(), "/hosts/work/") {
+		t.Fatalf("public pairing shell exposed hub peers: %s", b.String())
+	}
+}
+
 func TestAppShellInjectsEscapedHostContextJSON(t *testing.T) {
 	old := hostContextProvider
-	SetHostContextProvider(func() HostContext {
+	SetHostContextProvider(func(*http.Request) HostContext {
 		return HostContext{
 			InstanceName: `workstation</script><script>alert("x")</script>`,
 			CurrentURL:   "https://current.example",

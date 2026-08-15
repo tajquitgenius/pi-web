@@ -6,7 +6,7 @@ Use this setup to reach pi-web from another laptop or phone without exposing pi-
 Browser → Cloudflare Access → named tunnel → 127.0.0.1:31415 → pi-web
 ```
 
-Remote pi-web access is equivalent to remote code execution as the operating-system user running Pi. Keep every origin on loopback, require Cloudflare Access on every published hostname, and make each connector validate the Access audience before forwarding a request.
+Remote pi-web access is equivalent to remote code execution as the operating-system user running Pi. Keep every origin on loopback and require Cloudflare Access on every published hostname. Work and Personal connectors validate the Access audience; Main relies on the edge applications plus pi-web's pairing or hub-machine authentication because its narrow `/api/hub/*` Bypass cannot carry an Access JWT.
 
 ## Host map
 
@@ -18,7 +18,7 @@ Each computer runs an independent pi-web process, tunnel, session directory, and
 | Work laptop | `work-pi.tajwar.org` | Managed Mac | `http://127.0.0.1:31415` | `external` |
 | Personal, when deployed | `personal-pi.tajwar.org` | Personal computer | `http://127.0.0.1:31415` | operator choice |
 
-`pi.tajwar.org` remains the Main host. Its existing phone pairing stays intact. `PI_WEB_PEERS_JSON` adds ordinary browser links between hosts; it does not aggregate sessions or copy credentials.
+`pi.tajwar.org` is the Main hub and the only installed PWA origin. Its existing phone pairing stays intact. Work and Personal connect outbound to Main as enrolled nodes. Main presents one selected host at a time under `/hosts/<id>/`; it does not aggregate sessions or copy Pi credentials.
 
 ## One Access login across hosts
 
@@ -32,9 +32,11 @@ Configure the application with:
 - Global, application, and policy session durations: 30 days
 - One exact-email Allow policy
 - No wildcard hostname
-- No Bypass, Everyone, or service-token browser policy
+- No Bypass, Everyone, or service-token policy for browser routes
 
-Every connector must validate the shared audience before forwarding traffic. Sharing an audience is intentional here: it provides single sign-on across the listed pi-web hosts. Do not add unrelated applications to this Access app.
+Create one additional path-scoped Access application for `pi.tajwar.org/api/hub/*` with a Bypass policy. This is not a browser trust bypass: pi-web accepts `/api/hub/enroll` only with a random five-minute single-use code and `/api/hub/connect` only with a 256-bit enrolled-node credential. All hub administration remains loopback-only, and every other Main route remains behind the exact-email policy plus device pairing. A Cloudflare rate-limit rule for this path is recommended.
+
+Work and Personal connectors must validate the shared audience before forwarding traffic. Main is the deliberate exception described below because connector-side validation would also reject its path-scoped hub Bypass. Sharing an audience is intentional here: it provides single sign-on across the listed browser hosts. Do not add unrelated applications to this Access app.
 
 ## Choose the pi-web gate per host
 
@@ -68,7 +70,7 @@ Store host settings in `~/.config/pi-web/env`. Never commit the resulting file.
 PI_WEB_INSTANCE_NAME='Main'
 PI_WEB_PUBLIC_URL=https://pi.tajwar.org
 PI_WEB_REMOTE_AUTH=pairing
-PI_WEB_PEERS_JSON='[{"label":"Work laptop","url":"https://work-pi.tajwar.org"},{"label":"Personal","url":"https://personal-pi.tajwar.org"}]'
+PI_WEB_HUB=1
 ```
 
 Do not change Main to external mode merely to add a peer. Its existing paired phone remains valid when the Access application gains another hostname.
@@ -79,7 +81,6 @@ Do not change Main to external mode merely to add a peer. Its existing paired ph
 PI_WEB_INSTANCE_NAME='Work laptop'
 PI_WEB_PUBLIC_URL=https://work-pi.tajwar.org
 PI_WEB_REMOTE_AUTH=external
-PI_WEB_PEERS_JSON='[{"label":"Main","url":"https://pi.tajwar.org"},{"label":"Personal","url":"https://personal-pi.tajwar.org"}]'
 ```
 
 ### Optional personal computer
@@ -88,10 +89,27 @@ PI_WEB_PEERS_JSON='[{"label":"Main","url":"https://pi.tajwar.org"},{"label":"Per
 PI_WEB_INSTANCE_NAME='Personal'
 PI_WEB_PUBLIC_URL=https://personal-pi.tajwar.org
 PI_WEB_REMOTE_AUTH=external
-PI_WEB_PEERS_JSON='[{"label":"Main","url":"https://pi.tajwar.org"},{"label":"Work laptop","url":"https://work-pi.tajwar.org"}]'
 ```
 
 The matching templates live under [`deploy/cloudflare`](../../deploy/cloudflare). The macOS, Linux, and Windows service loaders read these variables on restart.
+
+## Enroll Work and Personal with Main
+
+Enrollment has no per-node Cloudflare service token or copied browser credential.
+
+On Main:
+
+```bash
+pi-web hub invite work 'Work laptop'
+```
+
+On Work, enter the displayed code at the hidden prompt:
+
+```bash
+pi-web node join https://pi.tajwar.org
+```
+
+Repeat with `personal` and `Personal` on the personal computer. The node command stores its credential automatically in `~/.pi/agent/pi-web-hub-node.json` with owner-only permissions (`0600` on Unix and a protected user-only DACL on Windows). Restart that node's pi-web service once. It then reconnects to Main automatically and appears inside the Main PWA. The code expires after five minutes, can be used once, and is never accepted in a command argument or URL.
 
 `PI_WEB_TOKEN` is optional defense in depth in either mode. Generate a different value on each host if you use it:
 
@@ -117,9 +135,14 @@ work-pi.tajwar.org     → http://127.0.0.1:31415
 personal-pi.tajwar.org → http://127.0.0.1:31415  # only when deployed
 ```
 
-For every route:
+For the Work and Personal routes:
 
 - Enable **Protect with Access** and use the shared multi-host application's audience.
+
+For Main, leave connector-side **Protect with Access** disabled. Main's path-scoped Bypass application does not issue an Access JWT, so connector-side audience validation would reject `/api/hub/*` before pi-web could authenticate the enrollment code or node credential. The two edge Access applications remain the route boundary: the exact-email policy protects every browser path, while only `/api/hub/*` bypasses Access and reaches pi-web's machine authentication.
+
+For every route:
+
 - Leave **HTTP Host Header** empty; rewriting it to `localhost` breaks the exact Host check.
 - Keep origin HTTP/2 disabled because the loopback origin uses plain HTTP.
 - Force the connector-to-Cloudflare transport to HTTP/2 when the network blocks QUIC.
@@ -136,11 +159,13 @@ Check each host before relying on it remotely:
 - The named tunnel reports healthy HTTP/2 connections.
 - A signed-out private browser reaches Cloudflare Access before pi-web.
 - An unlisted identity is denied.
-- An authenticated browser can move from Main to Work without another identity prompt.
+- Work and Personal report online in Main after their outbound node connections start.
+- `/hosts/work/` and `/hosts/personal/` remain under `pi.tajwar.org` without iOS browser chrome.
 - Main still reports paired-device authentication and retains existing devices.
-- Work reports external authentication and never shows a pairing form.
+- Work and Personal session, running-state, transcript, thinking, and tool events update through the relayed SSE stream.
 - Requests with the wrong Host or mutation Origin receive `403`.
-- Requests without a valid Access token are rejected by the connector.
+- Main browser routes without a valid Access session are rejected by the edge Access application; Work and Personal requests without a valid Access token are also rejected by their connectors.
+- Main's `/api/hub/*` path reaches pi-web without an Access JWT and rejects missing or invalid enrollment/node credentials.
 
 ## Cloudflare references
 

@@ -68,6 +68,7 @@ function renderConversation(client: PiWebClient) {
       <ConversationScreen
         client={client}
         sessionId="session.jsonl"
+        navigate={vi.fn()}
         internalLink={(url, children, className) => (
           <a href={url} className={className}>
             {children}

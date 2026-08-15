@@ -191,6 +191,60 @@ afterEach(() => {
 });
 
 describe('desktop product shell', () => {
+  it('renders a remote-host deep link through its logical desktop route', async () => {
+    const selected = summary(
+      'selected.jsonl',
+      'Selected thread',
+      '/work/project',
+      '2026-08-15T00:00:00Z',
+    );
+    const { client } = createClient({
+      listSessions: vi.fn(async () => ({ sessions: [selected], total: 1 })),
+    });
+    const navigate = vi.fn();
+    render(
+      <DesktopApp
+        client={client}
+        navigateImpl={navigate}
+        path="/hosts/work/session"
+        search="?id=selected.jsonl"
+        routeBase="/hosts/work"
+      />,
+    );
+
+    expect(await screen.findByRole('link', { name: /Selected thread/ })).toHaveAttribute(
+      'href',
+      '/hosts/work/session?id=selected.jsonl',
+    );
+    expect(screen.getByRole('link', { name: 'Workspace' })).toHaveAttribute('href', '/hosts/work/');
+    expect(screen.getByRole('link', { name: 'Device pairing' })).toHaveAttribute(
+      'href',
+      '/pairing',
+    );
+    fireEvent.click(screen.getByRole('link', { name: 'Workspace' }), { metaKey: true });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps pairing and device administration Main-owned on remote settings', async () => {
+    const { client } = createClient();
+    vi.mocked(client.getHostContext).mockReturnValue({
+      instanceName: 'Work',
+      currentUrl: '/hosts/work/',
+      peers: [{ id: 'main', label: 'Main', url: '/' }],
+    });
+    render(
+      <DesktopApp client={client} path="/hosts/work/settings" search="" routeBase="/hosts/work" />,
+    );
+    await Promise.resolve();
+
+    expect(client.getPairingStatus).not.toHaveBeenCalled();
+    expect(client.listPairedDevices).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Device pairing' })).toHaveAttribute(
+      'href',
+      '/pairing',
+    );
+  });
+
   it('shows Return to mobile only while the desktop shell is phone-width', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
     const { client } = createClient();

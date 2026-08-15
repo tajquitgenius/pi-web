@@ -9,7 +9,7 @@
     <array>
         <string>/bin/sh</string>
         <string>-c</string>
-        <string>env_file="$HOME/.config/pi-web/env"; if [ -f "$env_file" ]; then while IFS='=' read -r key value; do case "$key" in PI_WEB_TOKEN|PI_CODING_AGENT_DIR|PI_WEB_PUBLIC_URL|PI_WEB_REMOTE_AUTH|PI_WEB_INSTANCE_NAME|PI_WEB_PEERS_JSON|PATH) case "$value" in \'*\') value=${value#\'}; value=${value%\'};; \"*\") value=${value#\"}; value=${value%\"};; esac; export "$key=$value";; esac; done &lt; "$env_file"; fi; exec "$0" -p 31415</string>
+        <string>env_file="$HOME/.config/pi-web/env"; if [ -f "$env_file" ]; then while IFS='=' read -r key value; do case "$key" in PI_WEB_TOKEN|PI_CODING_AGENT_DIR|PI_WEB_PUBLIC_URL|PI_WEB_REMOTE_AUTH|PI_WEB_INSTANCE_NAME|PI_WEB_PEERS_JSON|PI_WEB_HUB|PI_WEB_HUB_NODE_CONFIG|PATH) case "$value" in \'*\') value=${value#\'}; value=${value%\'};; \"*\") value=${value#\"}; value=${value%\"};; esac; export "$key=$value";; esac; done &lt; "$env_file"; fi; exec "$0" -p 31415</string>
         <string>/usr/local/bin/pi-web</string>
     </array>
 

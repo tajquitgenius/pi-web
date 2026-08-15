@@ -24,14 +24,20 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { HostContext, PiWebClient, SessionSummary } from '../live-shared';
 import { groupSessions, projectLabel, relativeTime } from './desktop-model';
 
+function shouldHandleInternalLink(event: ReactMouseEvent<HTMLAnchorElement>): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
 interface NavigationProps {
   navigate: (destination: string) => void;
   path: string;
+  routeBase: string;
 }
 
 interface HostRailProps extends NavigationProps {
@@ -44,6 +50,7 @@ function InternalNavButton({
   destination,
   label,
   path,
+  routeBase,
   navigate,
   children,
 }: NavigationProps & {
@@ -57,8 +64,9 @@ function InternalNavButton({
       aria-label={label}
       className="desktop-rail-button"
       data-active={selected || undefined}
-      href={destination}
+      href={`${routeBase}${destination}`}
       onClick={(event) => {
+        if (!shouldHandleInternalLink(event)) return;
         event.preventDefault();
         navigate(destination);
       }}
@@ -74,6 +82,7 @@ export function HostRail({
   navigate,
   onToggleSidebar,
   path,
+  routeBase,
   sidebarCollapsed,
 }: HostRailProps) {
   return (
@@ -84,7 +93,13 @@ export function HostRail({
         </span>
       </div>
       <div className="desktop-rail-stack">
-        <InternalNavButton destination="/" label="Workspace" navigate={navigate} path={path}>
+        <InternalNavButton
+          destination="/"
+          label="Workspace"
+          navigate={navigate}
+          path={path}
+          routeBase={routeBase}
+        >
           <Laptop aria-hidden="true" size={17} />
         </InternalNavButton>
         {sidebarCollapsed ? (
@@ -125,15 +140,33 @@ export function HostRail({
       </div>
 
       <div className="desktop-rail-stack desktop-rail-bottom">
+        {routeBase ? (
+          <a
+            aria-label="Device pairing"
+            className="desktop-rail-button"
+            href="/pairing"
+            title="Device pairing on Main"
+          >
+            <ShieldCheck aria-hidden="true" size={17} />
+          </a>
+        ) : (
+          <InternalNavButton
+            destination="/pairing"
+            label="Device pairing"
+            navigate={navigate}
+            path={path}
+            routeBase={routeBase}
+          >
+            <ShieldCheck aria-hidden="true" size={17} />
+          </InternalNavButton>
+        )}
         <InternalNavButton
-          destination="/pairing"
-          label="Device pairing"
+          destination="/settings"
+          label="Settings"
           navigate={navigate}
           path={path}
+          routeBase={routeBase}
         >
-          <ShieldCheck aria-hidden="true" size={17} />
-        </InternalNavButton>
-        <InternalNavButton destination="/settings" label="Settings" navigate={navigate} path={path}>
           <Settings aria-hidden="true" size={17} />
         </InternalNavButton>
       </div>
@@ -152,6 +185,7 @@ interface ProjectSidebarProps {
   onToggle: () => void;
   onWidthChange: (width: number) => void;
   runningSessionIds: ReadonlySet<string>;
+  routeBase: string;
   sessions: SessionSummary[];
   width: number;
 }
@@ -417,6 +451,7 @@ export function ProjectSidebar({
   onToggle,
   onWidthChange,
   runningSessionIds,
+  routeBase,
   sessions,
   width,
 }: ProjectSidebarProps) {
@@ -524,8 +559,9 @@ export function ProjectSidebar({
                         className="desktop-thread-row"
                         data-active={activeSessionId === session.id || undefined}
                         data-running={running || undefined}
-                        href={`/session?id=${encodeURIComponent(session.id)}`}
+                        href={`${routeBase}/session?id=${encodeURIComponent(session.id)}`}
                         onClick={(event) => {
+                          if (!shouldHandleInternalLink(event)) return;
                           event.preventDefault();
                           navigate(`/session?id=${encodeURIComponent(session.id)}`);
                         }}

@@ -120,6 +120,44 @@ describe('MobileNavigationDrawer', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('keeps remote hrefs physical and leaves modifier clicks to the browser', () => {
+    const onNavigate = vi.fn();
+    render(
+      <MobileNavigationDrawer
+        host={host}
+        currentPath="/settings"
+        routeBase="/hosts/work"
+        recentSessions={[
+          {
+            id: 'thread.jsonl',
+            sessionUUID: 'thread-uuid',
+            filename: 'thread.jsonl',
+            name: 'Remote thread',
+            project: '/work/project',
+            lastActivity: '2026-08-15T00:00:00Z',
+            messageCount: 1,
+            tokenTotal: 0,
+            costTotal: 0,
+            model: 'gpt-5.6-sol',
+            modelProvider: 'openai-codex-secondary',
+            chatAvailable: true,
+            chatDisabledReason: '',
+          },
+        ]}
+        onNavigate={onNavigate}
+        onNewTask={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const settings = screen.getByRole('link', { name: 'Settings' });
+    const thread = screen.getByRole('link', { name: /Remote thread/ });
+    expect(settings).toHaveAttribute('href', '/hosts/work/settings');
+    expect(thread).toHaveAttribute('href', '/hosts/work/session?id=thread.jsonl');
+    fireEvent.click(thread, { ctrlKey: true });
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
   it('keeps Recents stable and hides computer controls without peers', () => {
     render(
       <MobileNavigationDrawer

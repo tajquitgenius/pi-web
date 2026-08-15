@@ -945,6 +945,28 @@ describe('mobile settings', () => {
 });
 
 describe('mobile routing and labels', () => {
+  it('keeps remote-host navigation inside its same-origin route prefix', async () => {
+    window.history.replaceState({}, '', '/hosts/work/session?id=session-1.jsonl');
+    render(
+      <MobileApp
+        client={makeClient()}
+        path="/hosts/work/session"
+        search="?id=session-1.jsonl"
+        routeBase="/hosts/work"
+      />,
+    );
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/hosts/work/settings',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Threads' }));
+
+    expect(window.location.pathname).toBe('/hosts/work/');
+  });
+
   it.each([
     ['/', '', 'sessions'],
     ['/session', '?id=one.jsonl', 'session'],

@@ -6,12 +6,17 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
   type TouchEvent,
 } from 'react';
 import type { HostContext, SessionSummary } from '../live-shared';
 import { t } from '../shared/i18n.js';
 import { useMobileDialog } from './dialog';
+
+function shouldHandleDrawerLink(event: MouseEvent<HTMLAnchorElement>): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
 
 export interface MobileNavigationContextValue {
   openDrawer: () => void;
@@ -64,6 +69,7 @@ export interface MobileNavigationDrawerProps {
   host: HostContext;
   currentPath: string;
   currentSearch?: string;
+  routeBase?: string;
   recentSessions: SessionSummary[];
   recentsLoading?: boolean;
   recentsError?: boolean;
@@ -88,6 +94,7 @@ export function MobileNavigationDrawer({
   host,
   currentPath,
   currentSearch = '',
+  routeBase = '',
   recentSessions,
   recentsLoading = false,
   recentsError = false,
@@ -261,10 +268,11 @@ export function MobileNavigationDrawer({
             <span>{t('index.mobileProjects')}</span>
           </button>
           <a
-            href="/settings"
+            href={`${routeBase}/settings`}
             className={settingsCurrent ? 'is-current' : ''}
             aria-current={settingsCurrent ? 'page' : undefined}
             onClick={(event) => {
+              if (!shouldHandleDrawerLink(event)) return;
               event.preventDefault();
               navigate('/settings');
             }}
@@ -290,9 +298,10 @@ export function MobileNavigationDrawer({
             <div className="mobile-navigation-recents">
               {recentSessions.map((session) => (
                 <a
-                  href={`/session?id=${encodeURIComponent(session.id)}`}
+                  href={`${routeBase}/session?id=${encodeURIComponent(session.id)}`}
                   key={session.id}
                   onClick={(event) => {
+                    if (!shouldHandleDrawerLink(event)) return;
                     event.preventDefault();
                     navigate(`/session?id=${encodeURIComponent(session.id)}`);
                   }}
@@ -330,7 +339,11 @@ export function MobileNavigationDrawer({
                     <strong>{peer.label}</strong>
                     <small>{peer.url}</small>
                   </span>
-                  <ExternalLink aria-hidden="true" size={16} />
+                  {peer.id ? (
+                    <Server aria-hidden="true" size={16} />
+                  ) : (
+                    <ExternalLink aria-hidden="true" size={16} />
+                  )}
                 </a>
               ))}
             </div>

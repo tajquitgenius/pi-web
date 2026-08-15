@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createPiWebClient, installReleaseRefresh } from '../live-shared';
+import { createPiWebClient, installReleaseRefresh, resolveHostRoute } from '../live-shared';
 import { MobileApp } from './app';
 import './mobile.css';
 import './home-redesign.css';
@@ -34,13 +34,18 @@ installReleaseRefresh({
 });
 
 const target = document.getElementById('spa-root');
+const hostRoute = resolveHostRoute(window.location.pathname);
 if (target) {
   createRoot(target).render(
     <StrictMode>
       <MobileApp
-        client={createPiWebClient()}
+        client={createPiWebClient({
+          basePath: hostRoute.transportBase,
+          selectedHostId: hostRoute.hostId,
+        })}
         path={window.location.pathname}
         search={window.location.search}
+        routeBase={hostRoute.routeBase}
       />
     </StrictMode>,
   );

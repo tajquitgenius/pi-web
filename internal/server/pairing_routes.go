@@ -98,7 +98,7 @@ func (s *Server) registerDevicePairingRoutes(mux *http.ServeMux) {
 // the public-host device gate around the complete mux, including static assets.
 func (s *Server) HTTPHandler(next http.Handler) http.Handler {
 	gate := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.isPublicRequest(r) || s.remoteAuth == RemoteAuthExternal || isPublicPairingPath(r) {
+		if !s.isPublicRequest(r) || s.remoteAuth == RemoteAuthExternal || isPublicPairingPath(r) || s.isPublicHubPath(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -133,7 +133,8 @@ func (s *Server) HTTPHandler(next http.Handler) http.Handler {
 			s.clearDeviceCredential(w, r)
 		}
 
-		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && !strings.HasPrefix(r.URL.Path, "/api/") {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			!strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/_host/") {
 			http.Redirect(w, r, "/pairing", http.StatusFound)
 			return
 		}

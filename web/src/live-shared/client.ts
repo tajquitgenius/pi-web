@@ -104,6 +104,8 @@ type EventSourceConstructor = new (
 ) => EventSource;
 
 export interface PiWebClientOptions {
+  basePath?: string;
+  selectedHostId?: string;
   fetchImpl?: FetchLike;
   httpImpl?: PiWebHttp;
   EventSourceImpl?: EventSourceConstructor;
@@ -266,23 +268,42 @@ function normalizeModels(payload: unknown): ModelsResult {
   return { models };
 }
 
-function readHostContext(documentImpl: Pick<Document, 'getElementById'> | undefined): HostContext {
+function readHostContext(
+  documentImpl: Pick<Document, 'getElementById'> | undefined,
+  selectedHostId = 'main',
+): HostContext {
   const text = documentImpl?.getElementById('pi-host-context')?.textContent;
   if (!text) return DEFAULT_HOST_CONTEXT;
   try {
     const parsed = JSON.parse(text) as Partial<HostContext>;
-    return {
+    const main: HostContext = {
       instanceName:
         typeof parsed.instanceName === 'string' && parsed.instanceName.trim()
           ? parsed.instanceName.trim()
           : DEFAULT_HOST_CONTEXT.instanceName,
       currentUrl: typeof parsed.currentUrl === 'string' ? parsed.currentUrl : '',
       peers: Array.isArray(parsed.peers)
-        ? parsed.peers.filter(
-            (peer): peer is HostContext['peers'][number] =>
-              typeof peer?.label === 'string' && typeof peer?.url === 'string',
-          )
+        ? parsed.peers
+            .filter(
+              (peer): peer is HostContext['peers'][number] =>
+                typeof peer?.label === 'string' && typeof peer?.url === 'string',
+            )
+            .map((peer) => ({
+              ...(typeof peer.id === 'string' ? { id: peer.id } : {}),
+              label: peer.label,
+              url: peer.url,
+            }))
         : [],
+    };
+    if (selectedHostId === 'main') return main;
+    const selected = main.peers.find((peer) => peer.id === selectedHostId);
+    return {
+      instanceName: selected?.label || selectedHostId,
+      currentUrl: selected?.url || `/hosts/${selectedHostId}/`,
+      peers: [
+        { id: 'main', label: main.instanceName, url: '/' },
+        ...main.peers.filter((peer) => peer.id !== selectedHostId),
+      ],
     };
   } catch {
     return DEFAULT_HOST_CONTEXT;
@@ -443,12 +464,17 @@ function normalizeVersion(payload: Record<string, unknown>): VersionInfo {
 }
 
 export function createPiWebClient({
+  basePath = '',
+  selectedHostId = 'main',
   fetchImpl = globalThis.fetch,
   httpImpl,
   EventSourceImpl = globalThis.EventSource,
   documentImpl = globalThis.document,
 }: PiWebClientOptions = {}): PiWebClient {
-  const http = httpImpl ?? createPiWebHttp(fetchImpl);
+  if (basePath !== '' && !/^\/_host\/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(basePath)) {
+    throw new Error('invalid Pi Web client base path');
+  }
+  const http = httpImpl ?? createPiWebHttp(fetchImpl, basePath);
 
   return {
     async listSessions(query: SessionListQuery = {}): Promise<SessionList> {
@@ -819,11 +845,11 @@ export function createPiWebClient({
     },
 
     getHostContext(): HostContext {
-      return readHostContext(documentImpl);
+      return readHostContext(documentImpl, selectedHostId);
     },
 
     subscribe(topic: PiWebSSETopic, handlers: SSESubscriptionHandlers): SSESubscription {
-      const source = new EventSourceImpl(`/events?id=${encodeURIComponent(topic)}`);
+      const source = new EventSourceImpl(`${basePath}/events?id=${encodeURIComponent(topic)}`);
       if (handlers.onOpen) source.onopen = handlers.onOpen;
       source.onmessage = (event) => {
         if (event.data === 'reload' || event.data === 'new-session') {

@@ -153,6 +153,7 @@ export function SettingsScreen({
   onOpenNavigation,
 }: SettingsScreenProps) {
   const host = useMemo(() => client.getHostContext(), [client]);
+  const hubNodeView = host.currentUrl.startsWith('/hosts/');
   const [theme, setTheme] = useState(
     document.documentElement.dataset.theme || storedTheme() || 'dark',
   );
@@ -160,15 +161,22 @@ export function SettingsScreen({
   const [desktopConfirmationOpen, setDesktopConfirmationOpen] = useState(false);
   const [devices, setDevices] = useState<PairedDevice[]>([]);
   const [local, setLocal] = useState(false);
-  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [devicesLoading, setDevicesLoading] = useState(!hubNodeView);
   const [deviceError, setDeviceError] = useState('');
-  const [connection, setConnection] = useState<MobileConnectionState>('connecting');
+  const [connection, setConnection] = useState<MobileConnectionState>(
+    hubNodeView ? 'connected' : 'connecting',
+  );
   const [revokingId, setRevokingId] = useState('');
   const [pairingCode, setPairingCode] = useState<PairingCode | null>(null);
   const [creatingCode, setCreatingCode] = useState(false);
 
   const loadDevices = useCallback(
     async (isActive: () => boolean = () => true) => {
+      if (hubNodeView) {
+        setConnection('connected');
+        setDevicesLoading(false);
+        return;
+      }
       setDevicesLoading(true);
       setDeviceError('');
       setConnection('connecting');
@@ -192,7 +200,7 @@ export function SettingsScreen({
         if (isActive()) setDevicesLoading(false);
       }
     },
-    [client],
+    [client, hubNodeView],
   );
 
   useEffect(() => {

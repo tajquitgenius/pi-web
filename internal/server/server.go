@@ -16,9 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"pi-web/internal/agentdir"
 	"pi-web/internal/auth"
 	"pi-web/internal/chatqueue"
+	"pi-web/internal/hub"
 	"pi-web/internal/pairing"
 	"pi-web/internal/render"
 	"pi-web/internal/rpc"
@@ -70,6 +73,9 @@ type Deps struct {
 	// DisableBackgroundJobs keeps the development server from duplicating the
 	// installed server's scheduler, queue drainer, auto-titles, and pushes.
 	DisableBackgroundJobs bool
+	// HubEnabled allows independently owned pi-web nodes to enroll and connect
+	// to this server. The browser-facing host remains the sole PWA origin.
+	HubEnabled bool
 }
 
 // Server holds runtime state — connected SSE clients and last-seen modtimes
@@ -106,6 +112,11 @@ type Server struct {
 	stopping              bool
 	db                    *sql.DB
 	pairing               *pairing.Store
+	hub                   *hub.Store
+	hubConnections        map[string]*hubNodeConnection
+	hubConnectionsMu      sync.RWMutex
+	hubDeviceRequests     map[string]map[string]context.CancelFunc
+	hubDeviceRequestsMu   sync.Mutex
 	publicAuthority       string
 	remoteAuth            RemoteAuthMode
 	schedules             *schedules.Store
@@ -176,6 +187,14 @@ func New(deps Deps) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
+	var hubStore *hub.Store
+	if deps.HubEnabled {
+		hubStore, err = hub.NewStore(db, codeKey, now)
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 
 	taskCtx, taskCancel := context.WithCancel(context.Background())
 	s := &Server{
@@ -199,6 +218,9 @@ func New(deps Deps) (*Server, error) {
 		taskCancel:            taskCancel,
 		db:                    db,
 		pairing:               pairingStore,
+		hub:                   hubStore,
+		hubConnections:        make(map[string]*hubNodeConnection),
+		hubDeviceRequests:     make(map[string]map[string]context.CancelFunc),
 		publicAuthority:       normalizeHTTPSAuthority(deps.PublicURL),
 		remoteAuth:            deps.RemoteAuth,
 		schedules:             schedules.NewStore(db),
@@ -352,6 +374,16 @@ func (s *Server) Shutdown() {
 		if s.queueDrainer != nil {
 			s.queueDrainer.stop()
 		}
+		s.hubConnectionsMu.Lock()
+		connections := make([]*hubNodeConnection, 0, len(s.hubConnections))
+		for _, connection := range s.hubConnections {
+			connections = append(connections, connection)
+		}
+		clear(s.hubConnections)
+		s.hubConnectionsMu.Unlock()
+		for _, connection := range connections {
+			_ = connection.socket.Close(websocket.StatusGoingAway, "hub shutting down")
+		}
 		s.wg.Wait()
 		if s.db != nil {
 			s.db.Close()
@@ -386,6 +418,7 @@ func (s *Server) startTask(task func(context.Context)) bool {
 // middleware from Deps.
 func (s *Server) Register(mux *http.ServeMux) {
 	s.registerDevicePairingRoutes(mux)
+	s.registerHubRoutes(mux)
 	mux.HandleFunc("/", s.auth.Wrap(s.handleIndex))
 	mux.HandleFunc("/session", s.auth.Wrap(s.handleSession))
 	mux.HandleFunc("/settings", s.auth.Wrap(s.handleSettingsPage))
@@ -562,6 +595,14 @@ func (s *Server) closeDeviceClients(deviceID string) {
 	}
 	s.clients = filtered
 	s.clientsMu.Unlock()
+
+	s.hubDeviceRequestsMu.Lock()
+	requests := s.hubDeviceRequests[deviceID]
+	delete(s.hubDeviceRequests, deviceID)
+	s.hubDeviceRequestsMu.Unlock()
+	for _, cancel := range requests {
+		cancel()
+	}
 }
 
 func (s *Server) BroadcastChatPreview(sessionID string, preview rpc.StreamPreview) {

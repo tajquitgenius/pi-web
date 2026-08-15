@@ -32,7 +32,7 @@ func TestProductionMuxPairingBootstrapAndSecurityComposition(t *testing.T) {
 	authMiddleware.AllowHost("127.0.0.1:31415")
 	authMiddleware.AllowHost("https://pi.example")
 	authMiddleware.UseSecureCookiesForHost("https://pi.example")
-	ui.SetHostContextProvider(func() ui.HostContext {
+	ui.SetHostContextProvider(func(*http.Request) ui.HostContext {
 		return ui.HostContext{
 			InstanceName: "Main hub",
 			CurrentURL:   "https://pi.example",

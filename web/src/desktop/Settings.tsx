@@ -35,11 +35,12 @@ function formatDeviceDate(value: string): string {
 }
 
 export function SettingsPage({ client, host }: SettingsPageProps) {
+  const hubNodeView = host.currentUrl.startsWith('/hosts/');
   const [surface, setSurface] = useState(() => readSurfaceOverride(document.cookie));
   const [surfaceSaved, setSurfaceSaved] = useState(false);
   const [devices, setDevices] = useState<PairedDevice[]>([]);
   const [local, setLocal] = useState(false);
-  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [devicesLoading, setDevicesLoading] = useState(!hubNodeView);
   const [devicesError, setDevicesError] = useState('');
   const [revoking, setRevoking] = useState('');
   const [pairingCode, setPairingCode] = useState<PairingCode | null>(null);
@@ -62,6 +63,10 @@ export function SettingsPage({ client, host }: SettingsPageProps) {
   };
 
   useEffect(() => {
+    if (hubNodeView) {
+      setDevicesLoading(false);
+      return;
+    }
     let active = true;
     setDevicesLoading(true);
     void client
@@ -88,7 +93,7 @@ export function SettingsPage({ client, host }: SettingsPageProps) {
     return () => {
       active = false;
     };
-  }, [client]);
+  }, [client, hubNodeView]);
 
   const saveSurface = () => {
     writeSurfaceOverride(surface);
