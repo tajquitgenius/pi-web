@@ -67,6 +67,7 @@ func (s *Server) hasActiveBackgroundRuns(sessionID string) bool {
 		tracker.offset = 0
 		tracker.active = make(map[string]struct{})
 	}
+	reconstructing := tracker.offset == 0
 	if _, err := file.Seek(tracker.offset, io.SeekStart); err != nil {
 		return len(tracker.active) > 0
 	}
@@ -91,7 +92,7 @@ func (s *Server) hasActiveBackgroundRuns(sessionID string) bool {
 				case "background-agent-run-terminal":
 					if event.Type == "custom" && event.Data.Run.ID != "" {
 						delete(tracker.active, event.Data.Run.ID)
-						if len(tracker.active) == 0 {
+						if len(tracker.active) == 0 && !reconstructing {
 							tracker.holdUntil = now.Add(backgroundCompletionGrace)
 						}
 					}
