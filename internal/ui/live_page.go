@@ -53,12 +53,12 @@ func SetFontProvider(fn func() (string, string, string, string, string)) {
 // /custom-themes.css — so a parser-blocking <script> guarantees those styles are
 // loaded and getComputedStyle can resolve the custom theme's --body-bg.
 // It does two things:
-//   1. Sets data-theme + an inline background-color on <html> matching the
-//      current theme and WCO state so the correct colour is present from the
-//      very first paint, eliminating the white/gray flash in the title-bar
-//      area. Built-in themes use the hardcoded maps; the custom theme reads
-//      its --body-bg from the loaded stylesheet.
-//   2. Toggles the `wco` class when Window Controls Overlay is active.
+//  1. Sets data-theme + an inline background-color on <html> matching the
+//     current theme and WCO state so the correct colour is present from the
+//     very first paint, eliminating the white/gray flash in the title-bar
+//     area. Built-in themes use the hardcoded maps; the custom theme reads
+//     its --body-bg from the loaded stylesheet.
+//  2. Toggles the `wco` class when Window Controls Overlay is active.
 const wcoBootScript = `<script>
 (function(){
   var chromeBgs = {dark:'#0f0f14',light:'#ddddda',nord:'#292f3a',dracula:'#242631'};
@@ -113,7 +113,7 @@ func renderLiveDocumentStart(data liveDocumentData) string {
 	var b strings.Builder
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n")
 	b.WriteString("<meta charset=\"UTF-8\">\n")
-	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, interactive-widget=resizes-content\">\n")
+	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content\">\n")
 	b.WriteString("<title>")
 	b.WriteString(template.HTMLEscapeString(data.Title))
 	b.WriteString("</title>\n")
@@ -122,10 +122,13 @@ func renderLiveDocumentStart(data liveDocumentData) string {
 		b.WriteByte('\n')
 	}
 	b.WriteString("<link rel=\"icon\" type=\"image/svg+xml\" href=\"/icon.svg\">\n")
-	b.WriteString("<link rel=\"apple-touch-icon\" href=\"/icon.svg\">\n")
+	b.WriteString("<link rel=\"icon\" type=\"image/png\" sizes=\"192x192\" href=\"/icon-192.png\">\n")
+	b.WriteString("<link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/apple-touch-icon.png\">\n")
 	b.WriteString("<link rel=\"manifest\" href=\"/manifest.webmanifest\">\n")
+	b.WriteString("<meta name=\"application-name\" content=\"Pi Sessions\">\n")
 	b.WriteString("<meta name=\"theme-color\" content=\"#0e0e13\">\n")
 	b.WriteString("<meta name=\"mobile-web-app-capable\" content=\"yes\">\n")
+	b.WriteString("<meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n")
 	b.WriteString("<meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">\n")
 	b.WriteString("<meta name=\"apple-mobile-web-app-title\" content=\"Pi Sessions\">\n")
 	b.WriteString("<meta name=\"pi-web-theme\" content=\"")

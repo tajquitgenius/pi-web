@@ -26,12 +26,16 @@ func TestAppShellPreservesPWAContract(t *testing.T) {
 	}
 	html := b.String()
 	for _, want := range []string{
-		`<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">`,
+		`<title>Pi Sessions</title>`,
+		`<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">`,
 		`<link rel="icon" type="image/svg+xml" href="/icon.svg">`,
-		`<link rel="apple-touch-icon" href="/icon.svg">`,
+		`<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">`,
+		`<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">`,
 		`<link rel="manifest" href="/manifest.webmanifest">`,
+		`<meta name="application-name" content="Pi Sessions">`,
 		`<meta name="theme-color" content="#0e0e13">`,
 		`<meta name="mobile-web-app-capable" content="yes">`,
+		`<meta name="apple-mobile-web-app-capable" content="yes">`,
 		`<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`,
 		`<meta name="apple-mobile-web-app-title" content="Pi Sessions">`,
 		`<meta name="pi-web-theme"`,

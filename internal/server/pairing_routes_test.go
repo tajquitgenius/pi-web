@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -50,7 +51,11 @@ func newPairingRouteTestServer(t *testing.T, publicURL string, clock *serverPair
 
 func newPairingRouteTestServerWithToken(t *testing.T, publicURL, token string, clock *serverPairingClock) (*Server, http.Handler) {
 	t.Helper()
-	dir := t.TempDir()
+	return newPairingRouteTestServerInDir(t, t.TempDir(), publicURL, token, clock)
+}
+
+func newPairingRouteTestServerInDir(t *testing.T, dir, publicURL, token string, clock *serverPairingClock) (*Server, http.Handler) {
+	t.Helper()
 	authMiddleware := auth.New(token)
 	authMiddleware.AllowHost("127.0.0.1:31415")
 	if publicURL != "" {
@@ -160,15 +165,15 @@ func TestPublicDeviceGateExposesOnlyPairingSurface(t *testing.T) {
 	if pairingPage.Code != http.StatusOK || pairingPage.Body.String() != "pairing shell" {
 		t.Fatalf("pairing shell = (%d, %q), want public shell", pairingPage.Code, pairingPage.Body.String())
 	}
-	for _, path := range []string{
-		"/static/assets/missing.js",
-		"/static/desktop/assets/missing.js",
-		"/static/mobile/assets/missing.js",
-	} {
+	for _, path := range []string{"/static/desktop/assets/missing.js", "/static/mobile/assets/missing.js"} {
 		asset := pairingRequest(handler, http.MethodGet, "https://pi.example"+path, "", "")
 		if asset.Code != http.StatusNotFound {
 			t.Fatalf("pairing asset %s status = %d, want inner 404 rather than device-gate 401", path, asset.Code)
 		}
+	}
+	legacyAsset := pairingRequest(handler, http.MethodGet, "https://pi.example/static/assets/missing.js", "", "")
+	if legacyAsset.Code != http.StatusFound || legacyAsset.Header().Get("Location") != "/pairing" {
+		t.Fatalf("legacy static asset = (%d, %q), want device-gate redirect", legacyAsset.Code, legacyAsset.Header().Get("Location"))
 	}
 
 	unknownHost := pairingRequest(handler, http.MethodGet, "https://evil.example/api/pairing-status", "", "")
@@ -433,6 +438,85 @@ func TestPublicPushSubscriptionsAreBoundToPairedDevices(t *testing.T) {
 	if remaining != 0 {
 		t.Fatalf("stored subscriptions after revocation/expiry = %d, want 0", remaining)
 	}
+}
+
+func TestActiveDeviceCredentialRenewsThroughHTTP(t *testing.T) {
+	clock := newServerPairingClock()
+	_, handler := newPairingRouteTestServer(t, "https://pi.example", clock)
+	code := createPairingCode(t, handler)
+	cookie, _, _ := redeemPairingCode(t, handler, "https://pi.example/api/pair", code, "Phone")
+
+	clock.Advance(pairing.CredentialLifetime - 24*time.Hour)
+	renewed := pairingRequest(handler, http.MethodGet, "https://pi.example/api/sessions", "", "", cookie)
+	if renewed.Code != http.StatusOK {
+		t.Fatalf("active request near expiry status = %d, want 200", renewed.Code)
+	}
+	var refreshed *http.Cookie
+	for _, setCookie := range renewed.Result().Cookies() {
+		if setCookie.Name == deviceCredentialCookieName {
+			refreshed = setCookie
+			break
+		}
+	}
+	if refreshed == nil {
+		t.Fatal("active request did not refresh the device credential cookie")
+	}
+	if !refreshed.Expires.Equal(clock.Now().Add(pairing.CredentialLifetime)) {
+		t.Fatalf("refreshed cookie expiry = %s, want %s", refreshed.Expires, clock.Now().Add(pairing.CredentialLifetime))
+	}
+
+	clock.Advance(2 * 24 * time.Hour)
+	afterOriginalExpiry := pairingRequest(handler, http.MethodGet, "https://pi.example/api/sessions", "", "", refreshed)
+	if afterOriginalExpiry.Code != http.StatusOK {
+		t.Fatalf("active device after original expiry status = %d, body = %s, want 200", afterOriginalExpiry.Code, afterOriginalExpiry.Body.String())
+	}
+}
+
+func TestPairingTrustAndDatabasePermissionsSurviveRestart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SQLite file permissions are not portable to Windows")
+	}
+
+	dir := t.TempDir()
+	clock := newServerPairingClock()
+	first, firstHandler := newPairingRouteTestServerInDir(t, dir, "https://pi.example", "", clock)
+	dbPath := filepath.Join(dir, "pi-web.sqlite")
+	if info, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("stat pairing database: %v", err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("initial pairing database permissions = %o, want 600", info.Mode().Perm())
+	}
+	keyPath := filepath.Join(dir, "pi-web", pairing.CodeKeyFilename)
+	keyBefore, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read pairing key before restart: %v", err)
+	}
+
+	code := createPairingCode(t, firstHandler)
+	cookie, _, _ := redeemPairingCode(t, firstHandler, "https://pi.example/api/pair", code, "Phone")
+	first.Shutdown()
+	if err := os.Chmod(dbPath, 0644); err != nil {
+		t.Fatalf("make database mode regression: %v", err)
+	}
+
+	second, secondHandler := newPairingRouteTestServerInDir(t, dir, "https://pi.example", "", clock)
+	keyAfter, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read pairing key after restart: %v", err)
+	}
+	if !bytes.Equal(keyBefore, keyAfter) {
+		t.Fatal("pairing key changed across restart")
+	}
+	if info, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("stat pairing database after restart: %v", err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("pairing database permissions after restart = %o, want 600", info.Mode().Perm())
+	}
+	trusted := pairingRequest(secondHandler, http.MethodGet, "https://pi.example/api/sessions", "", "", cookie)
+	if trusted.Code != http.StatusOK {
+		t.Fatalf("paired request after restart status = %d, body = %s, want 200", trusted.Code, trusted.Body.String())
+	}
+	second.Shutdown()
 }
 
 func TestDeviceRevocationTakesEffectOnNextRequest(t *testing.T) {

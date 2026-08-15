@@ -11,6 +11,7 @@ function expectedSurface(projectName: string): "desktop" | "mobile" {
 }
 
 test.describe("dedicated React products", () => {
+  test.use({ serviceWorkers: "block" });
   test("selects the product by UA and supports browse, conversation, and settings", async ({
     page,
   }, testInfo) => {
@@ -58,7 +59,11 @@ test.describe("dedicated React products", () => {
     sessionsDir,
   }, testInfo) => {
     const { entries } = buildSession({ cwd: realWorkingDir() });
-    const id = writeSession(sessionsDir, uniqueSessionName(testInfo, "bootstrap"), entries);
+    const id = writeSession(
+      sessionsDir,
+      uniqueSessionName(testInfo, "bootstrap"),
+      entries,
+    );
     const sessionRequests: string[] = [];
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/session") {

@@ -1,84 +1,188 @@
-// Minimal service worker — present so the page is installable as a PWA.
-// We intentionally don't cache: pi-web is a live view of local session files
-// (SSE for status, streaming chat). Stale cached HTML/JSON would mislead
-// the user.
-//
-// The fetch listener is a no-op (no respondWith) — Chrome accepts that
-// for installability and the browser handles every request natively. An
-// earlier version called respondWith(fetch(event.request)) which forwarded
-// every request through the SW; that added latency to SSE/EventSource and,
-// when the server briefly went down, could surface as "Failed to load
-// module script: text/html" errors on lazy-loaded JS chunks.
+// pi-web's worker deliberately treats the live application as network-owned.
+// It may cache only immutable build assets, install metadata/icons, and the
+// generic offline document. No API, HTML shell, session, SSE, push, sound, or
+// pairing response is ever written to Cache Storage.
+const STATIC_CACHE = 'pi-web-static-v6';
+const STATIC_CACHE_PREFIX = 'pi-web-static-';
+const OFFLINE_DOCUMENT = '/offline.html';
+const STATIC_PREFIXES = ['/static/desktop/assets/', '/static/mobile/assets/'];
+const STATIC_PATHS = new Set([
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/icon-maskable.svg',
+  '/pi-logo.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png',
+]);
+const DYNAMIC_PREFIXES = ['/api/', '/session', '/events', '/sounds/', '/push/', '/pairing', '/device'];
+const STATIC_MIME_TYPES = new Set([
+  'application/javascript',
+  'application/wasm',
+  'font/otf',
+  'font/ttf',
+  'font/woff',
+  'font/woff2',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/svg+xml',
+  'image/webp',
+  'text/css',
+  'text/javascript',
+]);
 
-const VERSION = 'v5-purge-caches';
+function sameOrigin(url) {
+  return url.origin === self.location.origin;
+}
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+function startsWithPath(pathname, prefixes) {
+  return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix));
+}
+
+function isDynamicPath(pathname) {
+  return startsWithPath(pathname, DYNAMIC_PREFIXES);
+}
+
+function isStaticPath(pathname) {
+  if (isDynamicPath(pathname)) return false;
+  return STATIC_PATHS.has(pathname) || startsWithPath(pathname, STATIC_PREFIXES);
+}
+
+function responseMime(response) {
+  return (response.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase();
+}
+
+function sessionClientMatches(client, sessionId) {
+  try {
+    const url = new URL(client.url);
+    return url.origin === self.location.origin && url.pathname === '/session' && url.searchParams.get('id') === sessionId;
+  } catch (_) {
+    return false;
+  }
+}
+
+function isCacheableStaticResponse(response) {
+  if (response.status !== 200 || response.redirected || response.type !== 'basic') return false;
+  return STATIC_MIME_TYPES.has(responseMime(response));
+}
+
+function isCacheableOfflineResponse(response) {
+  return response.status === 200 && !response.redirected && response.type === 'basic' && responseMime(response) === 'text/html';
+}
+
+async function cacheOfflineDocument() {
+  try {
+    const response = await fetch(new Request(OFFLINE_DOCUMENT, { cache: 'no-store' }));
+    if (!isCacheableOfflineResponse(response)) return;
+    const cache = await caches.open(STATIC_CACHE);
+    await cache.put(OFFLINE_DOCUMENT, response);
+  } catch (_) {
+    // Installation must still succeed if the host is temporarily unavailable.
+  }
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    (async () => {
+      await self.skipWaiting();
+      await cacheOfflineDocument();
+    })(),
+  );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    // Older service-worker versions cached app assets via the Cache API. A
-    // stale entry can pin the page to an outdated bundle, so purge everything
-    // when this (no-cache) worker takes over.
-    try {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    } catch (_) {}
-    await self.clients.claim();
-  })());
+  event.waitUntil(
+    (async () => {
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames
+          .filter((name) => name.startsWith(STATIC_CACHE_PREFIX) && name !== STATIC_CACHE)
+          .map((name) => caches.delete(name)),
+      );
+      await self.clients.claim();
+    })(),
+  );
 });
 
-// Web Push: show a system notification when the server reports the
-// assistant is done. Payload is JSON: { title, body, sessionId, type }.
-// If the app is already open and visible, suppress the system push: the page
-// handles the foreground "done" cue itself (including done.mp3). When the
-// screen is locked/backgrounded or the app is closed, no visible client exists,
-// so the push notification is shown normally.
+async function networkNavigation(request) {
+  try {
+    // Never satisfy a navigation from an HTTP/browser cache. The response may
+    // contain the root shell or a session bootstrap tied to another user.
+    return await fetch(new Request(request, { cache: 'no-store' }));
+  } catch (_) {
+    const cached = await caches.match(OFFLINE_DOCUMENT);
+    return cached || new Response('Pi Sessions is unavailable. Reconnect to pi-web.', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }
+}
+
+async function networkStaticAsset(request) {
+  const cache = await caches.open(STATIC_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  // A cache-version bump must refresh unversioned icons as well as hashed assets.
+  const response = await fetch(new Request(request, { cache: 'reload' }));
+  if (isCacheableStaticResponse(response)) {
+    await cache.put(request, response.clone());
+  }
+  return response;
+}
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+  if (!sameOrigin(url)) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith(networkNavigation(request));
+    return;
+  }
+
+  // This allowlist is intentionally narrower than the origin. In particular,
+  // no API, session, root HTML, SSE, push, sound, pairing, or device request
+  // can reach Cache Storage, even if its response happens to look cacheable.
+  if (!isStaticPath(url.pathname)) return;
+  event.respondWith(networkStaticAsset(request));
+});
+
+// Web Push is notification delivery, not a data cache. Payload text is used
+// only for the system notification and is never written to Cache Storage.
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     let data = {};
     try {
       data = event.data ? event.data.json() : {};
     } catch (_) {
-      data = { title: 'pi session', body: 'Response ready' };
+      data = { title: 'Pi Sessions', body: 'Response ready' };
     }
 
-    // Scheduled runs fire in the background regardless of whether the app is
-    // open, so they're always shown. The "response ready" cue for a session the
-    // user is actively watching is suppressed when a foreground client exists —
-    // the page handles that cue itself (including done.mp3).
     const isSchedule = data.type === 'schedule-done';
-    if (!isSchedule) {
+    if (!isSchedule && data.sessionId) {
       const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const hasForegroundClient = clientsList.some((client) => {
-        // WindowClient.visibilityState is the ideal signal. Some browsers expose
-        // WindowClient.focused instead/also, so treat either as foreground.
-        return client.visibilityState === 'visible' || client.focused === true;
-      });
-      if (hasForegroundClient) return;
+      const hasForegroundTarget = clientsList.some(
+        (client) =>
+          (client.visibilityState === 'visible' || client.focused === true) &&
+          sessionClientMatches(client, data.sessionId),
+      );
+      if (hasForegroundTarget) return;
     }
 
-    const title = data.title || 'pi session';
-    const options = {
+    const title = data.title || 'Pi Sessions';
+    await self.registration.showNotification(title, {
       body: data.body || 'Response ready',
-      icon: '/icon.svg',
-      badge: '/icon.svg',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
       tag: isSchedule ? `pi-schedule-${data.sessionId || ''}` : 'pi-session-done',
       renotify: true,
       data: { sessionId: data.sessionId || '' },
-      // Phones play their default notification sound when this fires.
       silent: false,
-    };
-    // Badge the app icon so the user notices even after the banner is gone.
-    // Cleared when the app is opened/focused (notificationclick + page
-    // visibility handler). No-op where the Badging API is unsupported.
-    try {
-      if (self.navigator && self.navigator.setAppBadge) {
-        await self.navigator.setAppBadge(1);
-      }
-    } catch (_) {}
-    await self.registration.showNotification(title, options);
+    });
   })());
 });
 
@@ -87,16 +191,19 @@ self.addEventListener('notificationclick', (event) => {
   const sessionId = event.notification.data && event.notification.data.sessionId;
   const target = sessionId ? `/session?id=${encodeURIComponent(sessionId)}` : '/';
   event.waitUntil((async () => {
-    try {
-      if (self.navigator && self.navigator.clearAppBadge) {
-        await self.navigator.clearAppBadge();
-      }
-    } catch (_) {}
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of all) {
-      if (client.url.includes(target) && 'focus' in client) {
-        return client.focus();
-      }
+      const matches = sessionId
+        ? sessionClientMatches(client, sessionId)
+        : (() => {
+            try {
+              const url = new URL(client.url);
+              return url.origin === self.location.origin && url.pathname === '/';
+            } catch (_) {
+              return false;
+            }
+          })();
+      if (matches && 'focus' in client) return client.focus();
     }
     if (self.clients.openWindow) return self.clients.openWindow(target);
   })());

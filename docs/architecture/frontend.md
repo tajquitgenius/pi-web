@@ -16,6 +16,32 @@ Pi-web ships two live React products and one isolated static-export renderer. De
 
 There is no generic `web/dist`, `/static/assets/*` namespace, live Svelte entry, or rollback shell.
 
+## Secure PWA boundary
+
+The live React shell is installable from the same origin. `internal/ui/pwa.go`
+embeds the manifest, service worker, deterministic PNG icons, and a generic
+offline document; the Go server serves them outside the session HTML render.
+The static export remains a separate Svelte snapshot and never registers the
+service worker.
+
+The worker controls `/` but treats all live data as network-owned:
+
+- navigation is always network-only, with only `/offline.html` as a generic
+  fallback;
+- Cache Storage may contain only hashed files under
+  `/static/desktop/assets/` or `/static/mobile/assets/`, install metadata/icons,
+  and that generic offline document;
+- `/`, `/session`, `/api/`, `/events`, `/sounds/`, push, pairing, device, and all
+  other user/session responses are excluded, including redirects and HTML
+  responses returned for static-looking URLs;
+- `skipWaiting()` and `clients.claim()` update the worker immediately because no
+  user or session data is cached.
+
+PWA metadata and hashed product assets are bootstrap-public so an unpaired
+browser can reach `/pairing`; they still pass the exact Host/Origin boundary and
+public-device gate, with the configured Cloudflare/access layer remaining the
+outer security boundary.
+
 ## Live request flow
 
 ```txt

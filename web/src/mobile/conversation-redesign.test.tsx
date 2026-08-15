@@ -157,6 +157,16 @@ describe('mobile conversation redesign', () => {
     );
   });
 
+  it('uses one viewport mechanism and keeps the send control available', async () => {
+    renderConversation(makeClient());
+    const textarea = await screen.findByRole('textbox', { name: 'Message' });
+    const composer = textarea.closest('.mobile-composer')!;
+
+    expect(composer).not.toHaveAttribute('data-keyboard-inset');
+    expect((composer as HTMLElement).style.getPropertyValue('--mobile-keyboard-inset')).toBe('');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeVisible();
+  });
+
   it('shows a disabled reason once and leaves the composer placeholder empty', async () => {
     const readonlyDetails = {
       ...details,

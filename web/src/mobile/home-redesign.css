@@ -196,6 +196,132 @@
   width: min(100%, 600px);
 }
 
+.mobile-task-sheet .mobile-form-section {
+  margin-bottom: 12px;
+  padding: 14px;
+}
+
+.mobile-task-sheet input,
+.mobile-task-sheet select {
+  font-size: 16px;
+}
+
+.mobile-task-sheet .mobile-input-with-icon {
+  height: 44px;
+}
+
+.mobile-task-sheet .mobile-form-section select {
+  min-height: 44px;
+}
+
+.mobile-task-project-choices {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+.mobile-task-project-choices > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 46px;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 11px;
+  font: inherit;
+}
+
+.mobile-task-project-choices > button.is-selected {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+.mobile-task-project-choices > button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.mobile-task-project-choices strong,
+.mobile-task-project-choices small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-task-project-choices small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile-task-project-choices > button > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.mobile-task-runtime {
+  padding: 10px 14px;
+}
+
+.mobile-runtime-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 42px;
+  gap: 12px;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  font: inherit;
+}
+
+.mobile-runtime-summary > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.mobile-runtime-summary > span:last-child {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.mobile-runtime-summary strong,
+.mobile-runtime-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-runtime-summary strong {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.mobile-runtime-summary small {
+  font-size: 11px;
+}
+
+.mobile-task-settings {
+  display: grid;
+  gap: 0;
+  margin-top: 10px;
+  padding-top: 2px;
+  border-top: 1px solid var(--dim-2);
+}
+
 @media (max-width: 359px) {
   .mobile-session-controls {
     flex-wrap: wrap;

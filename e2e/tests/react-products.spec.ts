@@ -109,12 +109,10 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
   } else {
     await page.getByRole("button", { name: "New task" }).click();
     await page.getByLabel("Destination folder").fill(workspace);
-    await page
-      .getByLabel("Provider and model")
-      .selectOption("openai-codex-secondary/gpt-5.6-sol");
-    await page.getByLabel("Thinking level").selectOption("high");
-    await expect(page.getByText("openai-codex-secondary", { exact: true })).toBeVisible();
-    await expect(page.getByText("gpt-5.6-sol", { exact: true })).toBeVisible();
+    const runtimeSummary = page.locator(".mobile-runtime-summary");
+    await expect(runtimeSummary).toContainText("openai-codex-secondary");
+    await expect(runtimeSummary).toContainText("gpt-5.6-sol");
+    await expect(runtimeSummary).toContainText("high");
     await page.getByRole("button", { name: "Create task" }).click();
   }
 

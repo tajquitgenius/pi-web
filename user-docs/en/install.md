@@ -59,6 +59,26 @@ On Linux, auto-start is configured as a user systemd service at `~/.config/syste
 
 Then restart Pi or run `/reload`. Use `/web` for local access and `/remote` after configuring `PI_WEB_PUBLIC_URL`. Manage the optional second-layer token with `/pi-web token` and `/pi-web set-token`.
 
+### Install as a PWA
+
+Open the authenticated pi-web origin in Chrome or Edge and choose **Install**;
+on iPhone or iPad use Safari's **Share → Add to Home Screen**. Android uses the
+same browser install prompt. The installed app opens in standalone mode with
+Pi Sessions branding and works on the same Host/Origin and pairing boundary as
+the browser.
+
+On iPhone and iPad, install first and then open **Pi Sessions** from the Home
+Screen. Apple gives a Home Screen web app separate cookies and storage from its
+Safari tab, so the installed app may require one device-pairing step even when
+Safari was already paired. After that, normal use renews the trusted-device
+window automatically; you only pair again after explicit revocation or more
+than 90 days without using the app.
+
+The PWA keeps only immutable product assets, install metadata/icons, and a
+generic offline message. It never stores sessions, API responses, root or
+session HTML, SSE, push, sounds, or pairing/device data. Reconnect to pi-web to
+continue working; Cloudflare Access (when configured) remains the outer gate.
+
 ### Quick install (no build tools needed)
 
 macOS / Linux:

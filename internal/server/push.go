@@ -154,14 +154,18 @@ func (m *PushManager) ConfigureDeviceBinding(store *pairing.Store, public bool) 
 	m.pairing = store
 	changed := false
 	for endpoint, sub := range m.subs {
-		if sub.DeviceID != "" || sub.Local {
+		if sub.DeviceID != "" {
 			continue
 		}
-		changed = true
 		if public {
+			changed = true
 			delete(m.subs, endpoint)
 			continue
 		}
+		if sub.Local {
+			continue
+		}
+		changed = true
 		sub.Local = true
 		m.subs[endpoint] = sub
 	}

@@ -81,6 +81,7 @@
 
 .mobile-composer {
   padding-right: max(8px, env(safe-area-inset-right));
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
   padding-left: max(8px, env(safe-area-inset-left));
 }
 
@@ -117,11 +118,14 @@
   flex: none;
   padding: 9px 8px;
   overflow-y: auto;
+  font-size: 16px;
+  line-height: 1.35;
 }
 
 .mobile-composer-controls {
   width: 100%;
   min-height: 44px;
+  gap: 12px;
 }
 
 .mobile-tools-trigger {
@@ -172,9 +176,23 @@
 
 .mobile-attachment-strip {
   max-width: min(100%, 720px);
-  max-height: 52px;
+  max-height: 56px;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-inline: 4px;
   overflow-x: auto;
   overflow-y: hidden;
+  scroll-padding-inline: 4px;
+}
+
+.mobile-attachment-strip > span {
+  gap: 8px;
+  padding-left: 12px;
+  border-radius: 12px;
+}
+
+.mobile-attachment-strip > span > span {
+  font-size: 12px;
 }
 
 .mobile-composer-palette {

@@ -98,6 +98,28 @@ pi-web/
 > The embedded standalone export bundle lives at `internal/ui/embedded/export/`
 > (`app/*.js` + `vendor/`), **not** at `internal/ui/export/`.
 
+## PWA asset boundary
+
+`internal/ui/pwa.go` embeds the install manifest, service worker, deterministic
+PNG icons (`192x192`, `512x512`, and Apple `180x180`), legacy SVG marks, and a
+generic offline document. Regenerate the PNGs with
+`scripts/generate_pwa_icons.py`. The production mux exposes only these bootstrap routes
+and the two hashed React asset namespaces before device pairing:
+
+```text
+/manifest.webmanifest  /sw.js  /offline.html
+/icon.svg  /icon-maskable.svg  /pi-logo.svg
+/icon-192.png  /icon-512.png  /apple-touch-icon.png
+/custom-themes.css
+/static/desktop/assets/*  /static/mobile/assets/*
+```
+
+The outer `HTTPHandler` still applies exact Host/Origin validation and the
+public-device gate. No root or session HTML, API, SSE, push, sound, or device
+route is part of the public bootstrap surface. The worker caches only successful
+same-origin immutable assets and the generic offline document; navigation and
+all live data remain network-only.
+
 ## Key Types
 
 ### `server.Server`

@@ -21,9 +21,65 @@ type pairedDeviceIdentity struct {
 	ExpiresAt time.Time
 }
 
+type deviceRenewingResponseWriter struct {
+	http.ResponseWriter
+	server     *Server
+	request    *http.Request
+	identity   *pairedDeviceIdentity
+	credential string
+	deviceID   string
+	committed  bool
+}
+
+func (w *deviceRenewingResponseWriter) commit(status int) {
+	if w.committed {
+		return
+	}
+	w.committed = true
+	if status >= http.StatusOK && status < http.StatusMultipleChoices && w.server.pairing != nil {
+		if device, renewed, err := w.server.pairing.RenewDevice(w.request.Context(), w.deviceID); err == nil && renewed {
+			w.identity.ExpiresAt = device.ExpiresAt
+			w.server.setDeviceCredentialCookie(w.ResponseWriter, w.request, w.credential, device.ExpiresAt)
+		}
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *deviceRenewingResponseWriter) WriteHeader(status int) {
+	w.commit(status)
+}
+
+func (w *deviceRenewingResponseWriter) Write(p []byte) (int, error) {
+	if !w.committed {
+		w.commit(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *deviceRenewingResponseWriter) Flush() {
+	if !w.committed {
+		w.commit(http.StatusOK)
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (w *deviceRenewingResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func pairedDeviceFromContext(ctx context.Context) (pairedDeviceIdentity, bool) {
-	device, ok := ctx.Value(pairedDeviceContextKey{}).(pairedDeviceIdentity)
-	return device, ok && device.ID != ""
+	value := ctx.Value(pairedDeviceContextKey{})
+	switch device := value.(type) {
+	case pairedDeviceIdentity:
+		return device, device.ID != ""
+	case *pairedDeviceIdentity:
+		if device != nil {
+			return *device, device.ID != ""
+		}
+	}
+	return pairedDeviceIdentity{}, false
 }
 
 func (s *Server) registerDevicePairingRoutes(mux *http.ServeMux) {
@@ -52,15 +108,26 @@ func (s *Server) HTTPHandler(next http.Handler) http.Handler {
 			credential = cookie.Value
 		}
 		if credential != "" && s.pairing != nil {
-			device, paired, err := s.pairing.AuthenticateDevice(r.Context(), credential)
+			device, paired, err := s.pairing.LookupDevice(r.Context(), credential)
 			if err != nil {
 				writeJSONError(w, http.StatusInternalServerError, "device authentication unavailable")
 				return
 			}
 			if paired {
-				identity := pairedDeviceIdentity{ID: device.ID, ExpiresAt: device.ExpiresAt}
+				identity := &pairedDeviceIdentity{ID: device.ID, ExpiresAt: device.ExpiresAt}
 				ctx := context.WithValue(r.Context(), pairedDeviceContextKey{}, identity)
-				next.ServeHTTP(w, r.WithContext(ctx))
+				renewing := &deviceRenewingResponseWriter{
+					ResponseWriter: w,
+					server:         s,
+					request:        r.WithContext(ctx),
+					identity:       identity,
+					credential:     credential,
+					deviceID:       device.ID,
+				}
+				next.ServeHTTP(renewing, r.WithContext(ctx))
+				if !renewing.committed {
+					renewing.commit(http.StatusOK)
+				}
 				return
 			}
 			s.clearDeviceCredential(w, r)
@@ -85,10 +152,10 @@ func isPublicPairingPath(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/pairing", "/manifest.webmanifest", "/sw.js", "/icon.svg", "/icon-maskable.svg", "/pi-logo.svg", "/custom-themes.css":
+	case "/pairing", "/manifest.webmanifest", "/sw.js", "/offline.html", "/icon.svg", "/icon-maskable.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/pi-logo.svg", "/custom-themes.css":
 		return true
 	}
-	return strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/pairing-assets/")
+	return strings.HasPrefix(r.URL.Path, "/static/desktop/assets/") || strings.HasPrefix(r.URL.Path, "/static/mobile/assets/")
 }
 
 func (s *Server) handlePairingShell(w http.ResponseWriter, r *http.Request) {
@@ -170,16 +237,7 @@ func (s *Server) handlePairDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     deviceCredentialCookieName,
-		Value:    credential,
-		Path:     "/",
-		Expires:  device.ExpiresAt,
-		MaxAge:   int(pairing.CredentialLifetime / time.Second),
-		HttpOnly: true,
-		Secure:   s.isPublicRequest(r),
-		SameSite: http.SameSiteLaxMode,
-	})
+	s.setDeviceCredentialCookie(w, r, credential, device.ExpiresAt)
 	writeJSON(w, http.StatusCreated, map[string]any{"paired": true, "device": device})
 }
 
@@ -266,7 +324,7 @@ func (s *Server) handlePairingStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 0, map[string]bool{"paired": false, "local": false})
 		return
 	}
-	paired, err := s.pairing.Authenticate(r.Context(), cookie.Value)
+	_, paired, err := s.pairing.LookupDevice(r.Context(), cookie.Value)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "device authentication unavailable")
 		return
@@ -275,6 +333,19 @@ func (s *Server) handlePairingStatus(w http.ResponseWriter, r *http.Request) {
 		s.clearDeviceCredential(w, r)
 	}
 	writeJSON(w, 0, map[string]bool{"paired": paired, "local": false})
+}
+
+func (s *Server) setDeviceCredentialCookie(w http.ResponseWriter, r *http.Request, credential string, expiresAt time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     deviceCredentialCookieName,
+		Value:    credential,
+		Path:     "/",
+		Expires:  expiresAt,
+		MaxAge:   int(pairing.CredentialLifetime / time.Second),
+		HttpOnly: true,
+		Secure:   s.isPublicRequest(r),
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (s *Server) clearDeviceCredential(w http.ResponseWriter, r *http.Request) {

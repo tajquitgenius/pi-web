@@ -227,18 +227,66 @@ func (s *Store) AuthenticateDevice(ctx context.Context, credential string) (Auth
 		return AuthenticatedDevice{}, false, nil
 	}
 	digest := sha256.Sum256([]byte(credential))
-	now := s.now().UTC().Unix()
+	now := s.now().UTC()
+	nowUnix := now.Unix()
+	renewedExpiresAt := now.Add(CredentialLifetime).Unix()
 	var device AuthenticatedDevice
 	var expiresAt int64
 	err = s.db.QueryRowContext(ctx, `UPDATE paired_devices
-		SET last_used_at = ?
+		SET last_used_at = MAX(last_used_at, ?), expires_at = MAX(expires_at, ?)
 		WHERE credential_hash = ? AND revoked_at IS NULL AND expires_at > ?
-		RETURNING id, expires_at`, now, digest[:], now).Scan(&device.ID, &expiresAt)
+		RETURNING id, expires_at`, nowUnix, renewedExpiresAt, digest[:], nowUnix).Scan(&device.ID, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AuthenticatedDevice{}, false, nil
 	}
 	if err != nil {
 		return AuthenticatedDevice{}, false, fmt.Errorf("authenticate paired device: %w", err)
+	}
+	device.ExpiresAt = time.Unix(expiresAt, 0).UTC()
+	return device, true, nil
+}
+
+// LookupDevice checks a credential without changing its activity window.
+func (s *Store) LookupDevice(ctx context.Context, credential string) (AuthenticatedDevice, bool, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(credential)
+	if err != nil || len(decoded) != CredentialBytes {
+		return AuthenticatedDevice{}, false, nil
+	}
+	digest := sha256.Sum256([]byte(credential))
+	nowUnix := s.now().UTC().Unix()
+	var device AuthenticatedDevice
+	var expiresAt int64
+	err = s.db.QueryRowContext(ctx, `SELECT id, expires_at FROM paired_devices
+		WHERE credential_hash = ? AND revoked_at IS NULL AND expires_at > ?`, digest[:], nowUnix).
+		Scan(&device.ID, &expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AuthenticatedDevice{}, false, nil
+	}
+	if err != nil {
+		return AuthenticatedDevice{}, false, fmt.Errorf("look up paired device: %w", err)
+	}
+	device.ExpiresAt = time.Unix(expiresAt, 0).UTC()
+	return device, true, nil
+}
+
+// RenewDevice advances activity timestamps without allowing an older concurrent
+// request to move either value backwards.
+func (s *Store) RenewDevice(ctx context.Context, id string) (AuthenticatedDevice, bool, error) {
+	now := s.now().UTC()
+	nowUnix := now.Unix()
+	renewedExpiresAt := now.Add(CredentialLifetime).Unix()
+	var device AuthenticatedDevice
+	var expiresAt int64
+	err := s.db.QueryRowContext(ctx, `UPDATE paired_devices
+		SET last_used_at = MAX(last_used_at, ?), expires_at = MAX(expires_at, ?)
+		WHERE id = ? AND revoked_at IS NULL AND expires_at > ?
+		RETURNING id, expires_at`, nowUnix, renewedExpiresAt, id, nowUnix).
+		Scan(&device.ID, &expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AuthenticatedDevice{}, false, nil
+	}
+	if err != nil {
+		return AuthenticatedDevice{}, false, fmt.Errorf("renew paired device: %w", err)
 	}
 	device.ExpiresAt = time.Unix(expiresAt, 0).UTC()
 	return device, true, nil

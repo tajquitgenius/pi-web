@@ -95,6 +95,7 @@ func (a *Middleware) AllowAnyHost() {
 // a plain 401.
 func (a *Middleware) Wrap(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		if !a.allowsBoundary(w, r) {
 			return
 		}

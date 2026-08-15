@@ -22,14 +22,23 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-
 	device, _ := pairedDeviceFromContext(r.Context())
 	client := s.addClientForDevice(sessID, device)
+	if client == nil {
+		http.Error(w, "device pairing required", http.StatusUnauthorized)
+		return
+	}
 	defer s.removeClient(client)
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	if refreshed, ok := pairedDeviceFromContext(r.Context()); ok {
+		client.mu.Lock()
+		client.deviceExpiresAt = refreshed.ExpiresAt
+		client.mu.Unlock()
+	}
 
 	fmt.Fprintf(w, ":ok\n\n")
 	flusher.Flush()
@@ -57,10 +66,16 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return
 			}
-			if key := eventKey(msg); key != "" {
-				client.mu.Lock()
-				delete(client.queued, key)
-				client.mu.Unlock()
+			client.mu.Lock()
+			revoked := client.revoked
+			if !revoked {
+				if key := eventKey(msg); key != "" {
+					delete(client.queued, key)
+				}
+			}
+			client.mu.Unlock()
+			if revoked {
+				return
 			}
 			if strings.HasPrefix(msg, "event: ") {
 				// Already-formatted named SSE event; pass through with the

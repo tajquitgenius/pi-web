@@ -14,6 +14,7 @@ import (
 // handleApiSounds scans the assets directory for .mp3 files and returns them sorted.
 // Auth-gated: registered with s.auth.Wrap
 func (s *Server) handleApiSounds(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -40,7 +41,7 @@ func (s *Server) handleApiSounds(w http.ResponseWriter, r *http.Request) {
 	// If the user deleted all mp3s, we will return empty but sorted.
 	sort.Strings(sounds)
 
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sounds":  sounds,
 		"default": "cat.mp3",
@@ -50,6 +51,7 @@ func (s *Server) handleApiSounds(w http.ResponseWriter, r *http.Request) {
 // handleSounds serves a sound file by name. If missing on disk, falls back to embedded cat.mp3.
 // Public (no auth): registered directly on mux
 func (s *Server) handleSounds(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -78,7 +80,6 @@ func (s *Server) handleSounds(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := os.Stat(filePath); err == nil {
 		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("Cache-Control", "public, max-age=86400")
 		http.ServeFile(w, r, filePath)
 		return
 	}
@@ -87,7 +88,6 @@ func (s *Server) handleSounds(w http.ResponseWriter, r *http.Request) {
 	// For any other missing file, return 404 so callers know it doesn't exist.
 	if name == "cat.mp3" {
 		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("Cache-Control", "public, max-age=86400")
 		_, _ = w.Write(ui.CatMP3)
 		return
 	}

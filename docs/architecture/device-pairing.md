@@ -35,9 +35,9 @@ Successful redemption creates a 256-bit random device credential. The response s
 - `HttpOnly`
 - `SameSite=Lax`
 - `Secure` on the configured public Host, but not on local HTTP
-- 90-day `Expires` and `Max-Age`
+- 90-day `Expires` and `Max-Age` inactivity window
 
-SQLite stores only the credential's SHA-256 hash. Every authenticated request checks the database and updates `last_used_at`. The device record also keeps its label, creation time, expiry, and nullable revocation time.
+SQLite stores only the credential's SHA-256 hash. Every protected request checks the database, while successful 2xx application/API use updates `last_used_at` and rolls `expires_at` forward by another 90 days. The browser receives the same random credential with the renewed cookie expiry, so an actively used device does not need periodic re-pairing; 90 days without successful use still expires it. The device record also keeps its label, creation time, expiry, and nullable revocation time. The SQLite database file is enforced at owner-only `0600` permissions on every startup.
 
 Public SSE streams and web-push subscriptions carry the authenticated device ID. Revocation closes that device's open streams immediately and deletes its subscriptions without affecting another device. An SSE stream closes at credential expiry, and push delivery rechecks the device before every send. Legacy push records had no device ID: local-only installations mark them as local, while public installations delete the ambiguous records and let an opted-in browser safely post its existing subscription again.
 

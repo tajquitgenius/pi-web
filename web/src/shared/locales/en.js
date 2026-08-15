@@ -52,7 +52,10 @@ export default {
   'index.providerLoginRequired':
     'Open Pi on {host} and log in to a model provider before starting a task.',
   'index.newTaskDestination': 'New task destination',
-  'index.readyToCreate': 'Ready to create',
+  'index.chooseProject': 'Choose a project',
+  'index.recentProjects': 'Recent projects',
+  'index.customPath': 'Custom path',
+  'index.customPathHint': 'Enter a different project location',
   'index.host': 'Host',
   'index.provider': 'Provider',
   'index.model': 'Model',

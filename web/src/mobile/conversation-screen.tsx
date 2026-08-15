@@ -19,7 +19,6 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type CSSProperties,
   type FormEvent,
   type ReactNode,
 } from 'react';
@@ -631,24 +630,6 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       : { deadline: Date.now() + INITIAL_RELOAD_GRACE_MS, handled: false, opened: false },
   );
   const streamStateRef = useRef({ opened: false, reconnectPending: false });
-  const [keyboardInset, setKeyboardInset] = useState(0);
-
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const updateKeyboardInset = () => {
-      setKeyboardInset(
-        Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)),
-      );
-    };
-    updateKeyboardInset();
-    viewport.addEventListener('resize', updateKeyboardInset);
-    viewport.addEventListener('scroll', updateKeyboardInset);
-    return () => {
-      viewport.removeEventListener('resize', updateKeyboardInset);
-      viewport.removeEventListener('scroll', updateKeyboardInset);
-    };
-  }, []);
 
   useEffect(() => {
     detailsRef.current = details;
@@ -1013,9 +994,6 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           ? t('conversation.runtimeUnavailable', { error: workerStatus.error })
           : t('conversation.runtimeUnavailableWithoutError')
         : t('conversation.runtimeReady');
-  const composerStyle = {
-    '--mobile-keyboard-inset': `${keyboardInset}px`,
-  } as CSSProperties;
   const closeToolSheet = () => {
     setToolsSheet(null);
     requestAnimationFrame(() => toolsTriggerRef.current?.focus());
@@ -1135,12 +1113,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         <div ref={endRef} className="mobile-feed-end" />
       </div>
 
-      <form
-        className="mobile-composer"
-        style={composerStyle}
-        data-keyboard-inset={keyboardInset}
-        onSubmit={sendMessage}
-      >
+      <form className="mobile-composer" onSubmit={sendMessage}>
         {composerError && (
           <p className="mobile-composer-error" role="alert">
             {composerError}

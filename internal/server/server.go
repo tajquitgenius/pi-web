@@ -238,6 +238,9 @@ func New(deps Deps) (*Server, error) {
 // half-initialized database that fails opaquely on first use.
 func initDB(agentDir string) (*sql.DB, error) {
 	dbPath := filepath.Join(agentDir, "pi-web.sqlite")
+	if err := ensureSQLiteDatabasePermissions(dbPath); err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
@@ -301,6 +304,20 @@ func initDB(agentDir string) (*sql.DB, error) {
 	}
 	migrateLegacyBtwSession(db)
 	return db, nil
+}
+
+func ensureSQLiteDatabasePermissions(path string) error {
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return fmt.Errorf("create sqlite database securely: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close sqlite database: %w", err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return fmt.Errorf("secure sqlite database: %w", err)
+	}
+	return nil
 }
 
 // Shutdown stops background goroutines and waits for them to exit.
@@ -438,6 +455,7 @@ type sseClient struct {
 	sessID          string
 	deviceID        string
 	deviceExpiresAt time.Time
+	revoked         bool
 	mu              sync.Mutex
 	queued          map[string]bool
 }
@@ -455,8 +473,14 @@ func (s *Server) addClientForDevice(sessID string, device pairedDeviceIdentity) 
 		queued:          make(map[string]bool),
 	}
 	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	if device.ID != "" && s.pairing != nil {
+		active, err := s.pairing.IsDeviceActive(context.Background(), device.ID)
+		if err != nil || !active {
+			return nil
+		}
+	}
 	s.clients = append(s.clients, c)
-	s.clientsMu.Unlock()
 	return c
 }
 
@@ -475,6 +499,9 @@ func eventKey(msg string) string {
 }
 
 func (s *Server) removeClient(target *sseClient) {
+	if target == nil {
+		return
+	}
 	s.clientsMu.Lock()
 	filtered := s.clients[:0]
 	found := false
@@ -500,7 +527,18 @@ func (s *Server) closeDeviceClients(deviceID string) {
 	filtered := s.clients[:0]
 	for _, client := range s.clients {
 		if client.deviceID == deviceID {
+			client.mu.Lock()
+			client.revoked = true
+		drain:
+			for {
+				select {
+				case <-client.ch:
+				default:
+					break drain
+				}
+			}
 			close(client.ch)
+			client.mu.Unlock()
 			continue
 		}
 		filtered = append(filtered, client)

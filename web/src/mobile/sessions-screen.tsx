@@ -201,29 +201,39 @@ interface NewTaskScreenProps {
   onCreated: (sessionId: string) => void;
 }
 
+interface TaskProjectChoice {
+  path: string;
+  label: string;
+}
+
 function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps) {
   const dialogRef = useRef<HTMLElement>(null);
+  const pathInputRef = useRef<HTMLInputElement>(null);
+  const pathTouched = useRef(false);
   useMobileDialog(dialogRef, onClose);
   const [path, setPath] = useState('');
   const [recentLocations, setRecentLocations] = useState<string[]>([]);
+  const [recentProjects, setRecentProjects] = useState<MobileProject[]>([]);
   const [models, setModels] = useState<PiModel[]>([]);
+  const [defaultModelKey, setDefaultModelKey] = useState('');
   const [modelProvider, setModelProvider] = useState('');
   const [modelId, setModelId] = useState('');
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('off');
-  const [loading, setLoading] = useState(true);
+  const [defaultsResolved, setDefaultsResolved] = useState(false);
+  const [modelsResolved, setModelsResolved] = useState(false);
+  const [runtimeError, setRuntimeError] = useState('');
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [customPathSelected, setCustomPathSelected] = useState(false);
 
   useEffect(() => {
     let active = true;
-    Promise.all([client.getSessionDefaults(), client.listModels()])
-      .then(([defaults, result]) => {
+    client
+      .getSessionDefaults()
+      .then((defaults) => {
         if (!active) return;
-        const available = result.models.some(
-          (model) => model.provider === defaults.modelProvider && model.id === defaults.modelId,
-        );
-        if (!available) throw new Error('no authenticated model');
-        setModels(result.models);
+        setDefaultModelKey(`${defaults.modelProvider}/${defaults.modelId}`);
         setModelProvider(defaults.modelProvider);
         setModelId(defaults.modelId);
         setThinkingLevel(defaults.thinkingLevel);
@@ -231,13 +241,35 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
       .catch(() => {
         if (active) {
           setModels([]);
+          setDefaultModelKey('');
           setModelProvider('');
           setModelId('');
-          setError(t('index.providerLoginRequired', { host: host.instanceName }));
+          setRuntimeError(t('index.providerLoginRequired', { host: host.instanceName }));
         }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setDefaultsResolved(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client]);
+
+  useEffect(() => {
+    let active = true;
+    client
+      .listModels()
+      .then((result) => {
+        if (active) setModels(result.models);
+      })
+      .catch(() => {
+        if (active) {
+          setModels([]);
+          setRuntimeError(t('index.providerLoginRequired', { host: host.instanceName }));
+        }
+      })
+      .finally(() => {
+        if (active) setModelsResolved(true);
       });
     return () => {
       active = false;
@@ -261,31 +293,97 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
     };
   }, [client]);
 
-  const selectedModelKey = modelProvider && modelId ? `${modelProvider}/${modelId}` : '';
-  const modelOptions = useMemo(() => {
-    if (models.some((model) => `${model.provider}/${model.id}` === selectedModelKey)) return models;
-    if (!modelProvider || !modelId) return models;
-    return [{ provider: modelProvider, id: modelId, name: modelId }, ...models];
-  }, [modelId, modelProvider, models, selectedModelKey]);
+  useEffect(() => {
+    const listProjects = getMobileCapability(client, 'listProjects');
+    if (!listProjects) return;
+    let active = true;
+    listProjects
+      .call(client)
+      .then((result) => {
+        if (active) setRecentProjects(result.projects || []);
+      })
+      .catch(() => {
+        if (active) setRecentProjects([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client]);
 
-  const runtimeReady =
-    !loading &&
-    !error &&
-    models.some((model) => model.provider === modelProvider && model.id === modelId);
+  const projectChoices = useMemo(() => {
+    const choices = new Map<string, TaskProjectChoice>();
+    for (const location of recentLocations) {
+      const normalized = location.trim();
+      if (normalized && !choices.has(normalized)) {
+        choices.set(normalized, { path: normalized, label: projectLabel(normalized) });
+      }
+    }
+    for (const project of recentProjects) {
+      const normalized = project.path.trim();
+      if (normalized && !choices.has(normalized)) {
+        choices.set(normalized, {
+          path: normalized,
+          label: project.label || project.name || projectLabel(normalized),
+        });
+      }
+    }
+    return [...choices.values()];
+  }, [recentLocations, recentProjects]);
+
+  useEffect(() => {
+    const defaultPath = projectChoices[0]?.path;
+    if (!defaultPath || pathTouched.current) return;
+    setPath(defaultPath);
+  }, [projectChoices]);
+
+  const selectedModelKey = modelProvider && modelId ? `${modelProvider}/${modelId}` : '';
+  const runtimeLoading = !defaultsResolved || !modelsResolved;
+  const selectedModelAvailable = models.some(
+    (model) => model.provider === modelProvider && model.id === modelId,
+  );
+  const defaultModelAvailable = models.some(
+    (model) => `${model.provider}/${model.id}` === defaultModelKey,
+  );
+  const runtimeFailure =
+    runtimeError ||
+    (defaultsResolved && modelsResolved && !defaultModelAvailable
+      ? t('index.providerLoginRequired', { host: host.instanceName })
+      : '');
+  const modelOptions = runtimeFailure ? [] : models;
+  const runtimeReady = !runtimeLoading && !runtimeFailure && selectedModelAvailable;
+  const runtimeSummary =
+    runtimeLoading || runtimeFailure
+      ? runtimeLoading
+        ? t('index.loadingMore')
+        : t('index.noAuthenticatedModels')
+      : modelProvider && modelId
+        ? `${modelProvider} · ${modelId}`
+        : t('index.noAuthenticatedModels');
+
+  const selectPath = (selectedPath: string) => {
+    pathTouched.current = true;
+    setCustomPathSelected(false);
+    setPath(selectedPath);
+    setFormError('');
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const destination = path.trim();
     if (!destination) {
-      setError(t('index.enterPath'));
+      setFormError(t('index.enterPath'));
       return;
     }
     if (!modelProvider || !modelId) {
-      setError(t('index.chooseProviderModel'));
+      setFormError(t('index.chooseProviderModel'));
+      return;
+    }
+    if (!runtimeReady) {
+      setFormError(runtimeFailure || t('index.chooseProviderModel'));
       return;
     }
     setCreating(true);
-    setError('');
+    setFormError('');
     try {
       const result = await client.createSession({
         path: destination,
@@ -296,7 +394,8 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
       if (!result.ok || !result.id) throw new Error(t('index.failedCreateSession'));
       onCreated(result.id);
     } catch (createError) {
-      setError(errorMessage(createError, t('index.failedCreateSession')));
+      setFormError(errorMessage(createError, t('index.failedCreateSession')));
+    } finally {
       setCreating(false);
     }
   };
@@ -328,115 +427,146 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
 
       <form className="mobile-new-task-form" onSubmit={submit}>
         <div className="mobile-form-scroll">
-          <section className="mobile-form-section">
+          <section className="mobile-form-section mobile-task-destination">
+            <div className="mobile-section-heading">
+              <div>
+                <p className="mobile-eyebrow">{t('index.recentProjects')}</p>
+                <h2>{t('index.chooseProject')}</h2>
+              </div>
+            </div>
+            <div className="mobile-task-project-choices" aria-label={t('index.recentProjects')}>
+              {projectChoices.map((choice) => (
+                <button
+                  key={choice.path}
+                  type="button"
+                  className={path === choice.path && !customPathSelected ? 'is-selected' : ''}
+                  aria-pressed={path === choice.path && !customPathSelected}
+                  onClick={() => selectPath(choice.path)}
+                >
+                  <span>
+                    <strong>{choice.label}</strong>
+                    <small>{choice.path}</small>
+                  </span>
+                  <ChevronRight aria-hidden="true" size={17} />
+                </button>
+              ))}
+              <button
+                type="button"
+                className={customPathSelected ? 'is-selected' : ''}
+                aria-label={t('index.customPath')}
+                aria-pressed={customPathSelected}
+                onClick={() => {
+                  pathTouched.current = true;
+                  setCustomPathSelected(true);
+                  pathInputRef.current?.focus();
+                }}
+              >
+                <span>
+                  <strong>{t('index.customPath')}</strong>
+                  <small>{t('index.customPathHint')}</small>
+                </span>
+                <ChevronRight aria-hidden="true" size={17} />
+              </button>
+            </div>
             <label htmlFor="mobile-task-path">{t('index.destinationFolder')}</label>
             <div className="mobile-input-with-icon">
               <Folder aria-hidden="true" size={18} />
               <input
+                ref={pathInputRef}
                 id="mobile-task-path"
                 name="path"
                 type="text"
                 autoCapitalize="none"
                 autoCorrect="off"
                 placeholder={t('index.sessionPathPlaceholder')}
-                list={recentLocations.length ? 'mobile-recent-locations' : undefined}
                 value={path}
-                onChange={(event) => setPath(event.currentTarget.value)}
-                disabled={loading || creating}
+                onChange={(event) => {
+                  pathTouched.current = true;
+                  setCustomPathSelected(true);
+                  setPath(event.currentTarget.value);
+                  setFormError('');
+                }}
+                disabled={creating}
               />
-              {recentLocations.length > 0 && (
-                <datalist id="mobile-recent-locations">
-                  {recentLocations.map((location) => (
-                    <option key={location} value={location} />
-                  ))}
-                </datalist>
-              )}
             </div>
             <p>{t('index.newSessionStartsOn', { host: host.instanceName })}</p>
           </section>
 
-          <section className="mobile-form-section" aria-labelledby="mobile-task-runtime-heading">
-            <div className="mobile-section-heading">
-              <div>
-                <p className="mobile-eyebrow">{t('index.runtime')}</p>
-                <h2 id="mobile-task-runtime-heading">{t('index.taskSettings')}</h2>
-              </div>
-              {loading && <span role="status">{t('index.loadingMore')}</span>}
-            </div>
-            <label htmlFor="mobile-task-model">{t('index.providerAndModel')}</label>
-            <select
-              id="mobile-task-model"
-              aria-label={t('index.providerAndModel')}
-              value={selectedModelKey}
-              disabled={loading || creating}
-              onChange={(event) => {
-                const selected = models.find(
-                  (model) => `${model.provider}/${model.id}` === event.currentTarget.value,
-                );
-                if (!selected) return;
-                setModelProvider(selected.provider);
-                setModelId(selected.id);
-              }}
+          <section
+            className="mobile-form-section mobile-task-runtime"
+            aria-label={t('index.newTaskDestination')}
+          >
+            <button
+              type="button"
+              className="mobile-runtime-summary"
+              aria-expanded={settingsOpen}
+              aria-controls="mobile-task-settings"
+              onClick={() => setSettingsOpen((open) => !open)}
             >
-              {modelOptions.length ? (
-                modelOptions.map((model) => (
-                  <option
-                    key={`${model.provider}/${model.id}`}
-                    value={`${model.provider}/${model.id}`}
-                  >
-                    {model.provider} · {model.name || model.id}
-                  </option>
-                ))
-              ) : (
-                <option value="">
-                  {loading ? t('index.loadingMore') : t('index.noAuthenticatedModels')}
-                </option>
-              )}
-            </select>
+              <span>
+                <span className="mobile-eyebrow">{t('index.runtime')}</span>
+                <strong>{runtimeSummary}</strong>
+              </span>
+              <span>
+                <small>{host.instanceName}</small>
+                <small>{thinkingLevel}</small>
+                <ChevronDown aria-hidden="true" size={17} />
+              </span>
+            </button>
+            {settingsOpen && (
+              <div id="mobile-task-settings" className="mobile-task-settings">
+                <label htmlFor="mobile-task-model">{t('index.providerAndModel')}</label>
+                <select
+                  id="mobile-task-model"
+                  aria-label={t('index.providerAndModel')}
+                  value={selectedModelKey}
+                  disabled={runtimeLoading || Boolean(runtimeFailure) || creating}
+                  onChange={(event) => {
+                    const selected = models.find(
+                      (model) => `${model.provider}/${model.id}` === event.currentTarget.value,
+                    );
+                    if (!selected) return;
+                    setModelProvider(selected.provider);
+                    setModelId(selected.id);
+                  }}
+                >
+                  {modelOptions.length ? (
+                    modelOptions.map((model) => (
+                      <option
+                        key={`${model.provider}/${model.id}`}
+                        value={`${model.provider}/${model.id}`}
+                      >
+                        {model.provider} · {model.name || model.id}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">
+                      {runtimeLoading ? t('index.loadingMore') : t('index.noAuthenticatedModels')}
+                    </option>
+                  )}
+                </select>
 
-            <label htmlFor="mobile-task-thinking">{t('index.thinking')}</label>
-            <select
-              id="mobile-task-thinking"
-              aria-label={t('index.thinkingLevel')}
-              value={thinkingLevel}
-              disabled={loading || creating}
-              onChange={(event) => setThinkingLevel(event.currentTarget.value as ThinkingLevel)}
-            >
-              {THINKING_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {level}
-                </option>
-              ))}
-            </select>
+                <label htmlFor="mobile-task-thinking">{t('index.thinking')}</label>
+                <select
+                  id="mobile-task-thinking"
+                  aria-label={t('index.thinkingLevel')}
+                  value={thinkingLevel}
+                  disabled={runtimeLoading || Boolean(runtimeFailure) || creating}
+                  onChange={(event) => setThinkingLevel(event.currentTarget.value as ThinkingLevel)}
+                >
+                  {THINKING_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </section>
 
-          <section className="mobile-destination-card" aria-label={t('index.newTaskDestination')}>
-            <p className="mobile-eyebrow">{t('index.readyToCreate')}</p>
-            <dl>
-              <div>
-                <dt>{t('index.host')}</dt>
-                <dd>{host.instanceName}</dd>
-              </div>
-              <div>
-                <dt>{t('index.provider')}</dt>
-                <dd>
-                  {modelProvider || (loading ? t('index.loadingMore') : t('index.unavailable'))}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('index.model')}</dt>
-                <dd>{modelId || (loading ? t('index.loadingMore') : t('index.unavailable'))}</dd>
-              </div>
-              <div>
-                <dt>{t('index.thinking')}</dt>
-                <dd>{thinkingLevel}</dd>
-              </div>
-            </dl>
-          </section>
-
-          {error && (
+          {(formError || runtimeFailure) && (
             <p className="mobile-form-error" role="alert">
-              {error}
+              {formError || runtimeFailure}
             </p>
           )}
         </div>

@@ -71,6 +71,13 @@ func TestExportBundleIsSelfContained(t *testing.T) {
 	}
 }
 
+func TestStaticExportDoesNotRegisterLiveServiceWorker(t *testing.T) {
+	html := RenderExportSessionPage(sessions.Session{SessionSummary: sessions.SessionSummary{ID: "s.jsonl", Name: "Session"}}, "dark")
+	if strings.Contains(html, "navigator.serviceWorker") || strings.Contains(html, "sw.js") {
+		t.Fatal("static export must not register or reference the live service worker")
+	}
+}
+
 func TestStaticExportKeepsInlineSessionRenderer(t *testing.T) {
 	html := RenderExportSessionPage(sessions.Session{SessionSummary: sessions.SessionSummary{ID: "s.jsonl", Name: "Session"}}, "dark")
 	// The export must inline its own self-contained runtime (the IIFE bundle is

@@ -130,6 +130,11 @@ textarea {
   font: inherit;
 }
 
+.mobile-app input,
+.mobile-app textarea {
+  font-size: 16px;
+}
+
 button,
 a,
 summary,
@@ -1290,8 +1295,7 @@ textarea:disabled {
   z-index: 10;
   flex: none;
   min-width: 0;
-  padding: 3px max(8px, env(safe-area-inset-right))
-    calc(max(4px, env(safe-area-inset-bottom)) + var(--mobile-keyboard-inset, 0px))
+  padding: 3px max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom))
     max(8px, env(safe-area-inset-left));
   background: var(--chrome-bg);
   border-top: 1px solid var(--dim-2);
