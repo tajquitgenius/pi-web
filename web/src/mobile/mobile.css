@@ -632,7 +632,6 @@ textarea:disabled {
   font-weight: 700;
 }
 
-.mobile-load-more,
 .mobile-load-older {
   min-height: 44px;
   color: var(--accent);
@@ -640,10 +639,6 @@ textarea:disabled {
   border: 0;
   font-weight: 700;
   cursor: pointer;
-}
-
-.mobile-load-more {
-  margin: 8px 0;
 }
 
 .mobile-connectivity-notice {

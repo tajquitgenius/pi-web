@@ -334,7 +334,7 @@ describe('mobile sessions home', () => {
     expect(screen.getByText('Loading sessions…')).toBeInTheDocument();
   });
 
-  it('keeps activity order stable while showing running badges and bounding the first render', async () => {
+  it('keeps activity order stable while showing running badges in one scrollable list', async () => {
     const sessions = Array.from({ length: 35 }, (_, index) => sessionSummary(index));
     const subscribe = vi.fn((topic: string, handlers: SSESubscriptionHandlers) => {
       if (topic === '__all__') {
@@ -352,14 +352,13 @@ describe('mobile sessions home', () => {
 
     render(<MobileApp client={client} path="/" search="" />);
 
-    await waitFor(() => expect(document.querySelectorAll('.mobile-session-row')).toHaveLength(30));
+    await waitFor(() => expect(document.querySelectorAll('.mobile-session-row')).toHaveLength(35));
     const rows = document.querySelectorAll('.mobile-session-row');
     expect(rows[0]).toHaveTextContent('Session 34');
     expect(rows[0]).toHaveTextContent('running');
     expect(client.listSessions).toHaveBeenCalledWith({ limit: 120, offset: 0 });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
-    expect(document.querySelectorAll('.mobile-session-row')).toHaveLength(35);
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
   });
 
   it('switches from project cards back to the filtered thread list', async () => {

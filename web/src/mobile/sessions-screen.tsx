@@ -22,7 +22,6 @@ import { MobileConnectivityNotice, type MobileConnectionState } from './connecti
 import { useMobileDialog } from './dialog';
 import { t } from '../shared/i18n.js';
 
-const INITIAL_ROW_LIMIT = 30;
 const SESSION_CACHE_LIMIT = 120;
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
@@ -480,7 +479,6 @@ export function SessionsScreen({
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState('');
   const [project, setProject] = useState('');
-  const [visibleLimit, setVisibleLimit] = useState(INITIAL_ROW_LIMIT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [connection, setConnection] = useState<MobileConnectionState>('connecting');
@@ -546,8 +544,6 @@ export function SessionsScreen({
     if (newTaskRequest > 0) setShowNewTask(true);
   }, [newTaskRequest]);
 
-  useEffect(() => setVisibleLimit(INITIAL_ROW_LIMIT), [project, query]);
-
   useEffect(() => {
     const listProjects = getMobileCapability(client, 'listProjects');
     if (!listProjects) return;
@@ -579,7 +575,7 @@ export function SessionsScreen({
         }),
     [project, query, sessions],
   );
-  const visibleSessions = orderedSessions.slice(0, visibleLimit);
+  const visibleSessions = orderedSessions;
   const projects = useMemo(() => {
     const grouped = new Map<string, SessionSummary[]>();
     for (const session of sessions) {
@@ -766,15 +762,6 @@ export function SessionsScreen({
               );
             })}
           </div>
-          {visibleLimit < orderedSessions.length && (
-            <button
-              type="button"
-              className="mobile-load-more"
-              onClick={() => setVisibleLimit((current) => current + INITIAL_ROW_LIMIT)}
-            >
-              {t('index.loadMore')}
-            </button>
-          )}
         </section>
       )}
 
@@ -792,6 +779,5 @@ export function SessionsScreen({
 }
 
 export const mobileSessionsTestHooks = {
-  initialRowLimit: INITIAL_ROW_LIMIT,
   sessionCacheLimit: SESSION_CACHE_LIMIT,
 };
