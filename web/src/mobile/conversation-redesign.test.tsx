@@ -523,6 +523,32 @@ describe('mobile conversation redesign', () => {
     await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'true'));
   });
 
+  it('accepts a small standalone resize when no keyboard cycle preceded it', async () => {
+    const visualViewport = new EventTarget() as VisualViewport;
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 800 },
+      offsetTop: { configurable: true, value: 0 },
+    });
+    vi.stubGlobal('visualViewport', visualViewport);
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }));
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 800,
+      writable: true,
+    });
+
+    renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+    const screenRoot = screen.getByRole('main');
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 741 });
+    Object.defineProperty(visualViewport, 'height', { configurable: true, value: 741 });
+    act(() => window.dispatchEvent(new Event('resize')));
+
+    expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false');
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('741px');
+  });
+
   it('detects the iOS keyboard when both layout and visual viewports shrink', async () => {
     const visualViewport = new EventTarget() as VisualViewport;
     Object.defineProperties(visualViewport, {
@@ -567,6 +593,50 @@ describe('mobile conversation redesign', () => {
     Object.defineProperty(visualViewport, 'height', { configurable: true, value: 800 });
     act(() => visualViewport.dispatchEvent(new Event('resize')));
     await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false'));
+  });
+
+  it('keeps the full-height composer anchor through the iOS dismissal shrink', async () => {
+    const visualViewport = new EventTarget() as VisualViewport;
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 800 },
+      offsetTop: { configurable: true, value: 0 },
+    });
+    vi.stubGlobal('visualViewport', visualViewport);
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }));
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 800,
+      writable: true,
+    });
+
+    renderConversation(makeClient());
+    const message = await screen.findByRole('textbox', { name: 'Message' });
+    const screenRoot = screen.getByRole('main');
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('800px');
+    message.focus();
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    Object.defineProperty(visualViewport, 'height', { configurable: true, value: 400 });
+    act(() => visualViewport.dispatchEvent(new Event('resize')));
+    await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'true'));
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('400px');
+
+    message.blur();
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 741 });
+    Object.defineProperty(visualViewport, 'height', { configurable: true, value: 741 });
+    act(() => visualViewport.dispatchEvent(new Event('resize')));
+
+    await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false'));
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('800px');
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-top')).toBe('0px');
+
+    message.focus();
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    Object.defineProperty(visualViewport, 'height', { configurable: true, value: 400 });
+    act(() => visualViewport.dispatchEvent(new Event('resize')));
+
+    await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'true'));
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('459px');
   });
 
   it('shows a disabled reason once and leaves the composer placeholder empty', async () => {

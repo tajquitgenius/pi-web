@@ -650,6 +650,8 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const previewRef = useRef('');
   const previewBaselineRef = useRef<Set<string> | null>(null);
   const keyboardViewportBaselineRef = useRef(0);
+  const keyboardViewportDeficitRef = useRef(0);
+  const keyboardWasOpenRef = useRef(false);
   const refreshGenerationRef = useRef(0);
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [draft, setDraft] = useState('');
@@ -892,22 +894,49 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     const viewport = window.visualViewport;
     if (!root || !viewport) return;
     let orientationResetTimer: number | undefined;
+    const standalone =
+      window.matchMedia?.('(display-mode: standalone)').matches === true ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
     const update = () => {
       const visibleBottom = viewport.height + viewport.offsetTop;
       const currentViewportHeight = Math.max(window.innerHeight, visibleBottom);
       const composerFocused = document.activeElement === textareaRef.current;
-      if (!composerFocused || keyboardViewportBaselineRef.current === 0) {
+      if (keyboardViewportBaselineRef.current === 0) {
         keyboardViewportBaselineRef.current = currentViewportHeight;
-      } else {
-        keyboardViewportBaselineRef.current = Math.max(
-          keyboardViewportBaselineRef.current,
-          currentViewportHeight,
-        );
       }
-      const keyboardOpen =
-        composerFocused && keyboardViewportBaselineRef.current - visibleBottom > 120;
-      root.style.setProperty('--mobile-viewport-height', `${viewport.height}px`);
-      root.style.setProperty('--mobile-viewport-top', `${viewport.offsetTop}px`);
+      let baseline = keyboardViewportBaselineRef.current;
+      const keyboardOpen = composerFocused && baseline - visibleBottom > 120;
+      if (keyboardOpen) {
+        keyboardWasOpenRef.current = true;
+      } else {
+        const closedDeficit = baseline - currentViewportHeight;
+        if (currentViewportHeight >= baseline) {
+          keyboardViewportBaselineRef.current = currentViewportHeight;
+          keyboardViewportDeficitRef.current = 0;
+          keyboardWasOpenRef.current = false;
+        } else if (
+          standalone &&
+          keyboardWasOpenRef.current &&
+          closedDeficit > 0 &&
+          closedDeficit <= 120
+        ) {
+          keyboardViewportDeficitRef.current = closedDeficit;
+          keyboardWasOpenRef.current = false;
+        } else if (!composerFocused && !keyboardWasOpenRef.current) {
+          keyboardViewportBaselineRef.current = currentViewportHeight;
+          keyboardViewportDeficitRef.current = 0;
+        }
+        baseline = keyboardViewportBaselineRef.current;
+      }
+      const stickyDeficit = standalone ? keyboardViewportDeficitRef.current : 0;
+      const viewportHeight = standalone
+        ? keyboardOpen
+          ? viewport.height + stickyDeficit
+          : baseline
+        : viewport.height;
+      const viewportTop = standalone && !keyboardOpen ? 0 : viewport.offsetTop;
+      root.style.setProperty('--mobile-viewport-height', `${viewportHeight}px`);
+      root.style.setProperty('--mobile-viewport-top', `${viewportTop}px`);
       root.dataset.keyboardOpen = keyboardOpen ? 'true' : 'false';
       if (followingLatestRef.current) {
         requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
@@ -917,6 +946,8 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       window.clearTimeout(orientationResetTimer);
       orientationResetTimer = window.setTimeout(() => {
         keyboardViewportBaselineRef.current = 0;
+        keyboardViewportDeficitRef.current = 0;
+        keyboardWasOpenRef.current = false;
         update();
       }, 250);
     };

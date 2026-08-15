@@ -94,6 +94,106 @@ async function focusAndType(
 }
 
 test.describe("iPhone mobile composer", () => {
+  test("compensates a sticky standalone viewport after keyboard dismissal", async ({
+    page,
+    sessionsDir,
+  }, testInfo) => {
+    skipNonMobileWebKit(testInfo);
+    testInfo.annotations.push({
+      type: "acceptance-gap",
+      description:
+        "Synthetic VisualViewport events lock down the measured iOS failure mode but do not replace physical installed-PWA keyboard acceptance.",
+    });
+    await page.setViewportSize({ width: 402, height: 874 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "standalone", {
+        configurable: true,
+        value: true,
+      });
+      const state: { height?: number } = {};
+      const viewport = new EventTarget() as VisualViewport;
+      Object.defineProperties(viewport, {
+        height: { configurable: true, get: () => state.height ?? window.innerHeight },
+        offsetTop: { configurable: true, get: () => 0 },
+      });
+      Object.defineProperty(window, "visualViewport", {
+        configurable: true,
+        value: viewport,
+      });
+      (
+        window as typeof window & { __setComposerViewport?: (height: number) => void }
+      ).__setComposerViewport = (height: number) => {
+        state.height = height;
+        Object.defineProperty(window, "innerHeight", {
+          configurable: true,
+          value: height,
+        });
+        viewport.dispatchEvent(new Event("resize"));
+      };
+    });
+    await openTestConversation(page, sessionsDir, testInfo, "sticky-viewport");
+
+    const message = page.getByRole("textbox", { name: "Message", exact: true });
+    await message.focus();
+    await page.evaluate(() =>
+      (
+        window as typeof window & { __setComposerViewport: (height: number) => void }
+      ).__setComposerViewport(400),
+    );
+    await expect(page.locator(".mobile-session-screen")).toHaveAttribute(
+      "data-keyboard-open",
+      "true",
+    );
+
+    await message.blur();
+    await page.evaluate(() =>
+      (
+        window as typeof window & { __setComposerViewport: (height: number) => void }
+      ).__setComposerViewport(815),
+    );
+    await expect(page.locator(".mobile-session-screen")).toHaveAttribute(
+      "data-keyboard-open",
+      "false",
+    );
+    const closed = await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>(".mobile-session-screen")!;
+      const composer = document.querySelector<HTMLElement>(".mobile-composer")!;
+      const chrome = document.querySelector<HTMLElement>(".mobile-composer-chrome")!;
+      return {
+        rootBottom: root.getBoundingClientRect().bottom,
+        rootHeight: root.style.getPropertyValue("--mobile-viewport-height"),
+        standalone: Boolean(
+          (navigator as Navigator & { standalone?: boolean }).standalone,
+        ),
+        chromeGap: root.getBoundingClientRect().bottom - chrome.getBoundingClientRect().bottom,
+        expectedGap: Number.parseFloat(getComputedStyle(composer).paddingBottom),
+      };
+    });
+    expect(closed.rootBottom, JSON.stringify(closed)).toBeCloseTo(874, 0);
+    expect(closed.chromeGap).toBeCloseTo(closed.expectedGap, 0);
+
+    await message.focus();
+    await page.evaluate(() =>
+      (
+        window as typeof window & { __setComposerViewport: (height: number) => void }
+      ).__setComposerViewport(400),
+    );
+    await expect(page.locator(".mobile-session-screen")).toHaveAttribute(
+      "data-keyboard-open",
+      "true",
+    );
+    const reopened = await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>(".mobile-session-screen")!;
+      const chrome = document.querySelector<HTMLElement>(".mobile-composer-chrome")!;
+      return {
+        rootBottom: root.getBoundingClientRect().bottom,
+        chromeGap: root.getBoundingClientRect().bottom - chrome.getBoundingClientRect().bottom,
+      };
+    });
+    expect(reopened.rootBottom).toBeCloseTo(459, 0);
+    expect(reopened.chromeGap).toBeCloseTo(4, 0);
+  });
+
   test("keeps focus, attachments, Send, Stop, and Tools usable at 320x568", async ({
     page,
     sessionsDir,
