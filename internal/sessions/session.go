@@ -76,20 +76,29 @@ type Session struct {
 
 func SortSummariesByActivity(s []SessionSummary) {
 	type sortableSummary struct {
-		summary  SessionSummary
-		activity time.Time
-		valid    bool
-		index    int
+		summary     SessionSummary
+		activity    time.Time
+		valid       bool
+		invalidRank int
+		index       int
 	}
 
 	items := make([]sortableSummary, len(s))
 	for i := range s {
 		activity, err := time.Parse(time.RFC3339, s[i].LastActivity)
+		invalidRank := 0
+		if err != nil {
+			invalidRank = 1
+			if s[i].LastActivity == "" {
+				invalidRank = 2
+			}
+		}
 		items[i] = sortableSummary{
-			summary:  s[i],
-			activity: activity,
-			valid:    err == nil,
-			index:    i,
+			summary:     s[i],
+			activity:    activity,
+			valid:       err == nil,
+			invalidRank: invalidRank,
+			index:       i,
 		}
 	}
 
@@ -97,8 +106,14 @@ func SortSummariesByActivity(s []SessionSummary) {
 		if items[i].valid != items[j].valid {
 			return items[i].valid
 		}
+		if items[i].invalidRank != items[j].invalidRank {
+			return items[i].invalidRank < items[j].invalidRank
+		}
 		if !items[i].activity.Equal(items[j].activity) {
 			return items[i].activity.After(items[j].activity)
+		}
+		if items[i].summary.ID != items[j].summary.ID {
+			return items[i].summary.ID < items[j].summary.ID
 		}
 		return items[i].index < items[j].index
 	})

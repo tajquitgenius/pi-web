@@ -133,9 +133,11 @@ test.describe("iPhone mobile composer", () => {
     await expect(
       tools.getByRole("button", { name: "Project inspector", exact: true }),
     ).toBeVisible();
+    await expect(tools.getByRole("button", { name: /Model/ })).toBeVisible();
+    await expect(tools.getByRole("button", { name: /Thinking/ })).toBeVisible();
     await expect(
       tools.getByRole("button", { name: "Thread actions", exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await tools
       .getByRole("button", { name: "Attach images", exact: true })
       .click();
@@ -245,10 +247,7 @@ test.describe("iPhone mobile composer", () => {
       .getByRole("button", { name: "Close inspector", exact: true })
       .click();
 
-    await page.getByRole("button", { name: "Tools", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Thread actions", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Thread actions", exact: true }).click();
     const actions = page
       .getByRole("dialog")
       .filter({ hasText: "Thread actions" });

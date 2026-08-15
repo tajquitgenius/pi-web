@@ -1,8 +1,6 @@
 /* Conversation redesign overrides. Imported after mobile.css by the mobile entry. */
 
 .mobile-conversation-header {
-  align-items: stretch;
-  flex-direction: column;
   min-width: 0;
   padding-right: max(8px, env(safe-area-inset-right));
   padding-left: max(8px, env(safe-area-inset-left));
@@ -22,8 +20,16 @@
 }
 
 .mobile-conversation-title {
-  padding-right: 8px;
-  padding-left: 8px;
+  min-width: 0;
+  flex: 1;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.mobile-conversation-title h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-runtime-picker {
@@ -79,10 +85,32 @@
   width: min(100%, 720px);
 }
 
+.mobile-jump-latest {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(var(--mobile-composer-height, 76px) + 10px);
+  left: 50%;
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--dim);
+  border-radius: 50%;
+  box-shadow: 0 5px 18px var(--shadow-color);
+  transform: translateX(-50%);
+}
+
 .mobile-composer {
   padding-right: max(8px, env(safe-area-inset-right));
   padding-bottom: max(8px, env(safe-area-inset-bottom));
   padding-left: max(8px, env(safe-area-inset-left));
+}
+
+.mobile-session-screen[data-keyboard-open='true'] .mobile-composer {
+  padding-bottom: 4px;
 }
 
 .mobile-composer-error,
@@ -97,51 +125,53 @@
 
 .mobile-composer-chrome,
 .mobile-composer.is-expanded .mobile-composer-chrome {
-  display: flex;
+  display: grid;
   width: min(100%, 720px);
   height: auto;
   max-height: none;
-  min-height: 0;
+  min-height: 58px;
   margin: 0 auto;
-  flex-direction: column;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: end;
   gap: 4px;
   overflow: visible;
-  padding: 7px;
+  padding: 6px;
+  border-radius: 28px;
 }
 
 .mobile-composer textarea,
 .mobile-composer.is-expanded textarea {
+  grid-column: 2;
+  grid-row: 1;
   width: 100%;
   height: auto;
   min-height: 44px;
   max-height: 180px;
-  flex: none;
-  padding: 9px 8px;
+  padding: 10px 6px;
   overflow-y: auto;
   font-size: 16px;
   line-height: 1.35;
 }
 
 .mobile-composer-controls {
-  width: 100%;
-  min-height: 44px;
-  gap: 12px;
+  display: contents;
 }
 
 .mobile-tools-trigger {
   display: inline-flex;
-  min-width: 0;
-  min-height: 44px;
+  grid-column: 1;
+  grid-row: 1;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
   align-items: center;
-  gap: 7px;
-  padding: 0 12px;
+  justify-content: center;
+  padding: 0;
   color: var(--text-soft);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  border: 0;
+  border-radius: 50%;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .mobile-tools-trigger span {
@@ -152,6 +182,12 @@
 
 .mobile-tools-trigger > svg {
   flex: none;
+}
+
+.mobile-send-button,
+.mobile-stop-button {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 .mobile-stop-button {
@@ -215,10 +251,10 @@
 .mobile-tools-list button {
   display: flex;
   width: 100%;
-  min-height: 52px;
+  min-height: 56px;
   align-items: center;
   gap: 12px;
-  padding: 0 12px;
+  padding: 7px 12px;
   color: var(--text);
   text-align: left;
   background: var(--surface-2);
@@ -227,6 +263,45 @@
   cursor: pointer;
   font-size: 13px;
   font-weight: 700;
+}
+
+.mobile-tools-list button > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mobile-tools-list button strong,
+.mobile-tools-list button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-tools-list button small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.mobile-markdown,
+.mobile-markdown table,
+.mobile-markdown blockquote,
+.mobile-tool-details,
+.mobile-tool-details pre {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.mobile-markdown table {
+  display: block;
+  overflow-x: auto;
+}
+
+.mobile-markdown li,
+.mobile-markdown td,
+.mobile-markdown th,
+.mobile-tool-details {
+  overflow-wrap: anywhere;
 }
 
 .mobile-tools-list button > svg {

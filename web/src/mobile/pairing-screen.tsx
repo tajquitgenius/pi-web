@@ -1,6 +1,7 @@
-import { KeyRound, Link, LoaderCircle, ShieldCheck, Smartphone } from 'lucide-react';
+import { KeyRound, Link, LoaderCircle, Menu, ShieldCheck, Smartphone } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { PiWebClient } from '../live-shared';
+import { t } from '../shared/i18n.js';
 import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
 
 const PAIRING_CODE = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/;
@@ -8,13 +9,14 @@ const PAIRING_CODE = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/;
 interface PairingScreenProps {
   client: PiWebClient;
   topLevelNavigate: (url: string) => void;
+  onOpenNavigation?: () => void;
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : 'Could not pair this device.';
 }
 
-export function PairingScreen({ client, topLevelNavigate }: PairingScreenProps) {
+export function PairingScreen({ client, topLevelNavigate, onOpenNavigation }: PairingScreenProps) {
   const [code, setCode] = useState('');
   const [label, setLabel] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -58,6 +60,17 @@ export function PairingScreen({ client, topLevelNavigate }: PairingScreenProps) 
   return (
     <main className="mobile-screen mobile-pairing-screen" data-mobile-route="pairing">
       <div className="mobile-pairing-scroll">
+        <header className="mobile-pairing-navigation">
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label={t('index.openNavigation')}
+            aria-haspopup="dialog"
+            onClick={() => onOpenNavigation?.()}
+          >
+            <Menu aria-hidden="true" size={21} />
+          </button>
+        </header>
         <MobileConnectivityNotice
           state={connection}
           onRetry={() => {

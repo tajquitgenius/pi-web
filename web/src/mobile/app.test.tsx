@@ -334,12 +334,12 @@ describe('mobile sessions home', () => {
     expect(screen.getByText('Loading sessions…')).toBeInTheDocument();
   });
 
-  it('shows running sessions first and bounds the first render to 30 rows', async () => {
+  it('keeps activity order stable while showing running badges and bounding the first render', async () => {
     const sessions = Array.from({ length: 35 }, (_, index) => sessionSummary(index));
     const subscribe = vi.fn((topic: string, handlers: SSESubscriptionHandlers) => {
       if (topic === '__all__') {
         handlers.onEvent('status-snapshot', {
-          running: ['session-0.jsonl'],
+          running: ['session-34.jsonl'],
           statuses: {},
         });
       }
@@ -354,7 +354,7 @@ describe('mobile sessions home', () => {
 
     await waitFor(() => expect(document.querySelectorAll('.mobile-session-row')).toHaveLength(30));
     const rows = document.querySelectorAll('.mobile-session-row');
-    expect(rows[0]).toHaveTextContent('Session 0');
+    expect(rows[0]).toHaveTextContent('Session 34');
     expect(rows[0]).toHaveTextContent('running');
     expect(client.listSessions).toHaveBeenCalledWith({ limit: 120, offset: 0 });
 
@@ -426,7 +426,7 @@ describe('mobile sessions home', () => {
     expect(within(taskScreen).queryByText('openai-codex-secondary')).not.toBeInTheDocument();
   });
 
-  it('loads and submits explicit defaults from the full-screen New Task flow', async () => {
+  it('shows resolved defaults and lets the server apply them during New Task creation', async () => {
     const createSession = vi.fn().mockResolvedValue({ ok: true, id: 'created.jsonl' });
     const client = makeClient({ createSession });
     const user = userEvent.setup();
@@ -447,14 +447,7 @@ describe('mobile sessions home', () => {
     await user.type(within(taskScreen).getByLabelText('Destination folder'), '/work/new-project');
     await user.click(within(taskScreen).getByRole('button', { name: 'Create task' }));
 
-    await waitFor(() =>
-      expect(createSession).toHaveBeenCalledWith({
-        path: '/work/new-project',
-        modelProvider: 'openai-codex-secondary',
-        modelId: 'gpt-5.6-sol',
-        thinkingLevel: 'high',
-      }),
-    );
+    await waitFor(() => expect(createSession).toHaveBeenCalledWith({ path: '/work/new-project' }));
   });
 });
 
@@ -887,7 +880,7 @@ describe('mobile conversation', () => {
     expect(screen.getByText('secret tool output')).toBeInTheDocument();
   });
 
-  it('uses a natural-height composer with one Tools entry and a separate runtime picker', async () => {
+  it('uses a compact composer with runtime controls inside its one Tools entry', async () => {
     const user = userEvent.setup();
     render(<MobileApp client={makeClient()} path="/session" search="?id=one.jsonl" />);
     await screen.findByRole('textbox', { name: 'Message' });
@@ -899,10 +892,12 @@ describe('mobile conversation', () => {
     expect(screen.getAllByRole('button', { name: 'Tools' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Choose model and thinking level' }),
-    ).toBeInTheDocument();
+      screen.queryByRole('button', { name: 'Choose model and thinking level' }),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(screen.getByRole('button', { name: /Model.*gpt-5\.6-sol/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Thinking.*high/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Attach images' })).toBeInTheDocument();
   });
 });
@@ -961,6 +956,24 @@ describe('mobile routing and labels', () => {
     await waitFor(() =>
       expect(view.container.querySelector(`[data-mobile-route="${route}"]`)).toBeInTheDocument(),
     );
+  });
+
+  it('loads Recents when the drawer opens from a direct conversation route', async () => {
+    const recent = sessionSummary(8);
+    const client = makeClient({
+      listSessions: vi.fn().mockResolvedValue({ sessions: [recent], total: 1 }),
+    });
+    render(<MobileApp client={client} path="/session" search="?id=one.jsonl" />);
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    const drawer = screen.getByRole('dialog', { name: 'Navigation' });
+    expect(await within(drawer).findByText('Session 8')).toBeVisible();
+    expect(client.listSessions).toHaveBeenCalledWith({ limit: 12, offset: 0 });
+
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    await waitFor(() => expect(client.listSessions).toHaveBeenCalledTimes(2));
   });
 
   it('keeps settings and independent peer hosts in the accessible navigation sheet', async () => {

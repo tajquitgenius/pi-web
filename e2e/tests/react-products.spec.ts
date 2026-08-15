@@ -121,9 +121,11 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
   expect(sessionID).toBeTruthy();
 
   if (!desktop) {
+    await page.getByRole("button", { name: "Tools" }).click();
     await expect(
-      page.getByRole("button", { name: "Choose model and thinking level" }),
-    ).toContainText("openai-codex-secondary");
+      page.getByRole("dialog", { name: "Tools" }).getByRole("button", { name: /Model/ }),
+    ).toContainText("gpt-5.6-sol");
+    await page.keyboard.press("Escape");
     await page.getByRole("textbox", { name: "Message", exact: true }).fill(prompt);
     await page.getByRole("button", { name: "Send" }).click();
   }
@@ -134,6 +136,18 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
   await expect(conversation).toContainText(`Stub reply: ${prompt}`, {
     timeout: 20_000,
   });
+  if (!desktop) {
+    const finalAssistant = page.locator('[data-message-role="assistant"]', {
+      hasText: `Stub reply: ${prompt}`,
+    });
+    await expect(finalAssistant).toHaveCount(1);
+    await expect(page.locator('.mobile-message.is-preview')).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.locator('[data-message-role="assistant"]', { hasText: `Stub reply: ${prompt}` }),
+    ).toHaveCount(1);
+    await expect(page.locator('.mobile-message.is-preview')).toHaveCount(0);
+  }
 
   const sessionPath = findSessionFile(sessionsDir, sessionID!);
   const jsonl = readFileSync(sessionPath, "utf8");
@@ -142,6 +156,7 @@ test("dedicated React product accepts a full stub-Pi task flow", async (
   expect(jsonl).toContain('"modelId":"gpt-5.6-sol"');
   expect(jsonl).toContain('"thinkingLevel":"high"');
   expect(jsonl).toContain('"implicit":true');
+  expect(jsonl).toContain(`Stub reply: ${prompt}`);
 
   const slowPrompt = `cancel-${expectedSurface} [[slow:2000]]`;
   await page.getByRole("textbox", { name: "Message", exact: true }).fill(slowPrompt);

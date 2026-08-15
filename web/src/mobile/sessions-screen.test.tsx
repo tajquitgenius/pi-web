@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PiWebClient } from '../live-shared';
@@ -63,6 +63,94 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+describe('mobile home stability', () => {
+  it('ignores a stale session list response after an SSE refresh', async () => {
+    const first = deferred<{ sessions: Array<Record<string, unknown>>; total: number }>();
+    const second = deferred<{ sessions: Array<Record<string, unknown>>; total: number }>();
+    let onEvent: ((name: string, payload: unknown) => void) | undefined;
+    const client = makeClient({
+      listSessions: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise),
+      subscribe: vi.fn((_topic, handlers) => {
+        onEvent = handlers.onEvent as (name: string, payload: unknown) => void;
+        return { close: vi.fn() };
+      }),
+    });
+    renderHome(client);
+
+    act(() => onEvent?.('reload', undefined));
+    second.resolve({
+      sessions: [
+        {
+          id: 'new.jsonl',
+          name: 'Newest session',
+          project: '/work/new',
+          lastActivity: '2026-08-15T12:00:01Z',
+          model: 'gpt-5.6-sol',
+          modelProvider: 'openai-codex-secondary',
+        },
+      ],
+      total: 1,
+    });
+    expect(await screen.findByText('Newest session')).toBeVisible();
+
+    first.resolve({
+      sessions: [
+        {
+          id: 'old.jsonl',
+          name: 'Stale session',
+          project: '/work/old',
+          lastActivity: '2026-08-15T12:00:00Z',
+          model: 'gpt-5.6-sol',
+          modelProvider: 'openai-codex-secondary',
+        },
+      ],
+      total: 1,
+    });
+    await waitFor(() => expect(screen.getByText('Newest session')).toBeVisible());
+    expect(screen.queryByText('Stale session')).not.toBeInTheDocument();
+  });
+
+  it('changes running badges without reordering recents', async () => {
+    let onEvent: ((name: string, payload: unknown) => void) | undefined;
+    const client = makeClient({
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'new.jsonl',
+            name: 'Newest session',
+            project: '/work/new',
+            lastActivity: '2026-08-15T12:00:01Z',
+          },
+          {
+            id: 'old.jsonl',
+            name: 'Older session',
+            project: '/work/old',
+            lastActivity: '2026-08-15T12:00:00Z',
+          },
+        ],
+        total: 2,
+      }),
+      subscribe: vi.fn((_topic, handlers) => {
+        onEvent = handlers.onEvent as (name: string, payload: unknown) => void;
+        return { close: vi.fn() };
+      }),
+    });
+    renderHome(client);
+    await screen.findByText('Newest session');
+    const rowNames = () =>
+      Array.from(document.querySelectorAll('.mobile-session-row strong')).map(
+        (node) => node.textContent,
+      );
+    expect(rowNames()).toEqual(['Newest session', 'Older session']);
+
+    act(() => onEvent?.('status-delta', { id: 'old.jsonl', running: true }));
+    expect(rowNames()).toEqual(['Newest session', 'Older session']);
+    expect(screen.getByText('Older session').closest('.mobile-session-row')).toHaveClass(
+      'is-running',
+    );
+  });
+});
+
 describe('mobile New Task', () => {
   it('preselects the most recent project and makes recent choices tappable', async () => {
     const client = makeClient({
@@ -81,6 +169,7 @@ describe('mobile New Task', () => {
     const pathInput = within(taskScreen).getByLabelText('Destination folder');
 
     await waitFor(() => expect(pathInput).toHaveValue('/work/latest'));
+    expect(client.listProjects).toHaveBeenCalledOnce();
     expect(
       within(taskScreen).getByRole('button', { name: /latest.*\/work\/latest/i }),
     ).toBeInTheDocument();
@@ -139,7 +228,7 @@ describe('mobile New Task', () => {
     expect(within(taskScreen).queryByText('openai-codex-secondary')).not.toBeInTheDocument();
   });
 
-  it('fails closed when the authenticated model list omits the exact default', async () => {
+  it('offers an authenticated alternative when the cached default is unavailable', async () => {
     const client = makeClient({
       listModels: vi.fn().mockResolvedValue({
         models: [
@@ -157,11 +246,16 @@ describe('mobile New Task', () => {
 
     await user.click(screen.getByRole('button', { name: 'New task' }));
     const taskScreen = await screen.findByRole('dialog', { name: 'New task' });
-    expect(await within(taskScreen).findByRole('alert')).toHaveTextContent(
-      'Open Pi on Work Mac and log in to a model provider',
-    );
-    expect(within(taskScreen).getByRole('button', { name: 'Create task' })).toBeDisabled();
-    expect(within(taskScreen).queryByText('other-provider')).not.toBeInTheDocument();
+    expect(client.listModels).not.toHaveBeenCalled();
+    const runtimeSummary = await within(taskScreen).findByRole('button', {
+      name: /Runtime.*openai-codex-secondary.*gpt-5\.6-sol/i,
+    });
+    await user.click(runtimeSummary);
+    const modelSelect = await within(taskScreen).findByLabelText('Provider and model');
+    await waitFor(() => expect(modelSelect).toHaveValue('other-provider/other-model'));
+    expect(within(taskScreen).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(taskScreen).getByRole('button', { name: 'Create task' })).toBeEnabled();
+    expect(within(taskScreen).getByText(/other-provider.*Other model/i)).toBeInTheDocument();
   });
 
   it('keeps runtime compact behind an optional settings disclosure', async () => {
@@ -171,7 +265,7 @@ describe('mobile New Task', () => {
 
     await user.click(screen.getByRole('button', { name: 'New task' }));
     const taskScreen = await screen.findByRole('dialog', { name: 'New task' });
-    await waitFor(() => expect(client.listModels).toHaveBeenCalledOnce());
+    expect(client.listModels).not.toHaveBeenCalled();
 
     expect(within(taskScreen).queryByText('Ready to create')).not.toBeInTheDocument();
     expect(within(taskScreen).queryByLabelText('Provider and model')).not.toBeInTheDocument();
@@ -181,6 +275,7 @@ describe('mobile New Task', () => {
     expect(runtimeSummary).toHaveAttribute('aria-expanded', 'false');
 
     await user.click(runtimeSummary);
+    await waitFor(() => expect(client.listModels).toHaveBeenCalledOnce());
     expect(within(taskScreen).getByLabelText('Provider and model')).toBeInTheDocument();
     expect(within(taskScreen).getByLabelText('Thinking level')).toHaveValue('high');
     await user.click(runtimeSummary);
@@ -222,11 +317,6 @@ describe('mobile New Task', () => {
     expect(pathInput).toHaveValue('/work/retry');
     expect(pathInput).not.toBeDisabled();
     expect(within(taskScreen).getByRole('button', { name: 'Create task' })).not.toBeDisabled();
-    expect(createSession).toHaveBeenCalledWith({
-      path: '/work/retry',
-      modelProvider: 'openai-codex-secondary',
-      modelId: 'gpt-5.6-sol',
-      thinkingLevel: 'high',
-    });
+    expect(createSession).toHaveBeenCalledWith({ path: '/work/retry' });
   });
 });

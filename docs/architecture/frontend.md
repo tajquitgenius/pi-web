@@ -72,7 +72,7 @@ The Go shell owns values that must exist before React starts:
 
 `web/src/desktop/` owns the wide-screen product: its host rail, project and session sidebar, conversation, details pane, persistent composer, and new-task flow. The T3-derived layer is a presentation and interaction adaptation, not a port of T3's runtime.
 
-`web/src/mobile/` owns a separate browser-mobile product for session lists, conversations, settings, and public-device pairing. It has its own routes, components, and CSS. It is not a responsive wrapper around desktop and must not import desktop components or styles.
+`web/src/mobile/` owns a separate browser-mobile product for session lists, conversations, settings, and public-device pairing. It has its own routes, components, and CSS. It is not a responsive wrapper around desktop and must not import desktop components or styles. One app-owned navigation drawer links New task, Threads, Projects, Settings, stable Recents, and configured peer hosts; peer controls are absent when no peers are configured. Conversation runtime controls live in Tools, while thread actions remain in the compact header. The composer follows `VisualViewport` geometry and does not use a second keyboard-inset mechanism.
 
 Both products are Pi-only at runtime. They use Pi session IDs and project paths, Pi model and thinking-level records, Pi JSONL entries, and one Pi RPC worker per session. Peer hosts remain independent links: a product can navigate to another pi-web host, but it never merges that host's sessions, workers, or credentials into the current product.
 
@@ -110,8 +110,8 @@ The React layer carries over user goals only when Pi can complete the action:
 | User goal | Pi translation | Ownership boundary |
 |---|---|---|
 | Fixed workspace shell and project/thread navigation | Host rail, absolute project paths, Pi session IDs, local sidebar grouping and resizing | Desktop product; mobile has its own navigation |
-| Draft-first new task | Create a Pi session with Pi defaults/model/thinking, then send the first prompt | `PiWebClient.createSession` and `sendChat` |
-| Conversation timeline and composer | Render Pi JSONL entries, markdown, thinking, tool calls/results, user-attached images, and stream previews | `getSession`, `sendChat`, cancel, and session SSE |
+| Draft-first new task | Resolve authoritative Pi defaults, create without waiting for the model catalog, and load models only if runtime controls open | `PiWebClient.getSessionDefaults`, `createSession`, and `sendChat` |
+| Conversation timeline and composer | Render persisted and streamed text through one Markdown pipeline; keep thinking and tool calls/results in stable transcript positions; follow only while pinned | `getSession`, `sendChat`, cancel, and session SSE |
 | Runtime controls | Pi model catalog, model selection, thinking levels, and explicit cancellation; `sendChat` starts a prompt while idle and is the Pi steer operation while a worker is running, where a surface exposes that action | Pi worker methods only |
 | Running-session updates | Global and per-session Pi SSE topics | `PiWebClient.subscribe` |
 | Host connections | Existing device pairing and top-level links to separately secured pi-web hosts | Pi-web auth and host context |

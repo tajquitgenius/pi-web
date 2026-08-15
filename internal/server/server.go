@@ -555,10 +555,14 @@ func (s *Server) BroadcastChatPreview(sessionID string, preview rpc.StreamPrevie
 	if err != nil {
 		return
 	}
-	s.broadcast(sessionID, msg)
+	s.broadcastWithPriority(sessionID, msg, preview.Done)
 }
 
 func (s *Server) broadcast(sessID, msg string) {
+	s.broadcastWithPriority(sessID, msg, false)
+}
+
+func (s *Server) broadcastWithPriority(sessID, msg string, priority bool) {
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 	key := eventKey(msg)
@@ -571,14 +575,30 @@ func (s *Server) broadcast(sessID, msg string) {
 			c.mu.Unlock()
 			continue
 		}
+		enqueued := false
 		select {
 		case c.ch <- msg:
-			if key != "" {
-				c.queued[key] = true
-			}
+			enqueued = true
 		default:
-			// dropped — only reachable for keyless events (e.g. status-delta);
-			// snapshot-on-reconnect recovers state for those.
+			if priority {
+				// A completed preview is authoritative until the session reload
+				// catches up. Make room by discarding one older queued update.
+				select {
+				case displaced := <-c.ch:
+					if displacedKey := eventKey(displaced); displacedKey != "" {
+						delete(c.queued, displacedKey)
+					}
+				default:
+				}
+				select {
+				case c.ch <- msg:
+					enqueued = true
+				default:
+				}
+			}
+		}
+		if enqueued && key != "" {
+			c.queued[key] = true
 		}
 		c.mu.Unlock()
 	}

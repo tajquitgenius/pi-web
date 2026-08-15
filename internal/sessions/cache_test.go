@@ -39,6 +39,85 @@ func TestSessionCacheReusesParsedSessions(t *testing.T) {
 	}
 }
 
+func TestSessionCachePreservesEqualActivityOrderWhenOneFileIsReparsed(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"a.jsonl", "b.jsonl", "c.jsonl"} {
+		writeSessionFile(t, root, "--tmp--project--", name)
+	}
+
+	c := NewCache()
+	first, err := c.LoadAll(root)
+	if err != nil {
+		t.Fatalf("first loadAll: %v", err)
+	}
+
+	path := filepath.Join(root, "--tmp--project--", "b.jsonl")
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	second, err := c.LoadAll(root)
+	if err != nil {
+		t.Fatalf("second loadAll: %v", err)
+	}
+	if c.parses != 4 || c.hits != 2 {
+		t.Fatalf("after reparse: parses=%d hits=%d, want 4/2", c.parses, c.hits)
+	}
+	for _, check := range []struct {
+		name      string
+		summaries []SessionSummary
+	}{
+		{name: "first", summaries: first},
+		{name: "second", summaries: second},
+	} {
+		if len(check.summaries) != 3 {
+			t.Fatalf("%s returned %d summaries, want 3", check.name, len(check.summaries))
+		}
+		want := []string{"a.jsonl", "b.jsonl", "c.jsonl"}
+		for i, expected := range want {
+			if got := check.summaries[i].ID; got != expected {
+				t.Fatalf("%s summary %d ID = %q, want %q", check.name, i, got, expected)
+			}
+		}
+	}
+}
+
+func TestSessionCachePreservesInvalidActivityOrderWhenOneFileIsReparsed(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "--tmp--project--")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"type":"session","version":3,"id":"sid","timestamp":"invalid","cwd":"/tmp/project"}` + "\n" +
+		`{"type":"message","id":"aaaaaaaa","parentId":null,"timestamp":"also-invalid","message":{"role":"user","content":"hello"}}` + "\n"
+	for _, name := range []string{"a.jsonl", "b.jsonl", "c.jsonl"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := NewCache()
+	if _, err := c.LoadAll(root); err != nil {
+		t.Fatalf("first loadAll: %v", err)
+	}
+	path := filepath.Join(dir, "b.jsonl")
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	got, err := c.LoadAll(root)
+	if err != nil {
+		t.Fatalf("second loadAll: %v", err)
+	}
+	want := []string{"a.jsonl", "b.jsonl", "c.jsonl"}
+	for i, expected := range want {
+		if got[i].ID != expected {
+			t.Fatalf("summary %d ID = %q, want %q", i, got[i].ID, expected)
+		}
+	}
+}
+
 func TestSessionCacheReparsesOnModTimeChange(t *testing.T) {
 	root := t.TempDir()
 	path := writeSessionFile(t, root, "--tmp--project--", "session.jsonl")

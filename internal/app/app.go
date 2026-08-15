@@ -117,19 +117,7 @@ func Main(version string) {
 		Models: func(ctx context.Context) (json.RawMessage, error) {
 			return defaultModelsCache.get(ctx)
 		},
-		SessionDefaults: func(ctx context.Context) (sessions.InitialSettings, error) {
-			resolveCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-			defaults, err := rpc.ResolveSessionDefaults(resolveCtx)
-			if err != nil {
-				return sessions.InitialSettings{}, err
-			}
-			return sessions.InitialSettings{
-				ModelProvider: defaults.ModelProvider,
-				ModelID:       defaults.ModelID,
-				ThinkingLevel: defaults.ThinkingLevel,
-			}, nil
-		},
+		SessionDefaults:       sessionDefaultsProvider(defaultSessionDefaultsCache),
 		Updater:               versionChecker,
 		RunInstall:            runInstall,
 		RunRestart:            runRestart,
@@ -225,6 +213,7 @@ func Main(version string) {
 	}
 
 	warmModelsCache()
+	warmSessionDefaultsCache()
 
 	httpServer := &http.Server{
 		Addr:              addr,

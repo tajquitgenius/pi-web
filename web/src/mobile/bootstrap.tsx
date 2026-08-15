@@ -5,6 +5,7 @@ import { MobileApp } from './app';
 import './mobile.css';
 import './home-redesign.css';
 import './conversation-redesign.css';
+import './navigation-drawer.css';
 
 const target = document.getElementById('spa-root');
 if (target) {

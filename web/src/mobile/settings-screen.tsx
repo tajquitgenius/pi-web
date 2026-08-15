@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Menu,
   Check,
   ChevronRight,
   ExternalLink,
@@ -10,9 +11,19 @@ import {
   ShieldCheck,
   Smartphone,
   Trash2,
+  X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from 'react';
+import {
+  readSurfaceOverride,
   writeSurfaceOverride,
   type PairedDevice,
   type PairingCode,
@@ -20,10 +31,12 @@ import {
 } from '../live-shared';
 import { t } from '../shared/i18n.js';
 import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
+import { useMobileDialog } from './dialog';
 
 interface SettingsScreenProps {
   client: PiWebClient;
   internalLink: (url: string, children: ReactNode, className?: string) => ReactNode;
+  onOpenNavigation?: () => void;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -67,11 +80,84 @@ function applyTheme(theme: string) {
   }
 }
 
-export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
+function DesktopSurfaceConfirmation({
+  currentPath,
+  onApply,
+  onClose,
+}: {
+  currentPath: string;
+  onApply: () => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useMobileDialog(dialogRef, onClose);
+  return (
+    <div
+      className="mobile-sheet-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
+      <section
+        ref={dialogRef}
+        aria-labelledby="mobile-surface-confirmation-title"
+        aria-modal="true"
+        className="mobile-bottom-sheet mobile-surface-confirmation"
+        role="dialog"
+        tabIndex={-1}
+      >
+        <header>
+          <div>
+            <p className="mobile-eyebrow">Product surface</p>
+            <h2 id="mobile-surface-confirmation-title">
+              {t('settings.surfaceDesktopConfirmTitle')}
+            </h2>
+          </div>
+          <button
+            aria-label={t('common.close')}
+            className="mobile-icon-button"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" size={20} />
+          </button>
+        </header>
+        <p className="mobile-surface-confirmation-copy">
+          {t('settings.surfaceDesktopConfirmHint')}
+        </p>
+        <div className="mobile-surface-confirmation-actions">
+          <a
+            className="mobile-primary-link mobile-wide-button"
+            href={currentPath}
+            onClick={onApply}
+          >
+            {t('settings.surfaceDesktopApply')}
+          </a>
+          <button
+            className="mobile-secondary-button mobile-wide-button"
+            onClick={onClose}
+            type="button"
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function SettingsScreen({
+  client,
+  internalLink: _internalLink,
+  onOpenNavigation,
+}: SettingsScreenProps) {
   const host = useMemo(() => client.getHostContext(), [client]);
   const [theme, setTheme] = useState(
     document.documentElement.dataset.theme || storedTheme() || 'dark',
   );
+  const [surface, setSurface] = useState(() => readSurfaceOverride(document.cookie));
+  const [desktopConfirmationOpen, setDesktopConfirmationOpen] = useState(false);
   const [devices, setDevices] = useState<PairedDevice[]>([]);
   const [local, setLocal] = useState(false);
   const [devicesLoading, setDevicesLoading] = useState(true);
@@ -149,11 +235,28 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
   };
 
   const currentPath = `${window.location.pathname}${window.location.search}`;
+  const selectSurface = (next: 'auto' | 'mobile') => {
+    writeSurfaceOverride(next);
+    setSurface(next);
+  };
 
   return (
     <main className="mobile-screen mobile-settings-screen" data-mobile-route="settings">
       <header className="mobile-nav-header">
-        {internalLink(
+        <button
+          type="button"
+          className="mobile-icon-button"
+          aria-label={t('index.openNavigation')}
+          aria-haspopup="dialog"
+          onClick={() => onOpenNavigation?.()}
+        >
+          <Menu aria-hidden="true" size={21} />
+        </button>
+        <div>
+          <p className="mobile-eyebrow">{host.instanceName}</p>
+          <h1>{t('settings.title')}</h1>
+        </div>
+        {_internalLink(
           '/',
           <>
             <ArrowLeft aria-hidden="true" size={21} />
@@ -161,11 +264,6 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
           </>,
           'mobile-icon-button',
         )}
-        <div>
-          <p className="mobile-eyebrow">{host.instanceName}</p>
-          <h1>{t('settings.title')}</h1>
-        </div>
-        <div className="mobile-header-spacer" />
       </header>
 
       <MobileConnectivityNotice state={connection} onRetry={() => void loadDevices()} />
@@ -180,39 +278,62 @@ export function SettingsScreen({ client, internalLink }: SettingsScreenProps) {
             </div>
           </div>
           <a
-            className="mobile-settings-link is-current"
+            className={`mobile-settings-link${surface === 'mobile' ? ' is-current' : ''}`}
             href={currentPath}
-            onClick={() => writeSurfaceOverride('mobile')}
+            onClick={() => selectSurface('mobile')}
           >
             <span>
               <strong>Mobile product</strong>
               <small>Dedicated touch interface</small>
             </span>
-            <Check aria-hidden="true" size={18} />
+            {surface === 'mobile' ? (
+              <Check aria-hidden="true" size={18} />
+            ) : (
+              <ChevronRight aria-hidden="true" size={18} />
+            )}
           </a>
-          <a
-            className="mobile-settings-link"
-            href={currentPath}
-            onClick={() => writeSurfaceOverride('desktop')}
+          <button
+            className={`mobile-settings-link${surface === 'desktop' ? ' is-current' : ''}`}
+            onClick={() => setDesktopConfirmationOpen(true)}
+            type="button"
           >
             <span>
               <strong>Desktop product</strong>
               <small>Use the desktop React interface on this device</small>
             </span>
-            <ChevronRight aria-hidden="true" size={18} />
-          </a>
+            {surface === 'desktop' ? (
+              <Check aria-hidden="true" size={18} />
+            ) : (
+              <ChevronRight aria-hidden="true" size={18} />
+            )}
+          </button>
           <a
-            className="mobile-settings-link"
+            className={`mobile-settings-link${surface === 'auto' ? ' is-current' : ''}`}
             href={currentPath}
-            onClick={() => writeSurfaceOverride('auto')}
+            onClick={() => selectSurface('auto')}
           >
             <span>
               <strong>Automatic selection</strong>
               <small>Let pi-web choose for this browser</small>
             </span>
-            <ChevronRight aria-hidden="true" size={18} />
+            {surface === 'auto' ? (
+              <Check aria-hidden="true" size={18} />
+            ) : (
+              <ChevronRight aria-hidden="true" size={18} />
+            )}
           </a>
         </section>
+
+        {desktopConfirmationOpen ? (
+          <DesktopSurfaceConfirmation
+            currentPath={currentPath}
+            onApply={() => {
+              writeSurfaceOverride('desktop');
+              setSurface('desktop');
+            }}
+            onClose={() => setDesktopConfirmationOpen(false)}
+          />
+        ) : null}
 
         <section className="mobile-settings-group" aria-labelledby="mobile-appearance-heading">
           <div className="mobile-settings-heading">

@@ -1,12 +1,15 @@
-import { AlertCircle, Home, PanelLeftOpen } from 'lucide-react';
+import { AlertCircle, Home, PanelLeftOpen, Smartphone } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import type {
-  PiModel,
-  PiWebClient,
-  SessionStatus,
-  SessionSummary,
-  StatusSnapshot,
+import {
+  isPhoneViewport,
+  writeSurfaceOverride,
+  type PiModel,
+  type PiWebClient,
+  type SessionStatus,
+  type SessionSummary,
+  type StatusSnapshot,
 } from '../live-shared';
+import { t } from '../shared/i18n.js';
 import { CommandPalette } from './CommandPalette';
 import { SessionPage } from './Conversation';
 import {
@@ -40,6 +43,22 @@ export interface DesktopAppProps {
 function destinationLocation(destination: string): RouteLocation {
   const url = new URL(destination, window.location.origin);
   return { path: url.pathname, search: url.search };
+}
+
+function ReturnToMobileControl() {
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  return (
+    <a
+      aria-label={t('settings.returnToMobile')}
+      className="desktop-return-to-mobile"
+      href={currentPath}
+      onClick={() => writeSurfaceOverride('mobile')}
+      title={t('settings.returnToMobile')}
+    >
+      <Smartphone aria-hidden="true" size={16} />
+      <span>{t('settings.returnToMobile')}</span>
+    </a>
+  );
 }
 
 function runningFromSnapshot(snapshot: StatusSnapshot): Set<string> {
@@ -324,6 +343,7 @@ export function DesktopApp({ client, navigateImpl, path, search }: DesktopAppPro
     path: path ?? window.location.pathname,
     search: search ?? window.location.search,
   }));
+  const [phoneViewport, setPhoneViewport] = useState(() => isPhoneViewport(window));
 
   useEffect(() => {
     document.documentElement.classList.add('desktop-product');
@@ -356,9 +376,25 @@ export function DesktopApp({ client, navigateImpl, path, search }: DesktopAppPro
     [navigateImpl],
   );
 
+  useEffect(() => {
+    const handleResize = () => setPhoneViewport(isPhoneViewport(window));
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const host = client.getHostContext();
   if (route.path === '/pairing') {
-    return <PairingPage client={client} host={host} navigate={navigate} />;
+    return (
+      <>
+        {phoneViewport ? <ReturnToMobileControl /> : null}
+        <PairingPage client={client} host={host} navigate={navigate} />
+      </>
+    );
   }
-  return <WorkspaceProduct client={client} navigate={navigate} route={route} />;
+  return (
+    <>
+      {phoneViewport ? <ReturnToMobileControl /> : null}
+      <WorkspaceProduct client={client} navigate={navigate} route={route} />
+    </>
+  );
 }

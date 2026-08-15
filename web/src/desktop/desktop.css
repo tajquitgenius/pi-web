@@ -2624,6 +2624,25 @@ body.desktop-no-scroll {
   gap: 4px;
 }
 
+.desktop-return-to-mobile {
+  position: fixed;
+  z-index: 30;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 13px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: var(--elevated-shadow);
+  font-weight: 750;
+  text-decoration: none;
+}
+
 @media (max-width: 1080px) {
   .desktop-product-shell {
     --desktop-host-rail-width: 48px;

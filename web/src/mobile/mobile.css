@@ -947,6 +947,12 @@ textarea:disabled {
 /* Conversation */
 
 .mobile-session-screen {
+  position: fixed;
+  top: var(--mobile-viewport-top, 0px);
+  right: 0;
+  bottom: auto;
+  left: 0;
+  height: var(--mobile-viewport-height, 100dvh);
   flex-direction: column;
 }
 
@@ -1194,12 +1200,12 @@ textarea:disabled {
 }
 
 .mobile-disclosure-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   width: 100%;
-  min-height: 50px;
-  gap: 12px;
+  min-height: 46px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
   padding: 8px 11px;
   color: var(--text);
   text-align: left;
@@ -1227,7 +1233,6 @@ textarea:disabled {
 }
 
 .mobile-disclosure-button small {
-  margin-top: 3px;
   color: var(--muted);
   font-family: var(--font-sans);
   font-size: 10px;
@@ -1241,6 +1246,11 @@ textarea:disabled {
 .mobile-thinking-block > p,
 .mobile-conversation-note > p {
   padding: 0 11px 11px;
+}
+
+.mobile-tool-details {
+  max-height: min(42dvh, 360px);
+  overflow: auto;
 }
 
 .mobile-tool-details pre,
@@ -1545,6 +1555,32 @@ textarea:disabled {
 
 .mobile-bottom-sheet .mobile-wide-button {
   margin-top: 18px;
+}
+
+.mobile-surface-confirmation {
+  width: min(calc(100% - 24px), 480px);
+  margin-bottom: max(12px, env(safe-area-inset-bottom));
+  border-bottom: 1px solid var(--dim);
+  border-radius: 22px;
+}
+
+.mobile-surface-confirmation-copy {
+  margin: 18px 0 0;
+  color: var(--text-soft);
+}
+
+.mobile-surface-confirmation-actions {
+  display: flex;
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.mobile-surface-confirmation-actions > * {
+  flex: 1;
+}
+
+.mobile-surface-confirmation-actions .mobile-wide-button {
+  margin-top: 0;
 }
 
 .mobile-inspector-sheet,
@@ -1915,6 +1951,15 @@ textarea:disabled {
   color: var(--text);
   border-bottom: 1px solid var(--dim-2);
   text-decoration: none;
+}
+
+button.mobile-settings-link {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
 .mobile-settings-link:last-child,

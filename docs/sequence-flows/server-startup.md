@@ -47,6 +47,7 @@ This document traces the execution from `go run ./cmd/pi-web` to the first HTTP 
    │           │─── writeStateFile() ────────▶│              │            │
    │           │             │              │              │            │
    │           │─── warmModelsCache() ─────▶│              │            │
+   │           │─── warmSessionDefaultsCache() ───────────▶│            │
    │           │             │              │              │            │
    │           │─── openBrowser(url) ──────▶│              │            │
    │           │   (if -o flag)             │              │            │
@@ -184,13 +185,16 @@ duplicate side effects. State files contain the development marker, PID, port,
 host, normalized `publicUrl`, and start time, and are cleaned up on graceful
 shutdown. The regular path still migrates the old `~/.pi/agent/pi-web-state.json` location on first run.
 
-### 9. Model Cache Warming
+### 9. Model and Session Defaults Cache Warming
 
 ```go
-warmModelsCache() // async goroutine
+warmModelsCache()          // async goroutine
+warmSessionDefaultsCache() // async goroutine
 ```
 
-Spawns `pi --mode rpc` once to fetch the model list, so the first session page load doesn't wait.
+`warmModelsCache` spawns `pi --mode rpc` once to fetch the model list, so the first session page load doesn't wait. Startup also calls `warmSessionDefaultsCache` in a goroutine to load the current provider, model, and thinking level without delaying HTTP readiness.
+
+The session-defaults cache keeps successful results for five minutes and coalesces concurrent refreshes into one `ResolveSessionDefaults` call. It stores only fully validated results. RPC failures and missing or unknown model sentinels are not cached, so requests fail closed with unavailable defaults and a later request can retry.
 
 ### 10. Listen
 

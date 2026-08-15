@@ -1,14 +1,4 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  Circle,
-  Folder,
-  Plus,
-  Search,
-  Server,
-  Settings,
-  X,
-} from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Folder, Plus, Search, Server, X } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -40,6 +30,10 @@ interface SessionsScreenProps {
   client: PiWebClient;
   navigate: (url: string) => void;
   internalLink: (url: string, children: ReactNode, className?: string, key?: string) => ReactNode;
+  search?: string;
+  newTaskRequest?: number;
+  onOpenNavigation?: () => void;
+  onRecentSessionsChange?: (sessions: SessionSummary[]) => void;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -74,129 +68,10 @@ function matchesSession(session: SessionSummary, query: string, project: string)
     .includes(normalized);
 }
 
-interface HomeNavigationSheetProps {
-  host: HostContext;
-  connection: MobileConnectionState;
-  homeView: 'threads' | 'projects';
-  internalLink: SessionsScreenProps['internalLink'];
-  onSelectView: (view: 'threads' | 'projects') => void;
-  onClose: () => void;
-}
-
-function HomeNavigationSheet({
-  host,
-  connection,
-  homeView,
-  internalLink,
-  onSelectView,
-  onClose,
-}: HomeNavigationSheetProps) {
-  const dialogRef = useRef<HTMLElement>(null);
-  useMobileDialog(dialogRef, onClose);
-
-  const selectView = (view: 'threads' | 'projects') => {
-    onSelectView(view);
-    onClose();
-  };
-
-  return (
-    <div
-      className="mobile-sheet-backdrop"
-      role="presentation"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        ref={dialogRef}
-        className="mobile-bottom-sheet mobile-home-navigation-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-home-navigation-title"
-        tabIndex={-1}
-      >
-        <header>
-          <div>
-            <p className="mobile-eyebrow">{t('index.piSessions')}</p>
-            <h2 id="mobile-home-navigation-title">{t('index.mobileNavigation')}</h2>
-          </div>
-          <button
-            type="button"
-            className="mobile-icon-button"
-            aria-label={t('common.close')}
-            onClick={onClose}
-          >
-            <X aria-hidden="true" size={20} />
-          </button>
-        </header>
-
-        <nav className="mobile-home-navigation-list" aria-label={t('index.homeViews')}>
-          <button
-            type="button"
-            className={homeView === 'threads' ? 'is-selected' : ''}
-            aria-current={homeView === 'threads' ? 'page' : undefined}
-            onClick={() => selectView('threads')}
-          >
-            <span>
-              <Circle aria-hidden="true" size={17} />
-              {t('index.mobileThreads')}
-            </span>
-            {homeView === 'threads' && <span aria-hidden="true">✓</span>}
-          </button>
-          <button
-            type="button"
-            className={homeView === 'projects' ? 'is-selected' : ''}
-            aria-current={homeView === 'projects' ? 'page' : undefined}
-            onClick={() => selectView('projects')}
-          >
-            <span>
-              <Folder aria-hidden="true" size={17} />
-              {t('index.mobileProjects')}
-            </span>
-            {homeView === 'projects' && <span aria-hidden="true">✓</span>}
-          </button>
-          {internalLink(
-            '/settings',
-            <>
-              <span>
-                <Settings aria-hidden="true" size={18} />
-                {t('settings.title')}
-              </span>
-              <ChevronRight aria-hidden="true" size={18} />
-            </>,
-            'mobile-home-navigation-link',
-          )}
-        </nav>
-
-        <div className="mobile-home-computers">
-          <p className="mobile-eyebrow">{t('host.currentComputer')}</p>
-          <div className="mobile-home-computer is-current" aria-current="page">
-            <Server aria-hidden="true" size={18} />
-            <span>
-              <strong>{host.instanceName}</strong>
-              <small>{connection === 'connected' ? t('host.online') : t('host.offline')}</small>
-            </span>
-          </div>
-          {host.peers.length > 0 && <p className="mobile-eyebrow">{t('host.otherComputers')}</p>}
-          {host.peers.map((peer) => (
-            <a className="mobile-home-computer" key={`${peer.url}:${peer.label}`} href={peer.url}>
-              <Server aria-hidden="true" size={18} />
-              <span>
-                <strong>{peer.label}</strong>
-                <small>{peer.url}</small>
-              </span>
-              <ChevronRight aria-hidden="true" size={18} />
-            </a>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 interface NewTaskScreenProps {
   client: PiWebClient;
   host: HostContext;
+  registeredProjects: MobileProject[];
   onClose: () => void;
   onCreated: (sessionId: string) => void;
 }
@@ -206,22 +81,28 @@ interface TaskProjectChoice {
   label: string;
 }
 
-function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps) {
+function NewTaskScreen({
+  client,
+  host,
+  registeredProjects,
+  onClose,
+  onCreated,
+}: NewTaskScreenProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const pathInputRef = useRef<HTMLInputElement>(null);
   const pathTouched = useRef(false);
   useMobileDialog(dialogRef, onClose);
   const [path, setPath] = useState('');
   const [recentLocations, setRecentLocations] = useState<string[]>([]);
-  const [recentProjects, setRecentProjects] = useState<MobileProject[]>([]);
   const [models, setModels] = useState<PiModel[]>([]);
-  const [defaultModelKey, setDefaultModelKey] = useState('');
   const [modelProvider, setModelProvider] = useState('');
   const [modelId, setModelId] = useState('');
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('off');
   const [defaultsResolved, setDefaultsResolved] = useState(false);
   const [modelsResolved, setModelsResolved] = useState(false);
   const [runtimeError, setRuntimeError] = useState('');
+  const [modelsError, setModelsError] = useState('');
+  const [runtimeCustomized, setRuntimeCustomized] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -233,7 +114,6 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
       .getSessionDefaults()
       .then((defaults) => {
         if (!active) return;
-        setDefaultModelKey(`${defaults.modelProvider}/${defaults.modelId}`);
         setModelProvider(defaults.modelProvider);
         setModelId(defaults.modelId);
         setThinkingLevel(defaults.thinkingLevel);
@@ -241,7 +121,6 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
       .catch(() => {
         if (active) {
           setModels([]);
-          setDefaultModelKey('');
           setModelProvider('');
           setModelId('');
           setRuntimeError(t('index.providerLoginRequired', { host: host.instanceName }));
@@ -256,16 +135,28 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
   }, [client]);
 
   useEffect(() => {
+    if (!settingsOpen || modelsResolved) return;
     let active = true;
+    setModelsError('');
     client
       .listModels()
       .then((result) => {
-        if (active) setModels(result.models);
+        if (!active) return;
+        setModels(result.models);
+        const selectedAvailable = result.models.some(
+          (model) => model.provider === modelProvider && model.id === modelId,
+        );
+        const fallback = result.models[0];
+        if (!selectedAvailable && fallback) {
+          setModelProvider(fallback.provider);
+          setModelId(fallback.id);
+          setRuntimeCustomized(true);
+        }
       })
       .catch(() => {
         if (active) {
           setModels([]);
-          setRuntimeError(t('index.providerLoginRequired', { host: host.instanceName }));
+          setModelsError(t('index.providerLoginRequired', { host: host.instanceName }));
         }
       })
       .finally(() => {
@@ -274,7 +165,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
     return () => {
       active = false;
     };
-  }, [client]);
+  }, [client, host.instanceName, modelId, modelProvider, modelsResolved, settingsOpen]);
 
   useEffect(() => {
     const listRecentLocations = getMobileCapability(client, 'listRecentLocations');
@@ -293,23 +184,6 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
     };
   }, [client]);
 
-  useEffect(() => {
-    const listProjects = getMobileCapability(client, 'listProjects');
-    if (!listProjects) return;
-    let active = true;
-    listProjects
-      .call(client)
-      .then((result) => {
-        if (active) setRecentProjects(result.projects || []);
-      })
-      .catch(() => {
-        if (active) setRecentProjects([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, [client]);
-
   const projectChoices = useMemo(() => {
     const choices = new Map<string, TaskProjectChoice>();
     for (const location of recentLocations) {
@@ -318,7 +192,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
         choices.set(normalized, { path: normalized, label: projectLabel(normalized) });
       }
     }
-    for (const project of recentProjects) {
+    for (const project of registeredProjects) {
       const normalized = project.path.trim();
       if (normalized && !choices.has(normalized)) {
         choices.set(normalized, {
@@ -328,7 +202,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
       }
     }
     return [...choices.values()];
-  }, [recentLocations, recentProjects]);
+  }, [recentLocations, registeredProjects]);
 
   useEffect(() => {
     const defaultPath = projectChoices[0]?.path;
@@ -337,20 +211,21 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
   }, [projectChoices]);
 
   const selectedModelKey = modelProvider && modelId ? `${modelProvider}/${modelId}` : '';
-  const runtimeLoading = !defaultsResolved || !modelsResolved;
+  const runtimeLoading = !defaultsResolved || (settingsOpen && !modelsResolved);
   const selectedModelAvailable = models.some(
     (model) => model.provider === modelProvider && model.id === modelId,
   );
-  const defaultModelAvailable = models.some(
-    (model) => `${model.provider}/${model.id}` === defaultModelKey,
-  );
   const runtimeFailure =
     runtimeError ||
-    (defaultsResolved && modelsResolved && !defaultModelAvailable
-      ? t('index.providerLoginRequired', { host: host.instanceName })
+    (settingsOpen && modelsResolved && (modelsError || models.length === 0)
+      ? modelsError || t('index.providerLoginRequired', { host: host.instanceName })
       : '');
-  const modelOptions = runtimeFailure ? [] : models;
-  const runtimeReady = !runtimeLoading && !runtimeFailure && selectedModelAvailable;
+  const modelOptions = runtimeError || modelsError ? [] : models;
+  const runtimeReady =
+    defaultsResolved &&
+    !runtimeError &&
+    Boolean(modelProvider && modelId) &&
+    (!settingsOpen || (!runtimeLoading && !runtimeFailure && selectedModelAvailable));
   const runtimeSummary =
     runtimeLoading || runtimeFailure
       ? runtimeLoading
@@ -385,12 +260,11 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
     setCreating(true);
     setFormError('');
     try {
-      const result = await client.createSession({
-        path: destination,
-        modelProvider,
-        modelId,
-        thinkingLevel,
-      });
+      const result = await client.createSession(
+        runtimeCustomized
+          ? { path: destination, modelProvider, modelId, thinkingLevel }
+          : { path: destination },
+      );
       if (!result.ok || !result.id) throw new Error(t('index.failedCreateSession'));
       onCreated(result.id);
     } catch (createError) {
@@ -528,6 +402,7 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
                     if (!selected) return;
                     setModelProvider(selected.provider);
                     setModelId(selected.id);
+                    setRuntimeCustomized(true);
                   }}
                 >
                   {modelOptions.length ? (
@@ -552,7 +427,10 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
                   aria-label={t('index.thinkingLevel')}
                   value={thinkingLevel}
                   disabled={runtimeLoading || Boolean(runtimeFailure) || creating}
-                  onChange={(event) => setThinkingLevel(event.currentTarget.value as ThinkingLevel)}
+                  onChange={(event) => {
+                    setThinkingLevel(event.currentTarget.value as ThinkingLevel);
+                    setRuntimeCustomized(true);
+                  }}
                 >
                   {THINKING_LEVELS.map((level) => (
                     <option key={level} value={level}>
@@ -586,8 +464,18 @@ function NewTaskScreen({ client, host, onClose, onCreated }: NewTaskScreenProps)
   );
 }
 
-export function SessionsScreen({ client, navigate, internalLink }: SessionsScreenProps) {
+export function SessionsScreen({
+  client,
+  navigate,
+  internalLink,
+  search = '',
+  newTaskRequest = 0,
+  onOpenNavigation,
+  onRecentSessionsChange,
+}: SessionsScreenProps) {
   const host = useMemo(() => client.getHostContext(), [client]);
+  const initialView =
+    new URLSearchParams(search).get('view') === 'projects' ? 'projects' : 'threads';
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState('');
@@ -598,24 +486,30 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
   const [connection, setConnection] = useState<MobileConnectionState>('connecting');
   const [registeredProjects, setRegisteredProjects] = useState<MobileProject[]>([]);
   const [showNewTask, setShowNewTask] = useState(false);
-  const [showNavigation, setShowNavigation] = useState(false);
-  const [homeView, setHomeView] = useState<'threads' | 'projects'>('threads');
+  const [homeView, setHomeView] = useState<'threads' | 'projects'>(initialView);
+  const loadGeneration = useRef(0);
 
   const loadSessions = useCallback(() => {
+    const generation = ++loadGeneration.current;
     setError('');
-    setConnection('connecting');
+    if (generation === 1) setConnection('connecting');
     return client
       .listSessions({ limit: SESSION_CACHE_LIMIT, offset: 0 })
       .then((result) => {
+        if (generation !== loadGeneration.current) return;
         setSessions(result.sessions);
+        onRecentSessionsChange?.(result.sessions.slice(0, 12));
         setConnection('connected');
       })
       .catch((loadError) => {
+        if (generation !== loadGeneration.current) return;
         setConnection('offline');
         setError(errorMessage(loadError, t('index.sessionsLoadFailed')));
       })
-      .finally(() => setLoading(false));
-  }, [client]);
+      .finally(() => {
+        if (generation === loadGeneration.current) setLoading(false);
+      });
+  }, [client, onRecentSessionsChange]);
 
   useEffect(() => {
     void loadSessions();
@@ -646,6 +540,12 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
     return () => subscription.close();
   }, [client, loadSessions]);
 
+  useEffect(() => setHomeView(initialView), [initialView]);
+
+  useEffect(() => {
+    if (newTaskRequest > 0) setShowNewTask(true);
+  }, [newTaskRequest]);
+
   useEffect(() => setVisibleLimit(INITIAL_ROW_LIMIT), [project, query]);
 
   useEffect(() => {
@@ -674,11 +574,10 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
       sessions
         .filter((session) => matchesSession(session, query, project))
         .sort((left, right) => {
-          const runningDelta = Number(runningIds.has(right.id)) - Number(runningIds.has(left.id));
-          if (runningDelta) return runningDelta;
-          return Date.parse(right.lastActivity) - Date.parse(left.lastActivity);
+          const activityDelta = Date.parse(right.lastActivity) - Date.parse(left.lastActivity);
+          return activityDelta || left.id.localeCompare(right.id);
         }),
-    [project, query, runningIds, sessions],
+    [project, query, sessions],
   );
   const visibleSessions = orderedSessions.slice(0, visibleLimit);
   const projects = useMemo(() => {
@@ -704,10 +603,7 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
             0,
         };
       })
-      .sort((left, right) => {
-        if (right.running !== left.running) return right.running - left.running;
-        return left.path.localeCompare(right.path);
-      });
+      .sort((left, right) => left.path.localeCompare(right.path));
   }, [registeredProjects, runningIds, sessions]);
 
   return (
@@ -718,7 +614,7 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
           className="mobile-home-navigation-trigger"
           aria-label={t('index.openNavigation')}
           aria-haspopup="dialog"
-          onClick={() => setShowNavigation(true)}
+          onClick={() => onOpenNavigation?.()}
         >
           <span className="mobile-home-navigation-mark" aria-hidden="true">
             <Server size={19} />
@@ -790,6 +686,7 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
                   onClick={() => {
                     setProject(project.path);
                     setHomeView('threads');
+                    navigate('/');
                   }}
                 >
                   <span className="mobile-project-card-copy">
@@ -812,7 +709,7 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
       ) : (
         <section className="mobile-session-list" aria-label={t('index.sessionsRegion')}>
           <div className="mobile-list-heading">
-            <h1>{runningIds.size > 0 ? t('index.runningNow') : t('index.recentSessions')}</h1>
+            <h1>{t('index.recentSessions')}</h1>
             {!loading && <span>{orderedSessions.length}</span>}
           </div>
           {loading && (
@@ -881,21 +778,11 @@ export function SessionsScreen({ client, navigate, internalLink }: SessionsScree
         </section>
       )}
 
-      {showNavigation && (
-        <HomeNavigationSheet
-          host={host}
-          connection={connection}
-          homeView={homeView}
-          internalLink={internalLink}
-          onSelectView={setHomeView}
-          onClose={() => setShowNavigation(false)}
-        />
-      )}
-
       {showNewTask && (
         <NewTaskScreen
           client={client}
           host={host}
+          registeredProjects={registeredProjects}
           onClose={() => setShowNewTask(false)}
           onCreated={(id) => navigate(`/session?id=${encodeURIComponent(id)}`)}
         />

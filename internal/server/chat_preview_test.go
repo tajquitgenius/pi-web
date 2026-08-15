@@ -31,6 +31,32 @@ func TestBroadcastChatPreviewSendsNamedSSEToSession(t *testing.T) {
 	}
 }
 
+func TestBroadcastChatPreviewCompletionDisplacesOlderEventWhenQueueIsFull(t *testing.T) {
+	s, err := New(Deps{AgentDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Shutdown()
+	client := s.addClient("a.jsonl")
+	defer s.removeClient(client)
+
+	for i := 0; i < cap(client.ch); i++ {
+		s.broadcast("a.jsonl", "status-delta")
+	}
+	s.BroadcastChatPreview("a.jsonl", rpc.StreamPreview{Content: "complete", Done: true})
+
+	foundCompletion := false
+	for i := 0; i < cap(client.ch); i++ {
+		msg := <-client.ch
+		if strings.Contains(msg, `"content":"complete"`) && strings.Contains(msg, `"done":true`) {
+			foundCompletion = true
+		}
+	}
+	if !foundCompletion {
+		t.Fatal("completed chat preview was dropped from a full client queue")
+	}
+}
+
 func TestBroadcastChatPreviewDoesNotSendToGlobalTopic(t *testing.T) {
 	s, err := New(Deps{AgentDir: t.TempDir()})
 	if err != nil {

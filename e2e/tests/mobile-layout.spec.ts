@@ -61,7 +61,7 @@ test.describe("mobile layout bounds", () => {
       await expectNoHorizontalOverflow(page);
       const textareaBox = await textarea.boundingBox();
       expect(textareaBox?.width || 0).toBeGreaterThanOrEqual(
-        Math.min(240, viewport.width - 32),
+        Math.min(240, viewport.width - 126),
       );
       const composerLayout = await page.evaluate(() => {
         const composer =
@@ -85,13 +85,10 @@ test.describe("mobile layout bounds", () => {
       );
 
       await page.getByRole("button", { name: "Tools" }).click();
-      await expect(page.getByRole("dialog", { name: "Tools" })).toBeVisible();
+      const tools = page.getByRole("dialog", { name: "Tools" });
+      await expect(tools).toBeVisible();
       await expectNoHorizontalOverflow(page);
-      await page.keyboard.press("Escape");
-
-      await page
-        .getByRole("button", { name: "Choose model and thinking level" })
-        .click();
+      await tools.getByRole("button", { name: /Model/ }).click();
       await expect(
         page.getByRole("dialog", { name: "Model and thinking" }),
       ).toBeVisible();

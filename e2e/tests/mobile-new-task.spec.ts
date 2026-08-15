@@ -99,7 +99,7 @@ test.describe("mobile New Task", () => {
     await expect(page).toHaveURL(/\/session\?id=/);
   });
 
-  test("keeps an edited destination while runtime settings are loading", async ({
+  test("keeps an edited destination while defaults load and lazily opens runtime settings", async ({
     page,
     agentDir,
   }, testInfo) => {
@@ -159,18 +159,22 @@ test.describe("mobile New Task", () => {
     await page.getByRole("button", { name: "New task" }).click();
     const task = page.getByRole("dialog", { name: "New task" });
     const destination = task.getByLabel("Destination folder");
-    await expect.poll(() => defaultsRequested && modelsRequested).toBe(true);
-    await expect(
-      task.getByRole("button", { name: "Create task" }),
-    ).toBeDisabled();
+    await expect.poll(() => defaultsRequested).toBe(true);
+    expect(modelsRequested).toBe(false);
+    await expect(task.getByRole("button", { name: "Create task" })).toBeDisabled();
     await destination.fill(editedPath);
     await expect(destination).toHaveValue(editedPath);
 
     releaseDefaults();
-    releaseModels();
-    await expect(
-      task.getByRole("button", { name: "Create task" }),
-    ).toBeEnabled();
+    await expect(task.getByRole("button", { name: "Create task" })).toBeEnabled();
     await expect(destination).toHaveValue(editedPath);
+    expect(modelsRequested).toBe(false);
+
+    await task.getByRole("button", { name: /Runtime/ }).click();
+    await expect.poll(() => modelsRequested).toBe(true);
+    releaseModels();
+    await expect(task.getByLabel("Provider and model")).toHaveValue(
+      "openai-codex-secondary/gpt-5.6-sol",
+    );
   });
 });

@@ -2,6 +2,14 @@ import type { SessionDetails } from './contracts';
 
 export type SurfaceOverride = 'auto' | 'desktop' | 'mobile';
 
+export const PHONE_VIEWPORT_MAX_WIDTH = 780;
+
+export function isPhoneViewport(
+  windowImpl: Pick<Window, 'innerWidth'> = globalThis.window,
+): boolean {
+  return windowImpl.innerWidth <= PHONE_VIEWPORT_MAX_WIDTH;
+}
+
 export interface SessionBootstrap {
   id: string;
   data: SessionDetails;

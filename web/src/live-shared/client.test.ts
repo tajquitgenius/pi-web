@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parsePiSessionSummary } from '../live-domain';
-import { readEmbeddedSession, readSurfaceOverride, writeSurfaceOverride } from './browser';
+import {
+  isPhoneViewport,
+  readEmbeddedSession,
+  readSurfaceOverride,
+  writeSurfaceOverride,
+} from './browser';
 import { createPiWebClient, PiWebClientError } from './client';
 import type { PiWebSSEEventName } from './contracts';
 
@@ -555,6 +560,11 @@ describe('PiWebClient', () => {
       status: 429,
       retryAfter: '60',
     } satisfies Partial<PiWebClientError>);
+  });
+
+  it('classifies phone-width viewports at the desktop responsive boundary', () => {
+    expect(isPhoneViewport({ innerWidth: 780 })).toBe(true);
+    expect(isPhoneViewport({ innerWidth: 781 })).toBe(false);
   });
 
   it('shares bootstrap parsing and surface-cookie helpers', () => {

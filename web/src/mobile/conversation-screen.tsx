@@ -1,14 +1,16 @@
 import { marked } from 'marked';
 import {
-  ArrowLeft,
+  ArrowDown,
+  ArrowUp,
+  Bot,
+  Brain,
   ChevronDown,
   FileSearch,
   ImagePlus,
   LoaderCircle,
   MoreHorizontal,
-  Send,
+  Plus,
   Square,
-  Wrench,
   X,
 } from 'lucide-react';
 import {
@@ -39,6 +41,7 @@ import { getPath, stitchOrphanRoots } from '../session/tree/session-tree.js';
 import { getMobileCapability, type MobileCommand, type MobileFile } from './capabilities';
 import { MobileConnectivityNotice, type MobileConnectionState } from './connectivity';
 import { InspectorSheet } from './inspector-sheet';
+import { MobileNavigationTrigger } from './mobile-navigation-drawer';
 import { ThreadActionsSheet } from './thread-actions-sheet';
 import { useMobileDialog } from './dialog';
 import { t } from '../shared/i18n.js';
@@ -132,18 +135,52 @@ function entryTimestamp(timestamp?: string): string {
 function activeConversationEntries(entries: SessionEntry[]): MobileSessionEntry[] {
   const stitched = stitchOrphanRoots(entries) as MobileSessionEntry[];
   const byId = new Map<string, MobileSessionEntry>();
+  const parentIds = new Set<string>();
   for (const entry of stitched) {
     if (entry.id) byId.set(entry.id, entry);
+  }
+  for (const entry of stitched) {
+    if (entry.parentId && byId.has(entry.parentId)) parentIds.add(entry.parentId);
   }
   let leafId = '';
   for (let index = stitched.length - 1; index >= 0; index -= 1) {
     const entry = stitched[index];
-    if (entry?.id && entry.type !== 'session' && entry.type !== 'label') {
+    if (
+      entry?.id &&
+      entry.type !== 'session' &&
+      entry.type !== 'label' &&
+      !parentIds.has(entry.id)
+    ) {
       leafId = entry.id;
       break;
     }
   }
   return leafId ? (getPath(leafId, byId) as MobileSessionEntry[]) : [];
+}
+
+function assistantEntryIDs(details: SessionDetails | null): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of details?.entries || []) {
+    const mobileEntry = entry as MobileSessionEntry;
+    if (mobileEntry.message?.role === 'assistant' && mobileEntry.id) ids.add(mobileEntry.id);
+  }
+  return ids;
+}
+
+function containsNewAssistantText(
+  details: SessionDetails,
+  text: string,
+  previousAssistantIDs: Set<string> | null,
+): boolean {
+  if (!text || !previousAssistantIDs) return false;
+  return details.entries.some((entry) => {
+    const mobileEntry = entry as MobileSessionEntry;
+    return (
+      mobileEntry.message?.role === 'assistant' &&
+      (!mobileEntry.id || !previousAssistantIDs.has(mobileEntry.id)) &&
+      textContent(mobileEntry.message.content).includes(text)
+    );
+  });
 }
 
 function toolResultText(result?: MobileSessionEntry): string {
@@ -181,8 +218,8 @@ function ToolDisclosure({ call, result }: { call: MessageBlock; result?: MobileS
       >
         <span>
           <strong>{label}</strong>
-          <small>{status}</small>
         </span>
+        <small>{status}</small>
         <ChevronDown aria-hidden="true" size={17} />
       </button>
       {expanded && (
@@ -208,10 +245,10 @@ function ThinkingDisclosure({ text }: { text: string }) {
       >
         <span>
           <strong>{t('conversation.thinking')}</strong>
-          <small>
-            {expanded ? t('conversation.hideReasoning') : t('conversation.showReasoning')}
-          </small>
         </span>
+        <small>
+          {expanded ? t('conversation.hideReasoning') : t('conversation.showReasoning')}
+        </small>
         <ChevronDown aria-hidden="true" size={17} />
       </button>
       {expanded && <p>{text}</p>}
@@ -521,17 +558,21 @@ function RuntimeSheet({
 
 interface ToolsSheetProps {
   attachDisabled: boolean;
+  model: string;
+  thinking: ThinkingLevel;
+  onRuntime: () => void;
   onAttach: () => void;
   onInspector: () => void;
-  onActions: () => void;
   onClose: () => void;
 }
 
 function ToolsSheet({
   attachDisabled,
+  model,
+  thinking,
+  onRuntime,
   onAttach,
   onInspector,
-  onActions,
   onClose,
 }: ToolsSheetProps) {
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -568,6 +609,20 @@ function ToolsSheet({
           </button>
         </header>
         <div className="mobile-tools-list">
+          <button type="button" aria-label={`Model ${model}`} onClick={onRuntime}>
+            <Bot aria-hidden="true" size={19} />
+            <span>
+              <strong>{t('conversation.model')}</strong>
+              <small>{model}</small>
+            </span>
+          </button>
+          <button type="button" aria-label={`Thinking ${thinking}`} onClick={onRuntime}>
+            <Brain aria-hidden="true" size={19} />
+            <span>
+              <strong>{t('conversation.thinking')}</strong>
+              <small>{thinking}</small>
+            </span>
+          </button>
           <button type="button" onClick={onAttach} disabled={attachDisabled}>
             <ImagePlus aria-hidden="true" size={19} />
             <span>{t('conversation.attachImages')}</span>
@@ -575,10 +630,6 @@ function ToolsSheet({
           <button type="button" onClick={onInspector}>
             <FileSearch aria-hidden="true" size={19} />
             <span>{t('conversation.projectInspector')}</span>
-          </button>
-          <button type="button" onClick={onActions}>
-            <MoreHorizontal aria-hidden="true" size={19} />
-            <span>{t('conversation.threadActions')}</span>
           </button>
         </div>
       </section>
@@ -596,6 +647,9 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const detailsRef = useRef<SessionDetails | null>(embeddedDetails);
   const [workerStatus, setWorkerStatus] = useState<ChatWorkerStatus>({ state: 'idle' });
   const [preview, setPreview] = useState('');
+  const previewRef = useRef('');
+  const previewBaselineRef = useRef<Set<string> | null>(null);
+  const refreshGenerationRef = useRef(0);
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -610,6 +664,8 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
   const [connection, setConnection] = useState<MobileConnectionState>('connecting');
+  const [followingLatest, setFollowingLatest] = useState(true);
+  const followingLatestRef = useRef(true);
   const [composerError, setComposerError] = useState('');
   const [runtimeOpen, setRuntimeOpen] = useState(false);
   const [toolsSheet, setToolsSheet] = useState<'menu' | 'inspector' | 'actions' | null>(null);
@@ -618,8 +674,10 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   const [runtimeThinking, setRuntimeThinking] = useState<ThinkingLevel>(
     embeddedDetails?.thinkingLevel || 'off',
   );
+  const screenRef = useRef<HTMLElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toolsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -635,24 +693,47 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     detailsRef.current = details;
   }, [details]);
 
+  useEffect(() => {
+    previewRef.current = preview;
+  }, [preview]);
+
+  useEffect(() => {
+    followingLatestRef.current = followingLatest;
+  }, [followingLatest]);
+
   const refreshSession = useCallback(async () => {
     if (!sessionId) return;
-    setConnection('connecting');
+    const generation = ++refreshGenerationRef.current;
+    if (!detailsRef.current) setConnection('connecting');
     setError('');
-    const current = detailsRef.current;
-    const result =
-      current && current.from > 0
-        ? await client.getSession(sessionId, {
-            from: current.from,
-            count: Math.max(current.total - current.from + 50, OLDER_ENTRY_PAGE),
-          })
-        : await client.getSession(sessionId, { paginate: true });
-    setDetails(result);
-    setConnection('connected');
-    setRuntimeProvider(result.modelProvider || '');
-    setRuntimeModel(result.model || '');
-    if (result.thinkingLevel) setRuntimeThinking(result.thinkingLevel);
-    setPendingPrompt('');
+    try {
+      const current = detailsRef.current;
+      const result =
+        current && current.from > 0
+          ? await client.getSession(sessionId, {
+              from: current.from,
+              count: Math.max(current.total - current.from + 50, OLDER_ENTRY_PAGE),
+            })
+          : await client.getSession(sessionId, { paginate: true });
+      if (generation !== refreshGenerationRef.current) return;
+      detailsRef.current = result;
+      setDetails(result);
+      setLoading(false);
+      setConnection('connected');
+      setRuntimeProvider(result.modelProvider || '');
+      setRuntimeModel(result.model || '');
+      if (result.thinkingLevel) setRuntimeThinking(result.thinkingLevel);
+      if (containsNewAssistantText(result, previewRef.current, previewBaselineRef.current)) {
+        previewRef.current = '';
+        previewBaselineRef.current = null;
+        setPreview('');
+      }
+      setPendingPrompt('');
+    } catch (refreshError) {
+      if (generation !== refreshGenerationRef.current) return;
+      setLoading(false);
+      throw refreshError;
+    }
   }, [client, sessionId]);
 
   const retrySession = () => {
@@ -669,28 +750,30 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       return;
     }
     let active = true;
+    const generation = ++refreshGenerationRef.current;
     const initial =
       bootstrap?.id === sessionId && bootstrap.data
         ? Promise.resolve(bootstrap.data)
         : client.getSession(sessionId, { paginate: true });
     initial
       .then((result) => {
-        if (!active) return;
+        if (!active || generation !== refreshGenerationRef.current) return;
+        detailsRef.current = result;
         setDetails(result);
         setConnection('connected');
         setRuntimeProvider(result.modelProvider || '');
         setRuntimeModel(result.model || '');
         if (result.thinkingLevel) setRuntimeThinking(result.thinkingLevel);
-        document.title = `${result.name || sessionId} · ${host.instanceName} · pi-web`;
+        document.title = result.name || sessionId;
       })
       .catch((loadError) => {
-        if (active) {
+        if (active && generation === refreshGenerationRef.current) {
           setConnection('offline');
           setError(errorMessage(loadError, t('session.loadFailed')));
         }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active && generation === refreshGenerationRef.current) setLoading(false);
       });
 
     void client
@@ -717,7 +800,6 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
           const startup = startupReloadRef.current;
           if (startup && !startup.handled && (!startup.opened || Date.now() < startup.deadline)) {
             startup.handled = true;
-            setPreview('');
             return;
           }
           if (startup) startup.handled = true;
@@ -725,10 +807,15 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
             setConnection('reconnecting');
             setComposerError(errorMessage(refreshError, t('session.loadFailed')));
           });
-          setPreview('');
         } else if (name === 'chat-preview') {
           const stream = payload as { content?: unknown; done?: unknown };
-          setPreview(typeof stream.content === 'string' && !stream.done ? stream.content : '');
+          if (typeof stream.content === 'string' && stream.content) {
+            if (!previewRef.current) {
+              previewBaselineRef.current = assistantEntryIDs(detailsRef.current);
+            }
+            previewRef.current = stream.content;
+            setPreview(stream.content);
+          }
           if (stream.done) {
             setWorkerStatus((current) => ({ ...current, state: 'idle' }));
             void refreshSession().catch(() => {});
@@ -800,6 +887,44 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   }, [details?.entries]);
 
   useLayoutEffect(() => {
+    const root = screenRef.current;
+    const viewport = window.visualViewport;
+    if (!root || !viewport) return;
+    const update = () => {
+      root.style.setProperty('--mobile-viewport-height', `${viewport.height}px`);
+      root.style.setProperty('--mobile-viewport-top', `${viewport.offsetTop}px`);
+      root.dataset.keyboardOpen = window.innerHeight - viewport.height > 120 ? 'true' : 'false';
+      if (followingLatestRef.current) {
+        requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
+      }
+    };
+    update();
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    return () => {
+      viewport.removeEventListener('resize', update);
+      viewport.removeEventListener('scroll', update);
+    };
+  }, [loading]);
+
+  useLayoutEffect(() => {
+    const root = screenRef.current;
+    const composer = composerRef.current;
+    if (!root || !composer) return;
+    const update = () => {
+      root.style.setProperty(
+        '--mobile-composer-height',
+        `${composer.getBoundingClientRect().height}px`,
+      );
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(update);
+    observer.observe(composer);
+    return () => observer.disconnect();
+  }, [loading]);
+
+  useLayoutEffect(() => {
     if (!details || didInitialScroll.current) return;
     didInitialScroll.current = true;
     requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
@@ -812,14 +937,24 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
     textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
   }, [draft]);
 
-  useEffect(() => {
-    if (!preview) return;
+  useLayoutEffect(() => {
+    if (!followingLatestRef.current) return;
+    requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
+  }, [attachments.length, details?.entries, draft, preview]);
+
+  const updateFollowingState = () => {
     const feed = feedRef.current;
     if (!feed) return;
-    const distance = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
-    if (distance < 160)
-      requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
-  }, [preview]);
+    const atLatest = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+    followingLatestRef.current = atLatest;
+    setFollowingLatest(atLatest);
+  };
+
+  const jumpToLatest = () => {
+    followingLatestRef.current = true;
+    setFollowingLatest(true);
+    requestAnimationFrame(() => endRef.current?.scrollIntoView({ block: 'end' }));
+  };
 
   const loadOlder = async () => {
     if (!details || details.from <= 0 || loadingOlder) return;
@@ -975,29 +1110,14 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       .split(/[\\/]/)
       .filter(Boolean)
       .at(-1) || host.instanceName;
-  const runtimeProviderLabel =
-    runtimeProvider ||
-    workerStatus.modelProvider ||
-    details?.modelProvider ||
-    t('conversation.provider');
   const runtimeModelLabel =
     runtimeModel ||
     workerStatus.modelName ||
     workerStatus.model ||
     details?.model ||
     t('conversation.model');
-  const runtimeStateLabel =
-    workerStatus.state === 'running'
-      ? t('conversation.runtimeWorking')
-      : workerStatus.state === 'error'
-        ? workerStatus.error
-          ? t('conversation.runtimeUnavailable', { error: workerStatus.error })
-          : t('conversation.runtimeUnavailableWithoutError')
-        : t('conversation.runtimeReady');
-  const closeToolSheet = () => {
-    setToolsSheet(null);
-    requestAnimationFrame(() => toolsTriggerRef.current?.focus());
-  };
+  const closeToolSheet = () => setToolsSheet(null);
+  const dismissKeyboard = () => textareaRef.current?.blur();
 
   if (loading) {
     return (
@@ -1023,39 +1143,29 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
   }
 
   return (
-    <main className="mobile-screen mobile-session-screen" data-mobile-route="session">
+    <main
+      ref={screenRef}
+      className="mobile-screen mobile-session-screen"
+      data-mobile-route="session"
+    >
       <header className="mobile-conversation-header">
-        <div className="mobile-conversation-header-main">
-          {internalLink(
-            '/',
-            <>
-              <ArrowLeft aria-hidden="true" size={21} />
-              <span className="mobile-visually-hidden">{t('session.backToSessions')}</span>
-            </>,
-            'mobile-icon-button',
-          )}
+        <div className="mobile-conversation-header-main" onPointerDown={dismissKeyboard}>
+          <MobileNavigationTrigger className="mobile-icon-button" />
           <div className="mobile-conversation-title">
             <h1>{details.name || sessionId}</h1>
-            <p>
-              {project} · {host.instanceName}
-            </p>
-            <span className={`mobile-runtime-state is-${workerStatus.state}`} role="status">
-              {runtimeStateLabel}
-            </span>
           </div>
+          <button
+            type="button"
+            className="mobile-icon-button"
+            aria-label={t('conversation.threadActions')}
+            onClick={() => {
+              dismissKeyboard();
+              setToolsSheet('actions');
+            }}
+          >
+            <MoreHorizontal aria-hidden="true" size={21} />
+          </button>
         </div>
-        <button
-          type="button"
-          className="mobile-runtime-picker"
-          aria-label={t('conversation.openRuntime')}
-          onClick={() => setRuntimeOpen(true)}
-        >
-          <span className="mobile-runtime-picker-model">
-            {runtimeProviderLabel} · {runtimeModelLabel}
-          </span>
-          <span className="mobile-runtime-picker-thinking">{runtimeThinking}</span>
-          <ChevronDown aria-hidden="true" size={17} />
-        </button>
       </header>
       <MobileConnectivityNotice state={connection} onRetry={retrySession} />
 
@@ -1064,6 +1174,10 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
         ref={feedRef}
         aria-label={t('conversation.messages')}
         tabIndex={0}
+        onScroll={updateFollowingState}
+        onPointerDown={() => {
+          if (document.activeElement === textareaRef.current) dismissKeyboard();
+        }}
       >
         {details.from > 0 && (
           <button
@@ -1107,13 +1221,24 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
             aria-live="polite"
           >
             <div className="mobile-message-role">{t('conversation.assistantWorking')}</div>
-            <p>{preview}</p>
+            <MobileMarkdown text={preview} />
           </article>
         )}
         <div ref={endRef} className="mobile-feed-end" />
       </div>
 
-      <form className="mobile-composer" onSubmit={sendMessage}>
+      {!followingLatest && (
+        <button
+          type="button"
+          className="mobile-jump-latest"
+          aria-label={t('conversation.jumpToLatest')}
+          onClick={jumpToLatest}
+        >
+          <ArrowDown aria-hidden="true" size={20} />
+        </button>
+      )}
+
+      <form ref={composerRef} className="mobile-composer" onSubmit={sendMessage}>
         {composerError && (
           <p className="mobile-composer-error" role="alert">
             {composerError}
@@ -1243,10 +1368,13 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
               type="button"
               className="mobile-tools-trigger"
               aria-label={t('conversation.tools')}
-              onClick={() => setToolsSheet('menu')}
+              onClick={() => {
+                dismissKeyboard();
+                setToolsSheet('menu');
+              }}
             >
-              <Wrench aria-hidden="true" size={18} />
-              <span>{t('conversation.tools')}</span>
+              <Plus aria-hidden="true" size={22} />
+              <span className="mobile-visually-hidden">{t('conversation.tools')}</span>
             </button>
             {workerStatus.state === 'running' && !draft.trim() && attachments.length === 0 ? (
               <button
@@ -1267,7 +1395,7 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
                 }
                 disabled={!chatAvailable || sending || (!draft.trim() && attachments.length === 0)}
               >
-                <Send aria-hidden="true" size={18} />
+                <ArrowUp aria-hidden="true" size={19} />
               </button>
             )}
           </div>
@@ -1277,12 +1405,17 @@ export function ConversationScreen({ client, sessionId, internalLink }: Conversa
       {toolsSheet === 'menu' && (
         <ToolsSheet
           attachDisabled={!chatAvailable}
+          model={runtimeModelLabel}
+          thinking={runtimeThinking}
+          onRuntime={() => {
+            setToolsSheet(null);
+            setRuntimeOpen(true);
+          }}
           onAttach={() => {
             setToolsSheet(null);
             fileInputRef.current?.click();
           }}
           onInspector={() => setToolsSheet('inspector')}
-          onActions={() => setToolsSheet('actions')}
           onClose={() => setToolsSheet(null)}
         />
       )}

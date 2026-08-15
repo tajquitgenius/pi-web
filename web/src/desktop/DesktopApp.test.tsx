@@ -172,6 +172,10 @@ function memoryStorage(): Storage {
 }
 
 beforeEach(() => {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    value: 1024,
+  });
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
     value: memoryStorage(),
@@ -187,6 +191,18 @@ afterEach(() => {
 });
 
 describe('desktop product shell', () => {
+  it('shows Return to mobile only while the desktop shell is phone-width', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    const { client } = createClient();
+    render(<DesktopApp client={client} path="/" search="" />);
+
+    expect(screen.getByRole('link', { name: 'Return to mobile' })).toBeInTheDocument();
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 });
+    fireEvent(window, new Event('resize'));
+    expect(screen.queryByRole('link', { name: 'Return to mobile' })).toBeNull();
+  });
+
   it('opens a T3-style command palette and filters navigation actions', async () => {
     const { client } = createClient();
     const navigate = vi.fn();

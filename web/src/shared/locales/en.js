@@ -40,6 +40,8 @@ export default {
   'index.homeViews': 'Home views',
   'index.newTask': 'New task',
   'index.piSessions': 'Pi sessions',
+  'index.recents': 'Recents',
+  'index.noRecentSessions': 'No recent threads',
   'index.destinationFolder': 'Destination folder',
   'index.newSessionStartsOn': 'The new session starts on {host}.',
   'index.runtime': 'Runtime',
@@ -419,6 +421,7 @@ export default {
   'conversation.file': 'file',
   'conversation.piCommand': 'Pi command',
   'conversation.messages': 'Conversation messages',
+  'conversation.jumpToLatest': 'Jump to latest',
   'conversation.imageAttachments': 'Image attachments',
   'conversation.removeAttachment': 'Remove {name}',
   'conversation.message': 'Message',
@@ -444,6 +447,11 @@ export default {
 
   // ── Settings ──
   'settings.title': 'Settings',
+  'settings.returnToMobile': 'Return to mobile',
+  'settings.surfaceDesktopConfirmTitle': 'Switch to desktop?',
+  'settings.surfaceDesktopConfirmHint':
+    'The desktop workspace is designed for larger screens. Apply it only if you want to use the desktop interface on this phone.',
+  'settings.surfaceDesktopApply': 'Apply desktop',
   'settings.appearance': 'Appearance',
   'settings.theme': 'Theme',
   'settings.themeHint': 'Applies to every browser pointed at this instance.',

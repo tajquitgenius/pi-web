@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatWorkerStatus, PiWebClient, SessionDetails } from '../live-shared';
 import { ConversationScreen } from './conversation-screen';
+import { MobileNavigationProvider } from './mobile-navigation-drawer';
 
 const details: SessionDetails = {
   header: { cwd: '/work/pi-web' },
@@ -58,15 +59,17 @@ function makeClient(
 
 function renderConversation(client: PiWebClient) {
   return render(
-    <ConversationScreen
-      client={client}
-      sessionId="session.jsonl"
-      internalLink={(url, children, className) => (
-        <a href={url} className={className}>
-          {children}
-        </a>
-      )}
-    />,
+    <MobileNavigationProvider value={{ openDrawer: vi.fn(), closeDrawer: vi.fn() }}>
+      <ConversationScreen
+        client={client}
+        sessionId="session.jsonl"
+        internalLink={(url, children, className) => (
+          <a href={url} className={className}>
+            {children}
+          </a>
+        )}
+      />
+    </MobileNavigationProvider>,
   );
 }
 
@@ -86,35 +89,25 @@ afterEach(() => {
 });
 
 describe('mobile conversation redesign', () => {
-  it('has one Tools trigger and routes project inspector and thread actions from its sheet', async () => {
+  it('keeps runtime controls in Tools and thread actions in the header', async () => {
     const user = userEvent.setup();
     renderConversation(makeClient());
     await screen.findByRole('textbox', { name: 'Message' });
 
     expect(screen.getAllByRole('button', { name: 'Tools' })).toHaveLength(1);
-    expect(
-      screen.queryByRole('button', { name: 'Open files, diff, and details' }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Open thread actions' })).not.toBeInTheDocument();
+    const threadActions = screen.getByRole('button', { name: 'Thread actions' });
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
     const tools = screen.getByRole('dialog', { name: 'Tools' });
-    expect(within(tools).getByRole('button', { name: 'Attach images' })).toBeInTheDocument();
-
-    await user.click(within(tools).getByRole('button', { name: 'Project inspector' }));
-    expect(screen.queryByRole('dialog', { name: 'Tools' })).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'Files, diff, and details' })).toBeInTheDocument();
+    expect(within(tools).getByRole('button', { name: /Model.*gpt-5\.6-sol/i })).toBeVisible();
+    expect(within(tools).getByRole('button', { name: /Thinking.*high/i })).toBeVisible();
+    expect(within(tools).getByRole('button', { name: 'Attach images' })).toBeVisible();
+    expect(within(tools).getByRole('button', { name: 'Project inspector' })).toBeVisible();
+    expect(within(tools).queryByRole('button', { name: 'Thread actions' })).not.toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('dialog', { name: 'Files, diff, and details' }),
-      ).not.toBeInTheDocument(),
-    );
-    await user.click(screen.getByRole('button', { name: 'Tools' }));
-    await user.click(screen.getByRole('button', { name: 'Thread actions' }));
-    expect(screen.queryByRole('dialog', { name: 'Tools' })).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'Mobile session' })).toBeInTheDocument();
+    await user.click(threadActions);
+    expect(screen.getByRole('dialog', { name: 'Mobile session' })).toBeVisible();
   });
 
   it('closes the Tools sheet before opening attachments', async () => {
@@ -130,11 +123,12 @@ describe('mobile conversation redesign', () => {
     expect(inputClick).toHaveBeenCalledOnce();
   });
 
-  it('opens the model and thinking picker and restores focus on Escape', async () => {
+  it('opens the model and thinking picker from Tools', async () => {
     const user = userEvent.setup();
     renderConversation(makeClient());
     await screen.findByRole('textbox', { name: 'Message' });
-    const picker = screen.getByRole('button', { name: 'Choose model and thinking level' });
+    await user.click(screen.getByRole('button', { name: 'Tools' }));
+    const picker = screen.getByRole('button', { name: /Model.*gpt-5\.6-sol/i });
 
     await user.click(picker);
     const runtime = await screen.findByRole('dialog', { name: 'Model and thinking' });
@@ -147,24 +141,330 @@ describe('mobile conversation redesign', () => {
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Model and thinking' })).not.toBeInTheDocument(),
     );
-    expect(document.activeElement).toBe(picker);
-
-    await user.click(picker);
-    const reopenedRuntime = await screen.findByRole('dialog', { name: 'Model and thinking' });
-    fireEvent.click(reopenedRuntime.parentElement!);
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'Model and thinking' })).not.toBeInTheDocument(),
-    );
+    expect(document.activeElement).not.toHaveAttribute('aria-label', 'Message');
   });
 
-  it('uses one viewport mechanism and keeps the send control available', async () => {
-    renderConversation(makeClient());
-    const textarea = await screen.findByRole('textbox', { name: 'Message' });
-    const composer = textarea.closest('.mobile-composer')!;
+  it('keeps the true conversation leaf when a parent arrives later in a partial snapshot', async () => {
+    const partialDetails = {
+      ...details,
+      entries: [
+        {
+          id: 'assistant-child',
+          parentId: 'user-parent',
+          type: 'message',
+          message: { role: 'assistant', content: 'Child answer stays visible' },
+        },
+        {
+          id: 'user-parent',
+          parentId: null,
+          type: 'message',
+          message: { role: 'user', content: 'Parent prompt' },
+        },
+      ],
+    };
+    renderConversation(makeClient(partialDetails));
 
-    expect(composer).not.toHaveAttribute('data-keyboard-inset');
-    expect((composer as HTMLElement).style.getPropertyValue('--mobile-keyboard-inset')).toBe('');
+    expect(await screen.findByText('Child answer stays visible')).toBeVisible();
+  });
+
+  it('renders streamed assistant Markdown before the final session reload', async () => {
+    let onEvent: ((name: string, payload: unknown) => void) | undefined;
+    const client = makeClient(details, {
+      subscribe: vi.fn((_topic, handlers) => {
+        onEvent = handlers.onEvent as (name: string, payload: unknown) => void;
+        handlers.onOpen?.(new Event('open'));
+        return { close: vi.fn() };
+      }),
+    });
+    renderConversation(client);
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    act(() => onEvent?.('chat-preview', { content: '## Live heading\n\n- first\n- second' }));
+
+    expect(screen.getByRole('heading', { name: 'Live heading', level: 2 })).toBeVisible();
+    expect(screen.getByText('first')).toBeVisible();
+  });
+
+  it('keeps a completed preview until a new matching assistant entry arrives', async () => {
+    let onEvent: ((name: string, payload: unknown) => void) | undefined;
+    const repeatedDetails = {
+      ...details,
+      entries: [
+        {
+          id: 'assistant-old',
+          parentId: null,
+          type: 'message',
+          message: { role: 'assistant', content: 'Done' },
+        },
+      ],
+    };
+    const completedDetails = {
+      ...repeatedDetails,
+      entries: [
+        ...repeatedDetails.entries,
+        {
+          id: 'assistant-new',
+          parentId: 'assistant-old',
+          type: 'message',
+          message: { role: 'assistant', content: 'Done' },
+        },
+      ],
+    };
+    const getSession = vi
+      .fn()
+      .mockResolvedValueOnce(repeatedDetails)
+      .mockResolvedValueOnce(repeatedDetails)
+      .mockResolvedValueOnce(completedDetails);
+    renderConversation(
+      makeClient(repeatedDetails, {
+        getSession,
+        subscribe: vi.fn((_topic, handlers) => {
+          onEvent = handlers.onEvent as (name: string, payload: unknown) => void;
+          handlers.onOpen?.(new Event('open'));
+          return { close: vi.fn() };
+        }),
+      }),
+    );
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    act(() => onEvent?.('chat-preview', { content: 'Done', done: true }));
+    await waitFor(() => expect(getSession).toHaveBeenCalledTimes(2));
+    expect(document.querySelector('.mobile-message.is-preview')).toHaveTextContent('Done');
+
+    act(() => onEvent?.('chat-preview', { content: 'Done', done: true }));
+    await waitFor(() => expect(document.querySelector('.mobile-message.is-preview')).toBeNull());
+    expect(screen.getAllByText('Done')).toHaveLength(2);
+  });
+
+  it('ignores an older session refresh that resolves after a newer one', async () => {
+    let onEvent: ((name: string, payload: unknown) => void) | undefined;
+    let resolveOld!: (value: SessionDetails) => void;
+    let resolveNew!: (value: SessionDetails) => void;
+    const oldRefresh = new Promise<SessionDetails>((resolve) => {
+      resolveOld = resolve;
+    });
+    const newRefresh = new Promise<SessionDetails>((resolve) => {
+      resolveNew = resolve;
+    });
+    const getSession = vi
+      .fn()
+      .mockResolvedValueOnce(details)
+      .mockReturnValueOnce(oldRefresh)
+      .mockReturnValueOnce(newRefresh);
+    const client = makeClient(details, {
+      getSession,
+      subscribe: vi.fn((_topic, handlers) => {
+        onEvent = handlers.onEvent as (name: string, payload: unknown) => void;
+        handlers.onOpen?.(new Event('open'));
+        return { close: vi.fn() };
+      }),
+    });
+    renderConversation(client);
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    act(() => onEvent?.('reload', undefined));
+    act(() => onEvent?.('chat-preview', { content: 'Newest response', done: true }));
+    const newest = {
+      ...details,
+      entries: [
+        {
+          id: 'assistant-new',
+          parentId: null,
+          type: 'message',
+          message: { role: 'assistant', content: 'Newest response' },
+        },
+      ],
+    };
+    await act(async () => resolveNew(newest));
+    expect(await screen.findByText('Newest response')).toBeVisible();
+
+    await act(async () => resolveOld(details));
+    await waitFor(() => expect(screen.getByText('Newest response')).toBeVisible());
+  });
+
+  it('updates one stable tool row from running to done and bounds long details', async () => {
+    let onEvent: ((name: string, payload: unknown) => void) | undefined;
+    const runningDetails = {
+      ...details,
+      entries: [
+        {
+          id: 'assistant-tool',
+          parentId: null,
+          type: 'message',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'toolCall',
+                id: 'read-call',
+                name: 'read',
+                arguments: { path: `/tmp/${'very-long-directory/'.repeat(20)}file.ts` },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const completedDetails = {
+      ...runningDetails,
+      entries: [
+        ...runningDetails.entries,
+        {
+          id: 'read-result',
+          parentId: 'assistant-tool',
+          type: 'message',
+          message: {
+            role: 'toolResult',
+            toolCallId: 'read-call',
+            toolName: 'read',
+            content: [{ type: 'text', text: 'result '.repeat(400) }],
+          },
+        },
+      ],
+    };
+    const client = makeClient(runningDetails, {
+      getSession: vi.fn().mockResolvedValueOnce(runningDetails).mockResolvedValue(completedDetails),
+      subscribe: vi.fn((_topic, handlers) => {
+        onEvent = handlers.onEvent as (name: string, payload: unknown) => void;
+        handlers.onOpen?.(new Event('open'));
+        return { close: vi.fn() };
+      }),
+    });
+    renderConversation(client);
+
+    const toolRow = await screen.findByRole('button', { name: /Expand read tool details/i });
+    expect(toolRow).toHaveTextContent('Running');
+    act(() => onEvent?.('reload', undefined));
+    await waitFor(() => expect(toolRow).toHaveTextContent('Done'));
+    expect(screen.getAllByRole('button', { name: /read tool details/i })).toHaveLength(1);
+
+    await userEvent.click(toolRow);
+    const detailsPanel = document.querySelector('.mobile-tool-details');
+    expect(detailsPanel).toBeInTheDocument();
+    expect(detailsPanel).toHaveTextContent('result result');
+  });
+
+  it('renders long Markdown tables and code in overflow-safe containers', async () => {
+    const longToken = 'x'.repeat(300);
+    renderConversation(
+      makeClient({
+        ...details,
+        entries: [
+          {
+            id: 'assistant-markdown',
+            parentId: null,
+            type: 'message',
+            message: {
+              role: 'assistant',
+              content: `| Key | Value |\n| --- | --- |\n| long | ${longToken} |\n\n\`\`\`ts\nconst token = '${longToken}'\n\`\`\``,
+            },
+          },
+        ],
+      }),
+    );
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    expect(document.querySelector('.mobile-markdown table')).toBeInTheDocument();
+    expect(document.querySelector('.mobile-markdown pre code')).toHaveTextContent('const token');
+  });
+
+  it('ignores an older refresh rejection after a newer refresh succeeds', async () => {
+    let onEvent: ((name: string, payload: unknown) => void) | undefined;
+    let rejectOld!: (error: Error) => void;
+    let resolveNew!: (value: SessionDetails) => void;
+    const oldRefresh = new Promise<SessionDetails>((_resolve, reject) => {
+      rejectOld = reject;
+    });
+    const newRefresh = new Promise<SessionDetails>((resolve) => {
+      resolveNew = resolve;
+    });
+    const getSession = vi
+      .fn()
+      .mockResolvedValueOnce(details)
+      .mockReturnValueOnce(oldRefresh)
+      .mockReturnValueOnce(newRefresh);
+    renderConversation(
+      makeClient(details, {
+        getSession,
+        subscribe: vi.fn((_topic, handlers) => {
+          onEvent = handlers.onEvent as (name: string, payload: unknown) => void;
+          handlers.onOpen?.(new Event('open'));
+          return { close: vi.fn() };
+        }),
+      }),
+    );
+    await screen.findByRole('textbox', { name: 'Message' });
+
+    act(() => onEvent?.('reload', undefined));
+    act(() => onEvent?.('chat-preview', { content: 'Newest survives', done: true }));
+    await act(async () =>
+      resolveNew({
+        ...details,
+        entries: [
+          {
+            id: 'assistant-new',
+            parentId: null,
+            type: 'message',
+            message: { role: 'assistant', content: 'Newest survives' },
+          },
+        ],
+      }),
+    );
+    await act(async () => rejectOld(new Error('stale request failed')));
+
+    expect(await screen.findByText('Newest survives')).toBeVisible();
+    expect(screen.queryByText('stale request failed')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBeVisible();
+  });
+
+  it('shows an explicit jump-to-latest control when the reader scrolls away', async () => {
+    const user = userEvent.setup();
+    renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+    const feed = screen.getByLabelText('Conversation messages');
+    Object.defineProperties(feed, {
+      scrollHeight: { configurable: true, value: 1200 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 100, writable: true },
+    });
+
+    fireEvent.scroll(feed);
+    const jump = screen.getByRole('button', { name: 'Jump to latest' });
+    expect(jump).toBeVisible();
+
+    await user.click(jump);
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument();
+  });
+
+  it('uses the visual viewport as the single keyboard geometry source', async () => {
+    const visualViewport = new EventTarget() as VisualViewport;
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 400 },
+      offsetTop: { configurable: true, value: 12 },
+    });
+    vi.stubGlobal('visualViewport', visualViewport);
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+
+    renderConversation(makeClient());
+    await screen.findByRole('textbox', { name: 'Message' });
+    const screenRoot = screen.getByRole('main');
+
+    const message = screen.getByRole('textbox', { name: 'Message' });
+    message.focus();
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('400px');
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-top')).toBe('12px');
+    expect(screenRoot).toHaveAttribute('data-keyboard-open', 'true');
     expect(screen.getByRole('button', { name: 'Send' })).toBeVisible();
+
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 800 },
+      offsetTop: { configurable: true, value: 0 },
+    });
+    act(() => visualViewport.dispatchEvent(new Event('resize')));
+    await waitFor(() => expect(screenRoot).toHaveAttribute('data-keyboard-open', 'false'));
+    expect(screenRoot.style.getPropertyValue('--mobile-viewport-height')).toBe('800px');
+    expect(message).toHaveFocus();
   });
 
   it('shows a disabled reason once and leaves the composer placeholder empty', async () => {

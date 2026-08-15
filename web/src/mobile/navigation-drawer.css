@@ -1,0 +1,210 @@
+/* Shared ChatGPT-style mobile navigation drawer. */
+
+.mobile-pairing-navigation {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+.mobile-navigation-backdrop {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  display: flex;
+  background: var(--scrim);
+}
+
+.mobile-navigation-drawer {
+  display: flex;
+  width: min(88vw, 360px);
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right))
+    env(safe-area-inset-bottom) max(12px, env(safe-area-inset-left));
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: var(--text);
+  background: var(--surface);
+  border-right: 1px solid var(--dim);
+  box-shadow: 12px 0 40px var(--shadow-color);
+}
+
+.mobile-navigation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  gap: 12px;
+  border-bottom: 1px solid var(--dim-2);
+}
+
+.mobile-navigation-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-navigation-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  color: var(--accent-strong);
+  background: var(--surface-2);
+  border-radius: 10px;
+}
+
+.mobile-navigation-brand > div {
+  min-width: 0;
+}
+
+.mobile-navigation-brand h2 {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-navigation-primary {
+  display: grid;
+  gap: 3px;
+  padding: 14px 0 18px;
+  border-bottom: 1px solid var(--dim-2);
+}
+
+.mobile-navigation-primary > button,
+.mobile-navigation-primary > a {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 13px;
+  padding: 0 13px;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  border-radius: 11px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 680;
+}
+
+.mobile-navigation-primary > button:first-child {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.mobile-navigation-primary > button:hover,
+.mobile-navigation-primary > a:hover,
+.mobile-navigation-primary > button.is-current {
+  background: var(--surface-2);
+}
+
+.mobile-navigation-primary > button:first-child:hover {
+  background: var(--accent-strong);
+}
+
+.mobile-navigation-primary svg {
+  flex: none;
+}
+
+.mobile-navigation-section {
+  padding: 18px 0 0;
+}
+
+.mobile-navigation-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 13px 8px;
+  color: var(--muted);
+}
+
+.mobile-navigation-section-heading h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mobile-navigation-recents {
+  display: grid;
+  gap: 2px;
+}
+
+.mobile-navigation-recents > a,
+.mobile-navigation-host {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  gap: 10px;
+  padding: 6px 13px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 10px;
+}
+
+.mobile-navigation-recents > a:hover {
+  background: var(--surface-2);
+}
+
+.mobile-navigation-recents > a > span,
+.mobile-navigation-host > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.mobile-navigation-recents strong,
+.mobile-navigation-recents small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-navigation-recents strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.mobile-navigation-recents small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile-navigation-host.is-current {
+  background: var(--surface-2);
+}
+
+.mobile-navigation-hosts {
+  margin-top: 18px;
+  padding-bottom: 18px;
+  border-top: 1px solid var(--dim-2);
+}
+
+.mobile-navigation-empty {
+  margin: 0;
+  padding: 3px 13px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-navigation-drawer {
+    scroll-behavior: auto;
+  }
+}

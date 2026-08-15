@@ -1,9 +1,14 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import type { PiWebClient } from '../live-shared';
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import type { PiWebClient, SessionSummary } from '../live-shared';
 import { ConversationScreen } from './conversation-screen';
 import { PairingScreen } from './pairing-screen';
 import { SessionsScreen } from './sessions-screen';
 import { SettingsScreen } from './settings-screen';
+import {
+  MobileNavigationDrawer,
+  MobileNavigationProvider,
+  type MobileNavigationContextValue,
+} from './mobile-navigation-drawer';
 
 export interface MobileAppProps {
   client: PiWebClient;
@@ -35,6 +40,11 @@ export function MobileApp({
   topLevelNavigate = (url) => window.location.assign(url),
 }: MobileAppProps) {
   const [route, setRoute] = useState<RouteState>({ path: initialPath, search: initialSearch });
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [newTaskRequest, setNewTaskRequest] = useState(0);
+  const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([]);
+  const [recentsLoading, setRecentsLoading] = useState(false);
+  const [recentsError, setRecentsError] = useState(false);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -49,6 +59,40 @@ export function MobileApp({
     window.history.pushState({}, '', `${next.pathname}${next.search}${next.hash}`);
     setRoute({ path: next.pathname, search: next.search });
   };
+
+  const navigation = useMemo<MobileNavigationContextValue>(
+    () => ({
+      openDrawer: () => setNavigationOpen(true),
+      closeDrawer: () => setNavigationOpen(false),
+    }),
+    [],
+  );
+
+  const requestNewTask = () => {
+    navigate('/');
+    setNewTaskRequest((current) => current + 1);
+  };
+
+  useEffect(() => {
+    if (!navigationOpen || route.path === '/') return;
+    let active = true;
+    setRecentsLoading(true);
+    setRecentsError(false);
+    client
+      .listSessions({ limit: 12, offset: 0 })
+      .then((result) => {
+        if (active) setRecentSessions(result.sessions);
+      })
+      .catch(() => {
+        if (active) setRecentsError(true);
+      })
+      .finally(() => {
+        if (active) setRecentsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, navigationOpen, route.path]);
 
   const internalLink = (url: string, children: ReactNode, className?: string, key?: string) => (
     <a
@@ -67,7 +111,17 @@ export function MobileApp({
 
   let screen: ReactNode;
   if (route.path === '/') {
-    screen = <SessionsScreen client={client} navigate={navigate} internalLink={internalLink} />;
+    screen = (
+      <SessionsScreen
+        client={client}
+        navigate={navigate}
+        internalLink={internalLink}
+        search={route.search}
+        newTaskRequest={newTaskRequest}
+        onOpenNavigation={navigation.openDrawer}
+        onRecentSessionsChange={setRecentSessions}
+      />
+    );
   } else if (route.path === '/session') {
     const sessionId = new URLSearchParams(route.search).get('id') ?? '';
     screen = (
@@ -79,9 +133,21 @@ export function MobileApp({
       />
     );
   } else if (route.path === '/settings') {
-    screen = <SettingsScreen client={client} internalLink={internalLink} />;
+    screen = (
+      <SettingsScreen
+        client={client}
+        internalLink={internalLink}
+        onOpenNavigation={navigation.openDrawer}
+      />
+    );
   } else if (route.path === '/pairing') {
-    screen = <PairingScreen client={client} topLevelNavigate={topLevelNavigate} />;
+    screen = (
+      <PairingScreen
+        client={client}
+        topLevelNavigate={topLevelNavigate}
+        onOpenNavigation={navigation.openDrawer}
+      />
+    );
   } else {
     screen = (
       <main className="mobile-screen mobile-centered-screen" data-mobile-route="not-found">
@@ -94,5 +160,26 @@ export function MobileApp({
     );
   }
 
-  return <div className="mobile-app">{screen}</div>;
+  const host = client.getHostContext();
+
+  return (
+    <MobileNavigationProvider value={navigation}>
+      <div className="mobile-app">
+        {screen}
+        {navigationOpen && (
+          <MobileNavigationDrawer
+            host={host}
+            currentPath={route.path}
+            currentSearch={route.search}
+            recentSessions={recentSessions}
+            recentsLoading={recentsLoading}
+            recentsError={recentsError}
+            onNavigate={navigate}
+            onNewTask={requestNewTask}
+            onClose={navigation.closeDrawer}
+          />
+        )}
+      </div>
+    </MobileNavigationProvider>
+  );
 }
